@@ -19,7 +19,9 @@ from database import (
     limpar_operacoes_fechadas_usuario,
     remover_operacao,  # Added import for remover_operacao
     remover_todas_operacoes_usuario, # Added import for new function
-    atualizar_status_darf_db # Added for DARF status update
+    atualizar_status_darf_db, # Added for DARF status update
+    limpar_carteira_usuario_db, # Added for clearing portfolio before recalc
+    limpar_resultados_mensais_usuario_db # Added for clearing monthly results before recalc
 )
 
 def processar_operacoes(operacoes: List[OperacaoCreate], usuario_id: int) -> None:
@@ -406,7 +408,11 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
 def recalcular_carteira(usuario_id: int) -> None:
     """
     Recalcula a carteira atual de um usuário com base em todas as suas operações.
+    A carteira existente do usuário é limpa antes do recálculo.
     """
+    # Limpa a carteira atual do usuário no banco de dados antes de recalcular
+    limpar_carteira_usuario_db(usuario_id=usuario_id)
+
     # Obtém todas as operações do usuário
     operacoes = obter_todas_operacoes(usuario_id=usuario_id)
     
@@ -458,7 +464,11 @@ def recalcular_carteira(usuario_id: int) -> None:
 def recalcular_resultados(usuario_id: int) -> None:
     """
     Recalcula os resultados mensais de um usuário com base em todas as suas operações.
+    Os resultados mensais existentes do usuário são limpos antes do recálculo.
     """
+    # Limpa os resultados mensais existentes do usuário no banco de dados
+    limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
+
     # Obtém todas as operações do usuário
     operacoes = obter_todas_operacoes(usuario_id=usuario_id)
     

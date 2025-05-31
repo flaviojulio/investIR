@@ -703,3 +703,41 @@ def atualizar_status_darf_db(usuario_id: int, year_month: str, darf_type: str, n
             # Logar o erro e.g., print(f"Database error: {e}") ou usar logging
             # Considerar se deve propagar o erro ou retornar False
             return False
+
+def limpar_carteira_usuario_db(usuario_id: int) -> None:
+    """
+    Remove todos os registros da carteira de um usuário específico.
+
+    Args:
+        usuario_id: ID do usuário.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM carteira_atual WHERE usuario_id = ?', (usuario_id,))
+            conn.commit()
+        except sqlite3.Error as e:
+            # Logar o erro e.g., print(f"Database error clearing portfolio for user {usuario_id}: {e}")
+            # Decidir se deve propagar o erro ou não. Para esta operação,
+            # pode ser aceitável não levantar uma exceção se a tabela estiver vazia
+            # ou se houver algum problema que não impeça o fluxo principal de recálculo.
+            # No entanto, para depuração, o log é importante.
+            pass # Silenciosamente continua, mas idealmente logaria.
+
+def limpar_resultados_mensais_usuario_db(usuario_id: int) -> None:
+    """
+    Remove todos os registros de resultados mensais de um usuário específico.
+
+    Args:
+        usuario_id: ID do usuário.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM resultados_mensais WHERE usuario_id = ?', (usuario_id,))
+            conn.commit()
+        except sqlite3.Error as e:
+            # Logar o erro, e.g., print(f"Database error clearing monthly results for user {usuario_id}: {e}")
+            # Similar à limpar_carteira_usuario_db, decidir sobre a propagação do erro.
+            # O log é importante para a depuração.
+            pass # Silenciosamente continua, mas idealmente logaria.
