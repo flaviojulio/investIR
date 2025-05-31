@@ -76,6 +76,18 @@ def criar_tabelas():
         # Adicionar a coluna usuario_id se ela não existir
         if 'usuario_id' not in colunas:
             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN usuario_id INTEGER DEFAULT NULL')
+
+        # Verificar e adicionar novas colunas para resultados_mensais (adicionado em subtasks posteriores)
+        if 'vendas_day_trade' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN vendas_day_trade REAL DEFAULT 0.0')
+        if 'darf_swing_trade_valor' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_swing_trade_valor REAL DEFAULT 0.0')
+        if 'darf_day_trade_valor' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_day_trade_valor REAL DEFAULT 0.0')
+        if 'status_darf_swing_trade' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN status_darf_swing_trade TEXT DEFAULT NULL')
+        if 'status_darf_day_trade' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN status_darf_day_trade TEXT DEFAULT NULL')
         
         # Tabela de carteira atual
         cursor.execute('''
@@ -426,7 +438,9 @@ def salvar_resultado_mensal(resultado: Dict[str, Any], usuario_id: int) -> int:
                 isento_swing = ?, ganho_liquido_day = ?, ir_devido_day = ?,
                 irrf_day = ?, ir_pagar_day = ?, prejuizo_acumulado_swing = ?,
                 prejuizo_acumulado_day = ?, darf_codigo = ?, darf_competencia = ?,
-                darf_valor = ?, darf_vencimento = ?
+                darf_valor = ?, darf_vencimento = ?,
+                vendas_day_trade = ?, darf_swing_trade_valor = ?, darf_day_trade_valor = ?,
+                status_darf_swing_trade = ?, status_darf_day_trade = ?
             WHERE mes = ? AND usuario_id = ?
             ''', (
                 resultado["vendas_swing"],
@@ -443,6 +457,11 @@ def salvar_resultado_mensal(resultado: Dict[str, Any], usuario_id: int) -> int:
                 resultado.get("darf_competencia"),
                 resultado.get("darf_valor"),
                 darf_vencimento_iso,
+                resultado.get("vendas_day_trade", 0.0), # Add new fields
+                resultado.get("darf_swing_trade_valor", 0.0),
+                resultado.get("darf_day_trade_valor", 0.0),
+                resultado.get("status_darf_swing_trade"),
+                resultado.get("status_darf_day_trade"),
                 resultado["mes"],
                 usuario_id
             ))
@@ -456,9 +475,11 @@ def salvar_resultado_mensal(resultado: Dict[str, Any], usuario_id: int) -> int:
                 isento_swing, ganho_liquido_day, ir_devido_day,
                 irrf_day, ir_pagar_day, prejuizo_acumulado_swing,
                 prejuizo_acumulado_day, darf_codigo, darf_competencia,
-                darf_valor, darf_vencimento, usuario_id
+                darf_valor, darf_vencimento, usuario_id,
+                vendas_day_trade, darf_swing_trade_valor, darf_day_trade_valor,
+                status_darf_swing_trade, status_darf_day_trade
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 resultado["mes"],
                 resultado["vendas_swing"],
@@ -475,7 +496,12 @@ def salvar_resultado_mensal(resultado: Dict[str, Any], usuario_id: int) -> int:
                 resultado.get("darf_competencia"),
                 resultado.get("darf_valor"),
                 darf_vencimento_iso,
-                usuario_id
+                usuario_id,
+                resultado.get("vendas_day_trade", 0.0), # Add new fields
+                resultado.get("darf_swing_trade_valor", 0.0),
+                resultado.get("darf_day_trade_valor", 0.0),
+                resultado.get("status_darf_swing_trade"),
+                resultado.get("status_darf_day_trade")
             ))
             
             conn.commit()
@@ -627,3 +653,53 @@ def limpar_operacoes_fechadas_usuario(usuario_id: int) -> None:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM operacoes_fechadas WHERE usuario_id = ?", (usuario_id,))
         conn.commit()
+
+def remover_todas_operacoes_usuario(usuario_id: int) -> int:
+    """
+    Remove todas as operações de um usuário específico do banco de dados.
+
+    Args:
+        usuario_id: ID do usuário.
+
+    Returns:
+        int: Número de operações removidas.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM operacoes WHERE usuario_id = ?', (usuario_id,))
+        conn.commit()
+        return cursor.rowcount
+
+def atualizar_status_darf_db(usuario_id: int, year_month: str, darf_type: str, new_status: str) -> bool:
+    """
+    Atualiza o status de um DARF específico (swing ou daytrade) para um usuário e mês.
+
+    Args:
+        usuario_id: ID do usuário.
+        year_month: Mês e ano no formato YYYY-MM.
+        darf_type: Tipo de DARF ("swing" or "daytrade").
+        new_status: Novo status para o DARF (e.g., 'Pago', 'Pendente').
+
+    Returns:
+        bool: True se a atualização foi bem-sucedida (1 linha afetada), False caso contrário.
+    """
+    if darf_type == "swing":
+        status_column_name = "status_darf_swing_trade"
+    elif darf_type == "daytrade":
+        status_column_name = "status_darf_day_trade"
+    else:
+        return False # Tipo de DARF inválido
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            # Usar f-string para o nome da coluna é seguro aqui, pois darf_type é validado.
+            # No entanto, para valores, sempre use placeholders.
+            query = f"UPDATE resultados_mensais SET {status_column_name} = ? WHERE usuario_id = ? AND mes = ?"
+            cursor.execute(query, (new_status, usuario_id, year_month))
+            conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            # Logar o erro e.g., print(f"Database error: {e}") ou usar logging
+            # Considerar se deve propagar o erro ou retornar False
+            return False

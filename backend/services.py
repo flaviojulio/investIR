@@ -17,7 +17,9 @@ from database import (
     obter_operacoes_para_calculo_fechadas,
     salvar_operacao_fechada,
     limpar_operacoes_fechadas_usuario,
-    remover_operacao  # Added import for remover_operacao
+    remover_operacao,  # Added import for remover_operacao
+    remover_todas_operacoes_usuario, # Added import for new function
+    atualizar_status_darf_db # Added for DARF status update
 )
 
 def processar_operacoes(operacoes: List[OperacaoCreate], usuario_id: int) -> None:
@@ -538,16 +540,34 @@ def recalcular_resultados(usuario_id: int) -> None:
         ir_devido_day = max(0, resultado_mes_day["ganho_liquido"] * 0.20)
         
         # Calcula o IR a pagar (já descontando o IRRF)
-        ir_pagar_swing = max(0, ir_devido_swing - (resultado_mes_swing["vendas"] * 0.00005))
+        # ir_pagar_swing é o valor potencial do DARF de swing trade antes de verificar a regra dos R$10.
+        ir_pagar_swing = max(0, ir_devido_swing - (resultado_mes_swing["vendas"] * 0.00005 if not isento_swing else 0))
         ir_pagar_day = max(0, ir_devido_day - resultado_mes_day["irrf"])
+
+        # Novos campos a serem calculados
+        vendas_day_trade = resultado_mes_day["vendas"]
+        darf_swing_trade_valor_calc = ir_pagar_swing
+        darf_day_trade_valor_calc = ir_pagar_day
+
+        status_darf_swing_trade_calc = "Pendente" if darf_swing_trade_valor_calc > 10.0 else None
+        status_darf_day_trade_calc = "Pendente" if darf_day_trade_valor_calc > 10.0 else None
         
-        # Gera o DARF se necessário
+        # Gera o DARF para Day Trade se necessário (valor principal do DARF)
         darf = None
-        if ir_pagar_day > 0:
+        # A regra de > 10 para gerar DARF é aplicada aqui para o darf principal (day trade)
+        if darf_day_trade_valor_calc > 10.0: # Alterado de ir_pagar_day para darf_day_trade_valor_calc
             # Calcula a data de vencimento (último dia útil do mês seguinte)
-            ano, mes_num = map(int, mes.split('-'))
-            ultimo_dia = calendar.monthrange(ano, mes_num + 1 if mes_num < 12 else 1)[1]
-            vencimento = date(ano if mes_num < 12 else ano + 1, mes_num + 1 if mes_num < 12 else 1, ultimo_dia)
+            ano, mes_num_int = map(int, mes_str.split('-')) # mes_str usado aqui
+
+            # Calcula o próximo mês e ano
+            prox_mes_ano = ano
+            prox_mes_num = mes_num_int + 1
+            if prox_mes_num > 12:
+                prox_mes_num = 1
+                prox_mes_ano += 1
+
+            ultimo_dia_prox_mes = calendar.monthrange(prox_mes_ano, prox_mes_num)[1]
+            vencimento = date(prox_mes_ano, prox_mes_num, ultimo_dia_prox_mes)
             
             # Ajusta para o último dia útil (simplificação: considera apenas finais de semana)
             while vencimento.weekday() >= 5:  # 5 = sábado, 6 = domingo
@@ -555,34 +575,48 @@ def recalcular_resultados(usuario_id: int) -> None:
             
             darf = {
                 "codigo": "6015",
-                "competencia": mes,
-                "valor": ir_pagar_day,
+                "competencia": mes_str, # mes_str usado aqui
+                "valor": darf_day_trade_valor_calc, # Usar o valor calculado para o DARF
                 "vencimento": vencimento
             }
         
         # Salva o resultado mensal
         resultado = {
-            "mes": mes,
+            "mes": mes_str, # mes_str usado aqui
             "vendas_swing": resultado_mes_swing["vendas"],
             "custo_swing": resultado_mes_swing["custo"],
             "ganho_liquido_swing": resultado_mes_swing["ganho_liquido"],
             "isento_swing": isento_swing,
             "ganho_liquido_day": resultado_mes_day["ganho_liquido"],
-            "ir_devido_day": ir_devido_day,
+            "ir_devido_day": ir_devido_day, # Mantido para informação
             "irrf_day": resultado_mes_day["irrf"],
-            "ir_pagar_day": ir_pagar_day,
+            "ir_pagar_day": ir_pagar_day, # Mantido para informação (é o mesmo que darf_day_trade_valor_calc)
             "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
-            "prejuizo_acumulado_day": prejuizo_acumulado_day
+            "prejuizo_acumulado_day": prejuizo_acumulado_day,
+
+            # Novos campos adicionados
+            "vendas_day_trade": vendas_day_trade,
+            "darf_swing_trade_valor": darf_swing_trade_valor_calc,
+            "darf_day_trade_valor": darf_day_trade_valor_calc,
+            "status_darf_swing_trade": status_darf_swing_trade_calc,
+            "status_darf_day_trade": status_darf_day_trade_calc
         }
         
-        if darf:
+        if darf: # Se um DARF de day trade foi gerado (valor > R$10)
             resultado.update({
                 "darf_codigo": darf["codigo"],
                 "darf_competencia": darf["competencia"],
-                "darf_valor": darf["valor"],
+                "darf_valor": darf["valor"], # Este é o valor do DARF de day trade
                 "darf_vencimento": darf["vencimento"]
             })
-        
+        else: # Garante que os campos do DARF principal fiquem nulos se não houver DARF de day trade > R$10
+            resultado.update({
+                "darf_codigo": None,
+                "darf_competencia": None,
+                "darf_valor": None, # Changed to None to match Optional[float] = None in the model
+                "darf_vencimento": None
+            })
+
         # Salva o resultado mensal no banco de dados
         salvar_resultado_mensal(resultado, usuario_id=usuario_id)
 
@@ -690,4 +724,42 @@ def gerar_resumo_operacoes_fechadas(usuario_id: int) -> Dict[str, Any]:
     
 #     # Salva os resultados mensais no banco de dados
 #     for data_primeiro_dia, dados in resultados_mensais.items():
-#         salvar_resultado_mensal(data_primeiro_dia, dados["resultado"])            
+#         salvar_resultado_mensal(data_primeiro_dia, dados["resultado"])
+
+def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
+    """
+    Serviço para deletar todas as operações de um usuário e recalcular
+    a carteira e os resultados.
+    """
+    deleted_count = remover_todas_operacoes_usuario(usuario_id=usuario_id)
+
+    # Após remover as operações, é crucial recalcular a carteira e os resultados.
+    # A carteira ficará vazia, e os resultados mensais serão zerados ou recalculados para refletir
+    # a ausência de operações.
+    recalcular_carteira(usuario_id=usuario_id)
+    recalcular_resultados(usuario_id=usuario_id) # Isso também limpará os resultados mensais no DB
+                                               # se não houver operações.
+
+    return {"mensagem": f"{deleted_count} operações foram removidas com sucesso.", "deleted_count": deleted_count}
+
+def atualizar_status_darf_service(usuario_id: int, year_month: str, darf_type: str, new_status: str) -> Dict[str, str]:
+    """
+    Serviço para atualizar o status de um DARF (swing ou daytrade).
+    """
+    if darf_type.lower() not in ["swing", "daytrade"]:
+        raise ValueError("Tipo de DARF inválido. Use 'swing' or 'daytrade'.")
+
+    success = atualizar_status_darf_db(
+        usuario_id=usuario_id,
+        year_month=year_month,
+        darf_type=darf_type.lower(),
+        new_status=new_status
+    )
+
+    if success:
+        return {"mensagem": "Status do DARF atualizado com sucesso."}
+    else:
+        # Isso pode significar que o registro para o mês/usuário não existe,
+        # ou o tipo de darf era inválido (já verificado), ou o status já era o novo_status.
+        # Para o cliente, "não encontrado ou status não alterado" pode ser uma mensagem razoável.
+        return {"mensagem": "DARF não encontrado ou status não necessitou alteração."}

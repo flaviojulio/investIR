@@ -21,6 +21,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
   const [searchTicker, setSearchTicker] = useState("")
   const [filterOperation, setFilterOperation] = useState("all")
   const [loading, setLoading] = useState<number | null>(null)
+  const [bulkDeleting, setBulkDeleting] = useState(false); // State for bulk delete
   const { toast } = useToast()
 
   const filteredOperations = operacoes.filter((op) => {
@@ -50,6 +51,30 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       setLoading(null)
     }
   }
+
+  const handleBulkDelete = async () => {
+    if (!confirm("Tem certeza que deseja excluir TODAS as operações? Esta ação não pode ser desfeita.")) {
+      return;
+    }
+
+    setBulkDeleting(true);
+    try {
+      const response = await api.delete("/operacoes/all");
+      toast({
+        title: "Sucesso!",
+        description: response.data.mensagem || "Todas as operações foram excluídas.",
+      });
+      onUpdate(); // Refresh data
+    } catch (error: any) {
+      toast({
+        title: "Erro",
+        description: error.response?.data?.detail || "Erro ao excluir todas as operações.",
+        variant: "destructive",
+      });
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -96,8 +121,20 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
           </div>
         </div>
 
+        {/* Bulk Delete Button */}
+        <div className="mt-4">
+          <Button
+            variant="destructive"
+            onClick={handleBulkDelete}
+            disabled={bulkDeleting || operacoes.length === 0}
+            className="w-full sm:w-auto" // Full width on small screens, auto on larger
+          >
+            {bulkDeleting ? "Excluindo..." : "Excluir Todas as Operações"}
+          </Button>
+        </div>
+
         {/* Tabela */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto mt-4"> {/* Added mt-4 for spacing */}
           <Table>
             <TableHeader>
               <TableRow>
