@@ -658,7 +658,7 @@ async def deletar_operacao(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao remover operação: {str(e)}")
 
-@app.delete("/api/operacoes/delete-all", response_model=Dict[str, Any]) # Changed path
+@app.delete("/api/bulk-ops/operacoes/delete-all", response_model=Dict[str, Any]) # Changed path to new prefix
 async def deletar_todas_operacoes(
     usuario: Dict[str, Any] = Depends(get_current_user)
 ):
