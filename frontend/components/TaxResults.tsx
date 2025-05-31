@@ -4,9 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { useState } from "react" // Added for darfUpdating state
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button" // Added Button import
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Calendar, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Edit3 } from "lucide-react" // Edit3 for actions
