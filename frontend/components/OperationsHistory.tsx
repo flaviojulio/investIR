@@ -59,7 +59,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
 
     setBulkDeleting(true);
     try {
-      const response = await api.delete("/operacoes/all");
+      const response = await api.delete("/operacoes/delete-all"); // Changed path
       toast({
         title: "Sucesso!",
         description: response.data.mensagem || "Todas as operações foram excluídas.",
