@@ -741,3 +741,24 @@ def limpar_resultados_mensais_usuario_db(usuario_id: int) -> None:
             # Similar à limpar_carteira_usuario_db, decidir sobre a propagação do erro.
             # O log é importante para a depuração.
             pass # Silenciosamente continua, mas idealmente logaria.
+
+def remover_item_carteira_db(usuario_id: int, ticker: str) -> bool:
+    """
+    Remove um item específico (ticker) da carteira de um usuário.
+
+    Args:
+        usuario_id: ID do usuário.
+        ticker: Ticker da ação a ser removida.
+
+    Returns:
+        bool: True se o item foi removido (1 linha afetada), False caso contrário.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM carteira_atual WHERE usuario_id = ? AND ticker = ?', (usuario_id, ticker))
+            conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            # Logar o erro e.g., print(f"Database error removing item {ticker} for user {usuario_id}: {e}")
+            return False
