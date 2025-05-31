@@ -122,7 +122,7 @@ export function Dashboard() {
           </TabsContent>
 
           <TabsContent value="taxes">
-            <TaxResults resultados={data.resultados} />
+            <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />
           </TabsContent>
 
           <TabsContent value="history">
