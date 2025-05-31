@@ -66,9 +66,27 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       });
       onUpdate(); // Refresh data
     } catch (error: any) {
+      let errorMessage = "Erro ao excluir todas as operações."; // Default message
+      const errorDetail = error.response?.data?.detail;
+
+      if (typeof errorDetail === 'string') {
+        errorMessage = errorDetail;
+      } else if (typeof errorDetail === 'object' && errorDetail !== null) {
+        // Try to access common error message properties
+        if (typeof errorDetail.msg === 'string') {
+          errorMessage = errorDetail.msg;
+        } else if (typeof errorDetail.message === 'string') {
+          errorMessage = errorDetail.message;
+        } else {
+          // Fallback for unknown object structure, avoid stringifying the whole object directly in toast
+          errorMessage = "Ocorreu um erro desconhecido ao processar os detalhes do erro do servidor.";
+          console.error("Unknown error object structure:", errorDetail); // Log for debugging
+        }
+      }
+
       toast({
         title: "Erro",
-        description: error.response?.data?.detail || "Erro ao excluir todas as operações.",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
