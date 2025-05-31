@@ -21,7 +21,8 @@ from database import (
     remover_todas_operacoes_usuario, # Added import for new function
     atualizar_status_darf_db, # Added for DARF status update
     limpar_carteira_usuario_db, # Added for clearing portfolio before recalc
-    limpar_resultados_mensais_usuario_db # Added for clearing monthly results before recalc
+    limpar_resultados_mensais_usuario_db, # Added for clearing monthly results before recalc
+    remover_item_carteira_db # Added for deleting single portfolio item
 )
 
 def processar_operacoes(operacoes: List[OperacaoCreate], usuario_id: int) -> None:
@@ -233,7 +234,12 @@ def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None
     atualizar_carteira(dados.ticker, dados.quantidade, dados.preco_medio, usuario_id=usuario_id)
     
     # Adiciona chamadas para recalcular tudo após a atualização manual da carteira
-    recalcular_carteira(usuario_id=usuario_id)
+    # REMOVED: recalcular_carteira(usuario_id=usuario_id)
+    # The following recalculations might need further review in the future
+    # if manual portfolio edits are meant to be fully authoritative and
+    # potentially correct historical discrepancies reflected in tax calculations.
+    # For now, we keep them to ensure tax data is updated based on operations,
+    # but acknowledge the portfolio itself is now manually set for this item.
     recalcular_resultados(usuario_id=usuario_id)
     calcular_operacoes_fechadas(usuario_id=usuario_id)
 
@@ -773,3 +779,10 @@ def atualizar_status_darf_service(usuario_id: int, year_month: str, darf_type: s
         # ou o tipo de darf era inválido (já verificado), ou o status já era o novo_status.
         # Para o cliente, "não encontrado ou status não alterado" pode ser uma mensagem razoável.
         return {"mensagem": "DARF não encontrado ou status não necessitou alteração."}
+
+def remover_item_carteira_service(usuario_id: int, ticker: str) -> bool:
+    """
+    Serviço para remover um item específico (ticker) da carteira de um usuário.
+    Nenhuma recalculação é acionada, pois esta é uma ação de override manual.
+    """
+    return remover_item_carteira_db(usuario_id=usuario_id, ticker=ticker)

@@ -40,7 +40,8 @@ from services import (
     obter_operacao_service, # Added for returning created operacao
     gerar_resumo_operacoes_fechadas, # Added for summary
     deletar_todas_operacoes_service, # Added for bulk delete
-    atualizar_status_darf_service # Added for DARF status update
+    atualizar_status_darf_service, # Added for DARF status update
+    remover_item_carteira_service # Added for deleting single portfolio item
 )
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -588,6 +589,27 @@ async def atualizar_carteira(
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar ação: {str(e)}")
+
+@app.delete("/api/carteira/{ticker}", response_model=Dict[str, str])
+async def deletar_item_carteira(
+    ticker: str = Path(..., description="Ticker da ação a ser removida da carteira"),
+    usuario: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Remove um item específico (ticker) da carteira atual do usuário.
+    Esta é uma ação de override manual e não aciona recálculos automáticos da carteira.
+    """
+    try:
+        success = services.remover_item_carteira_service(usuario_id=usuario["id"], ticker=ticker.upper())
+        if success:
+            return {"mensagem": f"Ação {ticker.upper()} removida da carteira com sucesso."}
+        else:
+            raise HTTPException(status_code=404, detail=f"Ação {ticker.upper()} não encontrada na carteira do usuário.")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        # Log the exception e for detailed debugging
+        raise HTTPException(status_code=500, detail=f"Erro ao remover ação da carteira: {str(e)}")
 
 @app.get("/api/operacoes/fechadas", response_model=List[OperacaoFechada])
 async def obter_operacoes_fechadas(usuario: Dict = Depends(get_current_user)):
