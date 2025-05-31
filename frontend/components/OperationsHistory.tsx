@@ -66,23 +66,34 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       });
       onUpdate(); // Refresh data
     } catch (error: any) {
-      let errorMessage = "Erro ao excluir todas as operações."; // Default message
       const errorDetail = error.response?.data?.detail;
+      let errorMessage = "Erro ao excluir todas as operações."; // Default message
 
       if (typeof errorDetail === 'string') {
         errorMessage = errorDetail;
+      } else if (Array.isArray(errorDetail) && errorDetail.length > 0) {
+        // Handle array of error objects (e.g., FastAPI validation errors)
+        const firstError = errorDetail[0];
+        if (typeof firstError.msg === 'string') {
+          errorMessage = firstError.msg;
+        } else if (typeof firstError.message === 'string') {
+          errorMessage = firstError.message;
+        } else {
+          errorMessage = "Não foi possível extrair uma mensagem específica do erro retornado pelo servidor (array).";
+          console.error("Unknown error array item structure:", firstError);
+        }
       } else if (typeof errorDetail === 'object' && errorDetail !== null) {
-        // Try to access common error message properties
+        // Handle single error object
         if (typeof errorDetail.msg === 'string') {
           errorMessage = errorDetail.msg;
         } else if (typeof errorDetail.message === 'string') {
           errorMessage = errorDetail.message;
         } else {
-          // Fallback for unknown object structure, avoid stringifying the whole object directly in toast
-          errorMessage = "Ocorreu um erro desconhecido ao processar os detalhes do erro do servidor.";
-          console.error("Unknown error object structure:", errorDetail); // Log for debugging
+          errorMessage = "Não foi possível extrair uma mensagem específica do erro retornado pelo servidor (objeto).";
+          console.error("Unknown error object structure:", errorDetail);
         }
       }
+      // If errorDetail is none of the above (e.g. undefined), errorMessage remains the default.
 
       toast({
         title: "Erro",
