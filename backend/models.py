@@ -89,6 +89,11 @@ class ResultadoMensal(BaseModel):
     darf_competencia: Optional[str] = None
     darf_valor: Optional[float] = None
     darf_vencimento: Optional[date] = None
+    vendas_day_trade: Optional[float] = Field(default=0.0)
+    darf_swing_trade_valor: Optional[float] = Field(default=0.0)
+    darf_day_trade_valor: Optional[float] = Field(default=0.0)
+    status_darf_swing_trade: Optional[str] = Field(default=None)
+    status_darf_day_trade: Optional[str] = Field(default=None)
 
     model_config = ConfigDict(from_attributes=True)
 
