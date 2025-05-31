@@ -26,4 +26,9 @@ export interface ResultadoMensal {
   ir_pagar_day: number;
   darf_codigo?: string;
   darf_vencimento?: string; // YYYY-MM-DD
+  vendas_day_trade?: number;
+  darf_swing_trade_valor?: number;
+  darf_day_trade_valor?: number;
+  status_darf_swing_trade?: string; // e.g., 'Pendente', 'Pago'
+  status_darf_day_trade?: string; // e.g., 'Pendente', 'Pago'
 }

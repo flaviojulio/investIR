@@ -10,8 +10,13 @@ from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
     DARF, AtualizacaoCarteira, OperacaoFechada,
     # Modelos de autenticação
-    UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse
+    UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
+    BaseModel # Ensure BaseModel is available for DARFStatusUpdate
 )
+
+# Pydantic model for DARF status update
+class DARFStatusUpdate(BaseModel):
+    status: str
 
 from database import (
     criar_tabelas, 
@@ -33,7 +38,9 @@ from services import (
     listar_operacoes_service,
     deletar_operacao_service,
     obter_operacao_service, # Added for returning created operacao
-    gerar_resumo_operacoes_fechadas # Added for summary
+    gerar_resumo_operacoes_fechadas, # Added for summary
+    deletar_todas_operacoes_service, # Added for bulk delete
+    atualizar_status_darf_service # Added for DARF status update
 )
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -481,6 +488,57 @@ async def obter_darfs(usuario: Dict = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao gerar DARFs: {str(e)}")
 
+@app.put("/api/impostos/darf_status/{year_month}/{type}", response_model=Dict[str, str])
+async def atualizar_status_darf(
+    year_month: str = Path(..., description="Ano e mês no formato YYYY-MM, e.g., 2023-12"),
+    type: str = Path(..., description="Tipo de DARF: 'swing' ou 'daytrade'"),
+    status_update: DARFStatusUpdate = Body(...),
+    usuario: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Atualiza o status de um DARF específico (swing ou daytrade) para um determinado mês/ano.
+    O status pode ser, por exemplo, "Pendente", "Pago", "Atrasado".
+    """
+    try:
+        # Validação do tipo já está no endpoint Path e será tratada pelo service,
+        # mas uma checagem extra aqui pode fornecer um erro mais imediato se desejado.
+        # No entanto, o Path param 'type' não tem validação regex ou enum aqui.
+        # A validação no service é suficiente.
+
+        # Convert type to lowercase to ensure consistency before calling service
+        darf_type_lower = type.lower()
+        if darf_type_lower not in ["swing", "daytrade"]:
+            raise HTTPException(status_code=400, detail="Tipo de DARF inválido. Use 'swing' or 'daytrade'.")
+
+        resultado = services.atualizar_status_darf_service(
+            usuario_id=usuario["id"],
+            year_month=year_month,
+            darf_type=darf_type_lower,
+            new_status=status_update.status
+        )
+
+        # Analisa a mensagem para determinar o código de status HTTP apropriado
+        if "não encontrado" in resultado.get("mensagem", "").lower() or \
+           "não necessitou alteração" in resultado.get("mensagem", "").lower() : # Check for "no change needed"
+            # Se o recurso não foi encontrado ou não precisou de alteração, pode ser um 404 ou 200/304.
+            # Para "não encontrado", 404 é apropriado.
+            # Para "não necessitou alteração", um 200 com a mensagem é ok, ou 304 Not Modified se aplicável.
+            # A especificação pedia para levantar HTTPException se não encontrado.
+             if "não encontrado" in resultado.get("mensagem", "").lower():
+                raise HTTPException(status_code=404, detail=resultado["mensagem"])
+
+        # Se chegou aqui e não é "não encontrado", consideramos sucesso.
+        return resultado
+    except ValueError as ve: # Captura ValueError do service (e.g., tipo de DARF inválido)
+        raise HTTPException(status_code=400, detail=str(ve))
+    except HTTPException as he: # Re-raise outras HTTPExceptions (como a 404 acima)
+        raise he
+    except Exception as e:
+        # Log a exceção 'e' para depuração detalhada
+        # import logging
+        # logging.exception("Erro ao atualizar status do DARF")
+        raise HTTPException(status_code=500, detail=f"Erro interno ao atualizar status do DARF: {str(e)}")
+
 # Novos endpoints para as funcionalidades adicionais
 
 @app.post("/api/operacoes", response_model=Operacao)
@@ -599,6 +657,21 @@ async def deletar_operacao(
         raise e # Re-raise HTTPExceptions directly
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao remover operação: {str(e)}")
+
+@app.delete("/api/operacoes/all", response_model=Dict[str, Any])
+async def deletar_todas_operacoes(
+    usuario: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Remove TODAS as operações do usuário logado.
+    Use com cuidado, esta ação é irreversível.
+    """
+    try:
+        resultado = services.deletar_todas_operacoes_service(usuario_id=usuario["id"])
+        return resultado
+    except Exception as e:
+        # Log the exception e for detailed debugging (e.g., import logging; logging.error(f"Error in deletar_todas_operacoes: {e}", exc_info=True))
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar todas as operações: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
