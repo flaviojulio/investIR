@@ -44,6 +44,16 @@ const config: Config = {
   			border: 'hsl(var(--border))',
   			input: 'hsl(var(--input))',
   			ring: 'hsl(var(--ring))',
+        // Custom palette
+        'primary-blue': '#003366',
+        'gray-bg': '#F0F2F5',
+        'gray-border': '#D9D9D9',
+        'gray-text-primary': '#333333',
+        'gray-text-secondary': '#666666',
+        'sidebar-bg': '#262626',
+        'sidebar-text': '#E0E0E0',
+        'sidebar-active-bg': '#003366', // Can be same as primary-blue or a lighter/darker shade
+
   			chart: {
   				'1': 'hsl(var(--chart-1))',
   				'2': 'hsl(var(--chart-2))',

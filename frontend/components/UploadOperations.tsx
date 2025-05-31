@@ -100,7 +100,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Upload className="h-5 w-5" />
-            Upload de Operações
+            Importar Arquivo de Operações {/* Title changed */}
           </CardTitle>
           <CardDescription>Faça upload de um arquivo JSON com suas operações históricas</CardDescription>
         </CardHeader>
@@ -111,10 +111,10 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
           </div>
 
           {file && (
-            <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-              <FileText className="h-4 w-4 text-green-600" />
-              <span className="text-sm text-green-800">{file.name}</span>
-              <CheckCircle className="h-4 w-4 text-green-600 ml-auto" />
+            <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg"> {/* Themed selected file box */}
+              <FileText className="h-4 w-4 text-emerald-700" />
+              <span className="text-sm text-emerald-700">{file.name}</span>
+              <CheckCircle className="h-4 w-4 text-emerald-700 ml-auto" />
             </div>
           )}
 
@@ -126,7 +126,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
           )}
 
           <Button onClick={handleUpload} disabled={!file || loading} className="w-full">
-            {loading ? "Fazendo upload..." : "Fazer Upload"}
+            {loading ? "Importando..." : "Importar Arquivo"} {/* Button text changed */}
           </Button>
         </CardContent>
       </Card>
@@ -137,7 +137,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
           <CardDescription>O arquivo JSON deve seguir o formato abaixo</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="bg-gray-50 p-4 rounded-lg">
+          <div className="bg-secondary p-4 rounded-lg"> {/* bg-gray-50 to bg-secondary */}
             <pre className="text-sm overflow-x-auto">{JSON.stringify(exampleData, null, 2)}</pre>
           </div>
           <div className="mt-4 space-y-2 text-sm text-muted-foreground">

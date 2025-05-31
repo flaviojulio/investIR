@@ -95,7 +95,7 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4"> {/* space-y-6 to space-y-4 */}
       {/* Resumo Geral */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
@@ -199,7 +199,7 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
             <CardDescription>Guias de recolhimento que precisam ser pagas</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <div className="space-y-2"> {/* space-y-3 to space-y-2 */}
               {resultados
                 .filter((r) => r.ir_pagar_day > 0)
                 .map((resultado) => (
@@ -337,9 +337,9 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
         <CardHeader>
           <CardTitle>Informações Importantes</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
+        <CardContent className="space-y-2"> {/* space-y-3 to space-y-2 */}
+          <div className="grid gap-3 md:grid-cols-2"> {/* gap-4 to gap-3 */}
+            <div className="space-y-1"> {/* space-y-2 to space-y-1 */}
               <h4 className="font-medium">Swing Trade</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Isenção até R$ 20.000 em vendas mensais</li>
@@ -348,7 +348,7 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
                 <li>• Declaração anual obrigatória</li>
               </ul>
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1"> {/* space-y-2 to space-y-1 */}
               <h4 className="font-medium">Day Trade</h4>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Alíquota de 20% sobre todos os ganhos</li>

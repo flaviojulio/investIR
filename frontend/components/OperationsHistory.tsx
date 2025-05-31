@@ -122,9 +122,9 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
         <CardTitle>Histórico de Operações</CardTitle>
         <CardDescription>Todas as suas operações registradas</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3"> {/* space-y-4 to space-y-3 */}
         {/* Filtros */}
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col sm:flex-row gap-3"> {/* gap-4 to gap-3 */}
           <div className="flex-1">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -151,7 +151,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
         </div>
 
         {/* Bulk Delete Button */}
-        <div className="mt-4">
+        <div className="mt-3"> {/* mt-4 to mt-3 */}
           <Button
             variant="destructive"
             onClick={handleBulkDelete}
@@ -163,7 +163,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
         </div>
 
         {/* Tabela */}
-        <div className="overflow-x-auto mt-4"> {/* Added mt-4 for spacing */}
+        <div className="overflow-x-auto mt-3"> {/* mt-4 to mt-3 */}
           <Table>
             <TableHeader>
               <TableRow>
@@ -226,8 +226,8 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
 
         {/* Resumo */}
         {filteredOperations.length > 0 && (
-          <div className="border-t pt-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+          <div className="border-t pt-3"> {/* pt-4 to pt-3 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"> {/* gap-4 to gap-3 */}
               <div className="text-center">
                 <div className="font-medium text-muted-foreground">Total de Operações</div>
                 <div className="text-lg font-bold">{filteredOperations.length}</div>

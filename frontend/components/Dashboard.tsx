@@ -4,8 +4,8 @@ import { useState, useEffect } from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LogOut, TrendingUp } from "lucide-react"
+import AppSidebar from "@/components/AppSidebar" // Import AppSidebar
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import { TaxMeter } from "@/components/TaxMeter"
@@ -31,7 +31,15 @@ export function Dashboard() {
     operacoes: [],
   })
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState("overview")
+  const [activeView, setActiveView] = useState("Visão Geral") // New state for active view
+
+  const viewTitles: { [key: string]: string } = {
+    "Visão Geral": "Visão Geral da Carteira",
+    "Operações": "Adicionar Nova Operação Manualmente",
+    "Upload de Nota": "Upload de Notas de Corretagem",
+    "Impostos": "Cálculo e Controle de Impostos",
+    "Histórico de Operações": "Histórico Completo de Operações",
+  }
 
   useEffect(() => {
     fetchDashboardData()
@@ -69,7 +77,7 @@ export function Dashboard() {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-blue"></div>
       </div>
     )
   }
@@ -81,7 +89,7 @@ export function Dashboard() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
-              <TrendingUp className="h-8 w-8 text-blue-600" />
+              <TrendingUp className="h-8 w-8 text-primary-blue" />
               <h1 className="text-xl font-semibold text-gray-900">Carteira de Ações</h1>
             </div>
 
@@ -97,38 +105,25 @@ export function Dashboard() {
       </header>
 
       {/* Main Content */}
+      {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
-            <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-            <TabsTrigger value="operations">Operações</TabsTrigger>
-            <TabsTrigger value="upload">Upload</TabsTrigger>
-            <TabsTrigger value="taxes">Impostos</TabsTrigger>
-            <TabsTrigger value="history">Histórico</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview" className="space-y-6">
-            <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} />
-            <TaxMeter resultados={data.resultados} />
-            <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="operations">
-            <AddOperation onSuccess={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="upload">
-            <UploadOperations onSuccess={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="taxes">
-            <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="history">
-            <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />
-          </TabsContent>
-        </Tabs>
+        <div className="flex">
+          <AppSidebar setActiveView={setActiveView} activeView={activeView} />
+          <div className="flex-1 p-4"> {/* p-6 to p-4 */}
+            <h2 className="text-2xl font-semibold mb-4">{viewTitles[activeView]}</h2> {/* mb-6 to mb-4 */}
+            {activeView === "Visão Geral" && (
+              <div className="space-y-4"> {/* space-y-6 to space-y-4 */}
+                <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} />
+                <TaxMeter resultados={data.resultados} />
+                <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
+              </div>
+            )}
+            {activeView === "Operações" && <AddOperation onSuccess={handleDataUpdate} />}
+            {activeView === "Upload de Nota" && <UploadOperations onSuccess={handleDataUpdate} />}
+            {activeView === "Impostos" && <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />}
+            {activeView === "Histórico de Operações" && <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />}
+          </div>
+        </div>
       </main>
     </div>
   )

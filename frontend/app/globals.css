@@ -4,25 +4,25 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 84% 4.9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --background: 220 25% 95%; /* #F0F2F5 */
+    --foreground: 0 0% 20%;    /* #333333 */
+    --card: 0 0% 100%;         /* #FFFFFF */
+    --card-foreground: 0 0% 20%; /* #333333 */
+    --popover: 0 0% 100%;      /* #FFFFFF */
+    --popover-foreground: 0 0% 20%; /* #333333 */
+    --primary: 210 100% 20%;   /* #003366 */
+    --primary-foreground: 210 40% 98%; /* #FAFBFC, light text on primary */
+    --secondary: 220 15% 90%;  /* #E6E9EC, light gray */
+    --secondary-foreground: 0 0% 20%; /* #333333, dark text on secondary */
+    --muted: 220 20% 92%;      /* #EBEFF2, another light gray */
+    --muted-foreground: 0 0% 40%; /* #666666 */
+    --accent: 210 100% 30%;    /* #004C99, lighter primary blue */
+    --accent-foreground: 210 40% 98%; /* #FAFBFC, light text on accent */
+    --destructive: 0 84.2% 60.2%; /* keeping default red, hsl(0, 84.2%, 60.2%) */
+    --destructive-foreground: 210 40% 98%; /* keeping default */
+    --border: 0 0% 85%;        /* #D9D9D9 */
+    --input: 0 0% 85%;         /* #D9D9D9 */
+    --ring: 210 100% 20%;      /* #003366, same as primary for focus */
     --radius: 0.5rem;
   }
 

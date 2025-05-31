@@ -94,7 +94,7 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Plus className="h-5 w-5" />
-          Adicionar Nova Operação
+          Registrar Nova Operação {/* Title changed */}
         </CardTitle>
         <CardDescription>Registre manualmente uma operação de compra ou venda</CardDescription>
       </CardHeader>
@@ -191,7 +191,7 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
 
           <div className="flex gap-4 pt-4">
             <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? "Adicionando..." : "Adicionar Operação"}
+              {loading ? "Registrando..." : "Registrar Operação"} {/* Button text changed */}
             </Button>
             <Button
               type="button"
@@ -212,9 +212,9 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
           </div>
         </form>
 
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="font-medium text-blue-900 mb-2">Dicas importantes:</h4>
-          <ul className="text-sm text-blue-800 space-y-1">
+        <div className="mt-6 p-4 bg-secondary border border-primary-blue/30 rounded-lg"> {/* Themed dicas box */}
+          <h4 className="font-medium text-primary-blue mb-2">Dicas importantes:</h4>
+          <ul className="text-sm text-foreground space-y-1"> {/* Changed text color to foreground */}
             <li>• Use sempre o ticker completo (ex: ITUB4, não ITUB)</li>
             <li>• O preço deve ser por ação individual</li>
             <li>• Inclua todas as taxas (corretagem, emolumentos, etc.)</li>

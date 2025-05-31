@@ -84,15 +84,7 @@ export function TaxMeter({ resultados }: TaxMeterProps) {
           <Progress
             value={taxData.percentualUtilizado}
             className="h-3"
-            style={
-              {
-                "--progress-background": taxData.ultrapassou
-                  ? "#ef4444"
-                  : taxData.percentualUtilizado > 80
-                    ? "#eab308"
-                    : "#22c55e",
-              } as React.CSSProperties
-            }
+            indicatorClassName={getProgressColor()} // Use indicatorClassName prop
           />
           <div className="flex justify-between text-sm text-muted-foreground">
             <span>R$ 0</span>
