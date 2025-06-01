@@ -402,8 +402,8 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
         "data_fechamento": data_fec,
         "tipo": tipo_operacao_fechada,
         "quantidade": quantidade_fechada,
-        "preco_abertura": preco_unitario_abertura,
-        "preco_fechamento": preco_unitario_fechamento,
+        "valor_compra": preco_unitario_abertura,    # Changed key
+        "valor_venda": preco_unitario_fechamento,  # Changed key
         "taxas_total": taxas_proporcionais_abertura + taxas_proporcionais_fechamento,
         "resultado": resultado_liquido,
         "operacoes_relacionadas": operacoes_relacionadas,
