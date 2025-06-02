@@ -375,23 +375,35 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
         mes_fechamento_str = data_fechamento_obj.strftime("%Y-%m")
         resultado_do_mes_dict = resultados_mensais_map.get(mes_fechamento_str)
 
-        if op_f["day_trade"]:
-            if op_f["resultado"] > 0:
-                op_f["status_ir"] = "Tributável Day Trade"
-            else:
-                op_f["status_ir"] = "Sem IR/Prejuízo (Day Trade)"
-        else:  # Swing Trade
-            is_exempt_swing = False 
-            if resultado_do_mes_dict and isinstance(resultado_do_mes_dict.get("isento_swing"), bool):
-                is_exempt_swing = resultado_do_mes_dict["isento_swing"]
-            
-            if is_exempt_swing:
-                op_f["status_ir"] = "Isenta Swing"
-            else:  # Not exempt swing trade
-                if op_f["resultado"] > 0:
-                    op_f["status_ir"] = "Tributável Swing"
-                else:
-                    op_f["status_ir"] = "Sem IR/Prejuízo (Swing Trade)"
+        if op_f["resultado"] <= 0:
+            op_f["status_ir"] = "Prejuízo Acumulado"
+        else: # op_f["resultado"] > 0
+            if op_f["day_trade"]:
+                ir_pagar_mensal_day_trade = 0.0
+                if resultado_do_mes_dict and isinstance(resultado_do_mes_dict.get("ir_pagar_day"), (int, float)):
+                    ir_pagar_mensal_day_trade = resultado_do_mes_dict["ir_pagar_day"]
+                
+                if ir_pagar_mensal_day_trade > 0:
+                    op_f["status_ir"] = "Tributável"
+                else: 
+                    op_f["status_ir"] = "Lucro Compensado"
+                    
+            else: # Swing Trade
+                is_exempt_swing_mensal = False 
+                if resultado_do_mes_dict and isinstance(resultado_do_mes_dict.get("isento_swing"), bool):
+                    is_exempt_swing_mensal = resultado_do_mes_dict["isento_swing"]
+
+                if is_exempt_swing_mensal:
+                    op_f["status_ir"] = "Isento"
+                else: 
+                    ir_pagar_mensal_swing_trade = 0.0
+                    if resultado_do_mes_dict and isinstance(resultado_do_mes_dict.get("ir_pagar_swing"), (int, float)):
+                        ir_pagar_mensal_swing_trade = resultado_do_mes_dict["ir_pagar_swing"]
+                    
+                    if ir_pagar_mensal_swing_trade > 0:
+                        op_f["status_ir"] = "Tributável"
+                    else: 
+                        op_f["status_ir"] = "Lucro Compensado"
         
         # Salva a operação fechada (que agora inclui status_ir, though salvar_operacao_fechada might not save it yet)
         salvar_operacao_fechada(op_f, usuario_id=usuario_id)

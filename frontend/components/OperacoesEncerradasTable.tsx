@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { Button } from '@/components/ui/button';
 import { DarfDetailsModal } from './DarfDetailsModal'; // Import the modal
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; // Tooltip components
+import { FileText } from "lucide-react"; // Icon for DARF link
 
 // Helper functions
 const formatCurrency = (value: number | null | undefined, placeholder: string = "R$ 0,00") => {
@@ -142,17 +144,56 @@ export function OperacoesEncerradasTable({ operacoesFechadas, resultadosMensais,
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {op.status_ir?.startsWith("Tributável") ? (
-                      isDarfLinkActive ? (
-                        <Button variant="link" className="p-0 h-auto text-xs" onClick={() => handleDarfClick(op)}>
-                          DARF ({op.status_ir.replace("Tributável ", "")})
-                        </Button>
-                      ) : (
-                        <span className="text-xs">{op.status_ir} (DARF mês corrente/futuro)</span>
-                      )
-                    ) : (
-                      <span className="text-xs">{op.status_ir || "-"}</span>
-                    )}
+                    {(() => {
+                      let statusIrContent;
+                      const isDarfActionable = op.status_ir === "Tributável" && isPreviousMonthOrEarlier(op.data_fechamento);
+
+                      switch (op.status_ir) {
+                        case "Isento":
+                          statusIrContent = <Badge variant="secondary">Isento</Badge>;
+                          break;
+                        case "Tributável":
+                          if (isDarfActionable) {
+                            statusIrContent = (
+                              <TooltipProvider>
+                                <Tooltip delayDuration={300}>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDarfClick(op)}>
+                                      <FileText className="h-4 w-4 text-blue-600" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Gerar DARF ({op.day_trade ? "Day Trade" : "Swing"})</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            );
+                          } else {
+                            statusIrContent = <Badge variant="destructive">Tributável</Badge>;
+                          }
+                          break;
+                        case "Lucro Compensado":
+                          statusIrContent = (
+                            <TooltipProvider>
+                              <Tooltip delayDuration={300}>
+                                <TooltipTrigger asChild>
+                                  <Badge variant="default">Lucro Compensado</Badge>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>O lucro desta operação foi compensado por prejuízos acumulados e não gerou imposto a pagar neste mês.</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          );
+                          break;
+                        case "Prejuízo Acumulado":
+                          statusIrContent = <Badge variant="outline" className="border-orange-500 text-orange-500">Prejuízo Acumulado</Badge>;
+                          break;
+                        default:
+                          statusIrContent = <span className="text-xs">{op.status_ir || "-"}</span>;
+                      }
+                      return statusIrContent;
+                    })()}
                   </TableCell>
                 </TableRow>
               );
