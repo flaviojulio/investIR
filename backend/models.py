@@ -197,4 +197,16 @@ class TokenResponse(BaseModel):
     token_type: str
 
     model_config = ConfigDict(from_attributes=True)
+
+class ResultadoTicker(BaseModel):
+    ticker: str
+    quantidade_atual: Optional[int] = 0
+    preco_medio_atual: Optional[float] = 0.0
+    custo_total_atual: Optional[float] = 0.0
+    total_investido_historico: float = 0.0  # Sum of (quantity * price + fees) for all buy operations
+    total_vendido_historico: float = 0.0    # Sum of (quantity * price - fees) for all sell operations
+    lucro_prejuizo_realizado_total: float = 0.0 # Sum of 'resultado' from operacoes_fechadas for this ticker
+    operacoes_compra_total_quantidade: int = 0 # Sum of quantity for buy operations
+    operacoes_venda_total_quantidade: int = 0  # Sum of quantity for sell operations
     
+    model_config = ConfigDict(from_attributes=True)

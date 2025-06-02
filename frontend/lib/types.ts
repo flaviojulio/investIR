@@ -32,3 +32,15 @@ export interface ResultadoMensal {
   status_darf_swing_trade?: string; // e.g., 'Pendente', 'Pago'
   status_darf_day_trade?: string; // e.g., 'Pendente', 'Pago'
 }
+
+export interface ResultadoTicker {
+  ticker: string;
+  quantidade_atual?: number;
+  preco_medio_atual?: number;
+  custo_total_atual?: number;
+  total_investido_historico: number;
+  total_vendido_historico: number;
+  lucro_prejuizo_realizado_total: number;
+  operacoes_compra_total_quantidade: number;
+  operacoes_venda_total_quantidade: number;
+}
