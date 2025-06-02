@@ -8,7 +8,7 @@ from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, Token
 
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
-    DARF, AtualizacaoCarteira, OperacaoFechada,
+    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, # Added ResultadoTicker
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
