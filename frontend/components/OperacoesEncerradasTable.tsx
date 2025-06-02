@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react'; // Ensure useEffect is imported
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { Button } from '@/components/ui/button';
-import { DarfDetailsModal } from './DarfDetailsModal'; // Import the modal
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; // Tooltip components
-import { FileText } from "lucide-react"; // Icon for DARF link
+import { DarfDetailsModal } from './DarfDetailsModal'; 
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; 
+import { FileText, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react"; // Added sort icons
+import { Input } from "@/components/ui/input"; 
 
 // Helper functions
 const formatCurrency = (value: number | null | undefined, placeholder: string = "R$ 0,00") => {
@@ -43,7 +44,72 @@ export function OperacoesEncerradasTable({ operacoesFechadas, resultadosMensais,
   const [isDarfModalOpen, setIsDarfModalOpen] = useState(false);
   const [selectedOpForDarf, setSelectedOpForDarf] = useState<OperacaoFechada | null>(null);
   const [selectedResultadoMensalForDarf, setSelectedResultadoMensalForDarf] = useState<ResultadoMensal | null>(null);
-  const [selectedDarfType, setSelectedDarfType] = useState<'swing' | 'daytrade'>('daytrade'); // Default, will be set
+  const [selectedDarfType, setSelectedDarfType] = useState<'swing' | 'daytrade'>('daytrade');
+
+  // New state for sorting
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>(null);
+  
+  // New state for search term
+  const [searchTerm, setSearchTerm] = useState<string>("");
+  
+  // New state for data to be displayed in the table
+  const [processedOperacoes, setProcessedOperacoes] = useState<OperacaoFechada[]>(operacoesFechadas);
+
+  useEffect(() => {
+    let newProcessedData = [...operacoesFechadas];
+
+    // 1. Filtering based on searchTerm
+    if (searchTerm) {
+      const lowercasedSearchTerm = searchTerm.toLowerCase();
+      newProcessedData = newProcessedData.filter(op => {
+        const tipoTrade = op.day_trade ? 'day trade' : 'swing trade';
+        return (
+          op.ticker.toLowerCase().includes(lowercasedSearchTerm) ||
+          formatDate(op.data_fechamento).toLowerCase().includes(lowercasedSearchTerm) ||
+          op.resultado.toString().toLowerCase().includes(lowercasedSearchTerm) ||
+          tipoTrade.toLowerCase().includes(lowercasedSearchTerm) ||
+          (op.status_ir && op.status_ir.toLowerCase().includes(lowercasedSearchTerm))
+        );
+      });
+    }
+
+    // 2. Sorting based on sortConfig
+    if (sortConfig !== null) {
+      newProcessedData.sort((a, b) => {
+        const getKeyValue = (item: OperacaoFechada, key: string) => {
+            if (key === 'day_trade') return item.day_trade;
+            if (key === 'status_ir') return item.status_ir || '';
+            if (key === 'data_fechamento') return new Date(item.data_fechamento).getTime();
+            if (key === 'resultado') return item.resultado;
+            // Fallback for direct properties, ensure they exist or handle potential undefined
+            const value = (item as any)[key];
+            return typeof value === 'number' ? value : String(value || '').toLowerCase();
+
+        };
+
+        const valA = getKeyValue(a, sortConfig.key);
+        const valB = getKeyValue(b, sortConfig.key);
+
+        let comparison = 0;
+        if (valA > valB) {
+          comparison = 1;
+        } else if (valA < valB) {
+          comparison = -1;
+        }
+        return sortConfig.direction === 'descending' ? comparison * -1 : comparison;
+      });
+    }
+
+    setProcessedOperacoes(newProcessedData);
+  }, [operacoesFechadas, searchTerm, sortConfig, formatDate]); // Added formatDate to dependency array
+
+  const requestSort = (key: string) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfig({ key, direction });
+  };
 
   const isPreviousMonthOrEarlier = (dateString: string): boolean => {
     try {
@@ -105,25 +171,68 @@ export function OperacoesEncerradasTable({ operacoesFechadas, resultadosMensais,
         <CardTitle>Operações Encerradas</CardTitle>
         <CardDescription>Histórico de suas operações de compra e venda finalizadas.</CardDescription>
       </CardHeader>
-      <CardContent className="pt-4"> {/* Added pt-4 for consistency if needed */}
+      <CardContent className="pt-4">
+        <div className="mb-4">
+          <Input
+            placeholder="Buscar em todas as colunas..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="max-w-sm" 
+          />
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Ação</TableHead>
-              <TableHead>Data Fech.</TableHead>
+              <TableHead onClick={() => requestSort('data_fechamento')} className="cursor-pointer hover:bg-muted/50">
+                <div className="flex items-center">
+                  Data Fech.
+                  {sortConfig?.key === 'data_fechamento' ? (
+                    sortConfig.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                  ) : (
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  )}
+                </div>
+              </TableHead>
               <TableHead className="text-right">Qtd.</TableHead>
               <TableHead className="text-right">Preço Abert.</TableHead>
               <TableHead className="text-right">Preço Fech.</TableHead>
-              <TableHead className="text-right">Resultado</TableHead>
-              <TableHead>Tipo Trade</TableHead>
-              <TableHead>Status IR</TableHead>
+              <TableHead onClick={() => requestSort('resultado')} className="cursor-pointer hover:bg-muted/50 text-right">
+                <div className="flex items-center justify-end">
+                  Resultado
+                  {sortConfig?.key === 'resultado' ? (
+                    sortConfig.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                  ) : (
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  )}
+                </div>
+              </TableHead>
+              <TableHead onClick={() => requestSort('day_trade')} className="cursor-pointer hover:bg-muted/50">
+                <div className="flex items-center">
+                  Tipo Trade
+                  {sortConfig?.key === 'day_trade' ? (
+                    sortConfig.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                  ) : (
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  )}
+                </div>
+              </TableHead>
+              <TableHead onClick={() => requestSort('status_ir')} className="cursor-pointer hover:bg-muted/50">
+                <div className="flex items-center">
+                  Status IR
+                  {sortConfig?.key === 'status_ir' ? (
+                    sortConfig.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                  ) : (
+                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                  )}
+                </div>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {operacoesFechadas.map((op, index) => { // Added index for a more robust key if needed
-              const isDarfLinkActive = 
-                (op.status_ir === "Tributável Swing" || op.status_ir === "Tributável Day Trade") &&
-                isPreviousMonthOrEarlier(op.data_fechamento);
+            {processedOperacoes.map((op, index) => { // Use processedOperacoes here
+              // const isDarfLinkActive logic might need to be re-evaluated or moved if it depends on the original op.status_ir string
+              // For now, the switch statement handles display based on op.status_ir from processedOperacoes
               
               // Construct a more unique key
               const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
@@ -146,6 +255,7 @@ export function OperacoesEncerradasTable({ operacoesFechadas, resultadosMensais,
                   <TableCell>
                     {(() => {
                       let statusIrContent;
+                      // isDarfActionable should use op.status_ir from the current 'op' in the map
                       const isDarfActionable = op.status_ir === "Tributável" && isPreviousMonthOrEarlier(op.data_fechamento);
 
                       switch (op.status_ir) {
@@ -153,24 +263,26 @@ export function OperacoesEncerradasTable({ operacoesFechadas, resultadosMensais,
                           statusIrContent = <Badge variant="secondary">Isento</Badge>;
                           break;
                         case "Tributável":
-                          if (isDarfActionable) {
-                            statusIrContent = (
-                              <TooltipProvider>
-                                <Tooltip delayDuration={300}>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDarfClick(op)}>
-                                      <FileText className="h-4 w-4 text-blue-600" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Gerar DARF ({op.day_trade ? "Day Trade" : "Swing"})</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            );
-                          } else {
-                            statusIrContent = <Badge variant="destructive">Tributável</Badge>;
-                          }
+                          const isActionableForIcon = isPreviousMonthOrEarlier(op.data_fechamento); // Redundant if isDarfActionable is defined above
+                          statusIrContent = (
+                            <div className="flex items-center space-x-1 justify-start">
+                              <Badge variant="destructive">Tributável</Badge>
+                              {isActionableForIcon && ( // or use isDarfActionable
+                                <TooltipProvider>
+                                  <Tooltip delayDuration={300}>
+                                    <TooltipTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDarfClick(op)}>
+                                        <FileText className="h-4 w-4 text-blue-600" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p>Detalhes DARF ({op.day_trade ? "Day Trade" : "Swing"})</p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              )}
+                            </div>
+                          );
                           break;
                         case "Lucro Compensado":
                           statusIrContent = (
