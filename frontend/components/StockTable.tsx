@@ -9,6 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input" // Input for form
 import { Label } from "@/components/ui/label" // Label for form
 import { TrendingUp, TrendingDown, Edit, Trash2 } from "lucide-react" // Edit and Trash2 icons
+import Link from 'next/link'; // Import Link for navigation
 import type { CarteiraItem } from "@/lib/types"
 import { api } from "@/lib/api" // For API calls
 import { useToast } from "@/hooks/use-toast" // For notifications
@@ -33,9 +34,9 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
 
   const handleOpenEditModal = (item: CarteiraItem) => {
     setEditingItem(item);
-    setEditFormData({
-      quantidade: String(item.quantidade),
-      preco_medio: String(item.preco_medio)
+    setEditFormData({ 
+      quantidade: String(item.quantidade), 
+      preco_medio: String(item.preco_medio) 
     });
     setIsEditModalOpen(true);
   };
@@ -157,76 +158,83 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
     <Card>
       <CardHeader>
         <CardTitle>Carteira Atual</CardTitle>
-        <CardDescription>Suas posições em ações com ganhos/perdas não realizados</CardDescription>
+        <CardDescription>Suas posições em ações com resultados atuais (simulados).</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Ticker</TableHead>
+                <TableHead>Ação</TableHead>
                 <TableHead className="text-right">Quantidade</TableHead>
                 <TableHead className="text-right">Preço Médio</TableHead>
+                <TableHead className="text-right">Valor Inicial</TableHead>
                 <TableHead className="text-right">Preço Atual*</TableHead>
-                <TableHead className="text-right">Valor Total</TableHead>
-                <TableHead className="text-right">Ganho/Perda</TableHead>
-                <TableHead className="text-right">%</TableHead>
+                <TableHead className="text-right">Valor Atual*</TableHead>
+                <TableHead className="text-right">Resultado*</TableHead>
+                <TableHead className="text-right">Resultado (%)*</TableHead>
                 <TableHead className="text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {carteira.map((item) => {
-                const currentPrice = getSimulatedCurrentPrice(item.preco_medio)
-                const unrealizedGain = calculateUnrealizedGain(item.quantidade, item.preco_medio, currentPrice)
-                const unrealizedGainPercent = (unrealizedGain / item.custo_total) * 100
-                const currentValue = item.quantidade * currentPrice
+                const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
+                const valorInicial = item.custo_total;
+                const valorAtual = item.quantidade * currentPrice;
+                const resultadoAtual = valorAtual - valorInicial;
+                const resultadoPercentualAtual = valorInicial !== 0 ? (resultadoAtual / valorInicial) * 100 : 0;
 
                 return (
                   <TableRow key={item.ticker}>
                     <TableCell className="font-medium">
-                      <Badge variant="outline">{item.ticker}</Badge>
+                      <Link href={`/acao/${item.ticker}`} passHref>
+                        <Badge variant="outline" className="hover:underline cursor-pointer">
+                          {item.ticker}
+                        </Badge>
+                      </Link>
                     </TableCell>
                     <TableCell className="text-right">{formatNumber(item.quantidade)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(item.preco_medio)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(valorInicial)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(currentPrice)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(currentValue)}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(valorAtual)}</TableCell>
                     <TableCell
-                      className={`text-right font-medium ${unrealizedGain >= 0 ? "text-green-600" : "text-red-600"}`}
+                      className={`text-right font-medium ${resultadoAtual >= 0 ? "text-green-600" : "text-red-600"}`}
                     >
                       <div className="flex items-center justify-end gap-1">
-                        {unrealizedGain >= 0 ? (
+                        {resultadoAtual >= 0 ? (
                           <TrendingUp className="h-4 w-4" />
                         ) : (
                           <TrendingDown className="h-4 w-4" />
                         )}
-                        {formatCurrency(Math.abs(unrealizedGain))}
+                        {formatCurrency(Math.abs(resultadoAtual))}
                       </div>
                     </TableCell>
                     <TableCell
                       className={`text-right font-medium ${
-                        unrealizedGainPercent >= 0 ? "text-green-600" : "text-red-600"
+                        resultadoPercentualAtual >= 0 ? "text-green-600" : "text-red-600"
                       }`}
                     >
-                      {unrealizedGainPercent >= 0 ? "+" : ""}
-                      {unrealizedGainPercent.toFixed(2)}%
+                      {resultadoPercentualAtual >= 0 ? "+" : ""}
+                      {resultadoPercentualAtual.toFixed(2)}%
                     </TableCell>
                     <TableCell className="text-center space-x-1">
                       <Button variant="ghost" size="sm" onClick={() => handleOpenEditModal(item)} title="Editar">
                         <Edit className="h-4 w-4" />
                       </Button>
-                      <AlertDialog
-                        open={isDeleteAlertOpen && deletingTicker === item.ticker}
-                        onOpenChange={(isOpen) => {
-                          if (!isOpen) setDeletingTicker(null);
-                          setIsDeleteAlertOpen(isOpen);
+                      <AlertDialog 
+                        open={isDeleteAlertOpen && deletingTicker === item.ticker} 
+                        onOpenChange={(isOpen) => { 
+                          if (!isOpen) setDeletingTicker(null); 
+                          setIsDeleteAlertOpen(isOpen); 
                         }}
                       >
                         <AlertDialogTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="sm"
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
                             title="Excluir"
-                            onClick={() => { setDeletingTicker(item.ticker); setIsDeleteAlertOpen(true); }}
+                            onClick={() => { setDeletingTicker(item.ticker); setIsDeleteAlertOpen(true); }} 
                             disabled={isDeleting && deletingTicker === item.ticker}
                           >
                             <Trash2 className="h-4 w-4 text-red-500" />

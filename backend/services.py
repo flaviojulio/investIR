@@ -4,7 +4,7 @@ from decimal import Decimal # Kept for specific calculations in recalcular_resul
 import calendar
 from collections import defaultdict
 
-from models import OperacaoCreate, AtualizacaoCarteira, Operacao # Operacao added
+from models import OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker # Operacao added, ResultadoTicker added
 from database import (
     inserir_operacao,
     obter_todas_operacoes, # Comment removed
@@ -22,7 +22,8 @@ from database import (
     atualizar_status_darf_db, # Added for DARF status update
     limpar_carteira_usuario_db, # Added for clearing portfolio before recalc
     limpar_resultados_mensais_usuario_db, # Added for clearing monthly results before recalc
-    remover_item_carteira_db # Added for deleting single portfolio item
+    remover_item_carteira_db, # Added for deleting single portfolio item
+    obter_operacoes_por_ticker_db # Added for fetching operations by ticker
 )
 
 def processar_operacoes(operacoes: List[OperacaoCreate], usuario_id: int) -> None:
@@ -234,14 +235,14 @@ def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None
     atualizar_carteira(dados.ticker, dados.quantidade, dados.preco_medio, usuario_id=usuario_id)
     
     # Adiciona chamadas para recalcular tudo após a atualização manual da carteira
-    # REMOVED: recalcular_carteira(usuario_id=usuario_id)
+    # REMOVED: recalcular_carteira(usuario_id=usuario_id) 
     # The following recalculations might need further review in the future
-    # if manual portfolio edits are meant to be fully authoritative and
+    # if manual portfolio edits are meant to be fully authoritative and 
     # potentially correct historical discrepancies reflected in tax calculations.
     # For now, we keep them to ensure tax data is updated based on operations,
     # but acknowledge the portfolio itself is now manually set for this item.
-    recalcular_resultados(usuario_id=usuario_id)
-    calcular_operacoes_fechadas(usuario_id=usuario_id)
+    recalcular_resultados(usuario_id=usuario_id) 
+    calcular_operacoes_fechadas(usuario_id=usuario_id) 
 
 
 def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
@@ -562,7 +563,7 @@ def recalcular_resultados(usuario_id: int) -> None:
 
         # Novos campos a serem calculados
         vendas_day_trade = resultado_mes_day["vendas"]
-        darf_swing_trade_valor_calc = ir_pagar_swing
+        darf_swing_trade_valor_calc = ir_pagar_swing 
         darf_day_trade_valor_calc = ir_pagar_day
 
         status_darf_swing_trade_calc = "Pendente" if darf_swing_trade_valor_calc > 10.0 else None
@@ -574,14 +575,14 @@ def recalcular_resultados(usuario_id: int) -> None:
         if darf_day_trade_valor_calc > 10.0: # Alterado de ir_pagar_day para darf_day_trade_valor_calc
             # Calcula a data de vencimento (último dia útil do mês seguinte)
             ano, mes_num_int = map(int, mes_str.split('-')) # mes_str usado aqui
-
+            
             # Calcula o próximo mês e ano
             prox_mes_ano = ano
             prox_mes_num = mes_num_int + 1
             if prox_mes_num > 12:
                 prox_mes_num = 1
                 prox_mes_ano += 1
-
+                
             ultimo_dia_prox_mes = calendar.monthrange(prox_mes_ano, prox_mes_num)[1]
             vencimento = date(prox_mes_ano, prox_mes_num, ultimo_dia_prox_mes)
             
@@ -609,7 +610,7 @@ def recalcular_resultados(usuario_id: int) -> None:
             "ir_pagar_day": ir_pagar_day, # Mantido para informação (é o mesmo que darf_day_trade_valor_calc)
             "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
             "prejuizo_acumulado_day": prejuizo_acumulado_day,
-
+            
             # Novos campos adicionados
             "vendas_day_trade": vendas_day_trade,
             "darf_swing_trade_valor": darf_swing_trade_valor_calc,
@@ -748,14 +749,14 @@ def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
     a carteira e os resultados.
     """
     deleted_count = remover_todas_operacoes_usuario(usuario_id=usuario_id)
-
+    
     # Após remover as operações, é crucial recalcular a carteira e os resultados.
     # A carteira ficará vazia, e os resultados mensais serão zerados ou recalculados para refletir
     # a ausência de operações.
     recalcular_carteira(usuario_id=usuario_id)
     recalcular_resultados(usuario_id=usuario_id) # Isso também limpará os resultados mensais no DB
                                                # se não houver operações.
-
+    
     return {"mensagem": f"{deleted_count} operações foram removidas com sucesso.", "deleted_count": deleted_count}
 
 def atualizar_status_darf_service(usuario_id: int, year_month: str, darf_type: str, new_status: str) -> Dict[str, str]:
@@ -786,3 +787,69 @@ def remover_item_carteira_service(usuario_id: int, ticker: str) -> bool:
     Nenhuma recalculação é acionada, pois esta é uma ação de override manual.
     """
     return remover_item_carteira_db(usuario_id=usuario_id, ticker=ticker)
+
+def listar_operacoes_por_ticker_service(usuario_id: int, ticker: str) -> List[Operacao]:
+    """
+    Serviço para listar todas as operações de um usuário para um ticker específico.
+    """
+    operacoes_data = obter_operacoes_por_ticker_db(usuario_id=usuario_id, ticker=ticker.upper())
+    return [Operacao(**op_data) for op_data in operacoes_data]
+
+def calcular_resultados_por_ticker_service(usuario_id: int, ticker: str) -> ResultadoTicker:
+    """
+    Calcula e retorna resultados agregados para um ticker específico para o usuário.
+    """
+    ticker_upper = ticker.upper()
+
+    # 1. Current Holdings
+    carteira_completa = obter_carteira_atual(usuario_id=usuario_id) # This function already filters by user_id
+    item_carteira_atual = next((item for item in carteira_completa if item["ticker"] == ticker_upper), None)
+
+    quantidade_atual = 0
+    preco_medio_atual = 0.0
+    custo_total_atual = 0.0
+
+    if item_carteira_atual:
+        quantidade_atual = item_carteira_atual.get("quantidade", 0)
+        preco_medio_atual = item_carteira_atual.get("preco_medio", 0.0)
+        custo_total_atual = item_carteira_atual.get("custo_total", 0.0)
+
+    # 2. Historical Aggregates from Operations
+    operacoes_ticker = listar_operacoes_por_ticker_service(usuario_id=usuario_id, ticker=ticker_upper)
+    
+    total_investido_historico = 0.0
+    total_vendido_historico = 0.0
+    operacoes_compra_total_quantidade = 0
+    operacoes_venda_total_quantidade = 0
+
+    for op in operacoes_ticker:
+        valor_operacao = op.quantity * op.price
+        if op.operation == "buy":
+            total_investido_historico += valor_operacao + op.fees
+            operacoes_compra_total_quantidade += op.quantity
+        elif op.operation == "sell":
+            total_vendido_historico += valor_operacao - op.fees
+            operacoes_venda_total_quantidade += op.quantity
+            
+    # 3. Realized Profit/Loss from Closed Operations
+    # calcular_operacoes_fechadas recalcula e salva no DB, depois retorna a lista.
+    # Se for chamado com frequência, pode ser um gargalo. Considerar se as ops fechadas devem ser apenas lidas.
+    # Para este contexto, vamos assumir que queremos os dados mais recentes, então o recálculo é aceitável.
+    operacoes_fechadas_todas = calcular_operacoes_fechadas(usuario_id=usuario_id) 
+    
+    lucro_prejuizo_realizado_total = 0.0
+    for op_fechada in operacoes_fechadas_todas:
+        if op_fechada.get('ticker') == ticker_upper:
+            lucro_prejuizo_realizado_total += op_fechada.get('resultado', 0.0)
+
+    return ResultadoTicker(
+        ticker=ticker_upper,
+        quantidade_atual=quantidade_atual,
+        preco_medio_atual=preco_medio_atual,
+        custo_total_atual=custo_total_atual,
+        total_investido_historico=total_investido_historico,
+        total_vendido_historico=total_vendido_historico,
+        lucro_prejuizo_realizado_total=lucro_prejuizo_realizado_total,
+        operacoes_compra_total_quantidade=operacoes_compra_total_quantidade,
+        operacoes_venda_total_quantidade=operacoes_venda_total_quantidade
+    )

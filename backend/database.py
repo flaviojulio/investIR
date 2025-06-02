@@ -762,3 +762,37 @@ def remover_item_carteira_db(usuario_id: int, ticker: str) -> bool:
         except sqlite3.Error as e:
             # Logar o erro e.g., print(f"Database error removing item {ticker} for user {usuario_id}: {e}")
             return False
+
+def obter_operacoes_por_ticker_db(usuario_id: int, ticker: str) -> List[Dict[str, Any]]:
+    """
+    Obtém todas as operações de um usuário para um ticker específico.
+
+    Args:
+        usuario_id: ID do usuário.
+        ticker: Ticker da ação.
+
+    Returns:
+        List[Dict[str, Any]]: Lista de operações para o ticker especificado.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, date, ticker, operation, quantity, price, fees, usuario_id
+            FROM operacoes 
+            WHERE usuario_id = ? AND ticker = ? 
+            ORDER BY date
+        ''', (usuario_id, ticker))
+        
+        operacoes = []
+        for row in cursor.fetchall():
+            operacao_dict = dict(row)
+            # Standardize 'date' to date object
+            if isinstance(operacao_dict["date"], str):
+                try:
+                    operacao_dict["date"] = datetime.fromisoformat(operacao_dict["date"].split("T")[0]).date()
+                except ValueError: # Handle cases where date might already be YYYY-MM-DD
+                    operacao_dict["date"] = datetime.strptime(operacao_dict["date"], "%Y-%m-%d").date()
+            elif isinstance(operacao_dict["date"], datetime):
+                 operacao_dict["date"] = operacao_dict["date"].date()
+            operacoes.append(operacao_dict)
+        return operacoes

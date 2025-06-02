@@ -41,7 +41,9 @@ from services import (
     gerar_resumo_operacoes_fechadas, # Added for summary
     deletar_todas_operacoes_service, # Added for bulk delete
     atualizar_status_darf_service, # Added for DARF status update
-    remover_item_carteira_service # Added for deleting single portfolio item
+    remover_item_carteira_service, # Added for deleting single portfolio item
+    listar_operacoes_por_ticker_service, # Added for fetching operations by ticker
+    calcular_resultados_por_ticker_service # Added for ticker results
 )
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -415,6 +417,21 @@ async def listar_operacoes(usuario: Dict[str, Any] = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar operações: {str(e)}")
 
+@app.get("/api/operacoes/ticker/{ticker}", response_model=List[Operacao])
+async def listar_operacoes_por_ticker(
+    ticker: str = Path(..., description="Ticker da ação"),
+    usuario: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Lista todas as operações de um usuário para um ticker específico.
+    """
+    try:
+        operacoes = services.listar_operacoes_por_ticker_service(usuario_id=usuario["id"], ticker=ticker)
+        return operacoes
+    except Exception as e:
+        # Log the exception e for detailed debugging
+        raise HTTPException(status_code=500, detail=f"Erro ao listar operações por ticker: {str(e)}")
+
 @app.post("/api/upload", response_model=Dict[str, str])
 async def upload_operacoes(
     file: UploadFile = File(...),
@@ -467,6 +484,21 @@ async def obter_resultados(usuario: Dict = Depends(get_current_user)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao calcular resultados: {str(e)}")
 
+@app.get("/api/resultados/ticker/{ticker}", response_model=ResultadoTicker)
+async def listar_resultados_por_ticker(
+    ticker: str = Path(..., description="Ticker da ação"),
+    usuario: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Lista resultados agregados para um ticker específico para o usuário logado.
+    """
+    try:
+        resultados = services.calcular_resultados_por_ticker_service(usuario_id=usuario["id"], ticker=ticker)
+        return resultados
+    except Exception as e:
+        # Log the exception e for detailed debugging
+        raise HTTPException(status_code=500, detail=f"Erro ao calcular resultados por ticker: {str(e)}")
+
 @app.get("/api/carteira", response_model=List[CarteiraAtual])
 async def obter_carteira(usuario: Dict = Depends(get_current_user)):
     """
@@ -505,7 +537,7 @@ async def atualizar_status_darf(
         # mas uma checagem extra aqui pode fornecer um erro mais imediato se desejado.
         # No entanto, o Path param 'type' não tem validação regex ou enum aqui.
         # A validação no service é suficiente.
-
+        
         # Convert type to lowercase to ensure consistency before calling service
         darf_type_lower = type.lower()
         if darf_type_lower not in ["swing", "daytrade"]:
@@ -517,7 +549,7 @@ async def atualizar_status_darf(
             darf_type=darf_type_lower,
             new_status=status_update.status
         )
-
+        
         # Analisa a mensagem para determinar o código de status HTTP apropriado
         if "não encontrado" in resultado.get("mensagem", "").lower() or \
            "não necessitou alteração" in resultado.get("mensagem", "").lower() : # Check for "no change needed"
@@ -527,7 +559,7 @@ async def atualizar_status_darf(
             # A especificação pedia para levantar HTTPException se não encontrado.
              if "não encontrado" in resultado.get("mensagem", "").lower():
                 raise HTTPException(status_code=404, detail=resultado["mensagem"])
-
+        
         # Se chegou aqui e não é "não encontrado", consideramos sucesso.
         return resultado
     except ValueError as ve: # Captura ValueError do service (e.g., tipo de DARF inválido)
