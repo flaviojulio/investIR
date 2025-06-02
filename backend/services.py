@@ -26,6 +26,29 @@ from database import (
     obter_operacoes_por_ticker_db # Added for fetching operations by ticker
 )
 
+def _calculate_darf_due_date(year_month_str: str) -> date:
+    """
+    Calcula a data de vencimento do DARF para um dado mês/ano de competência.
+    O vencimento é o último dia útil do mês seguinte ao mês de competência.
+    """
+    ano, mes_num = map(int, year_month_str.split('-'))
+    
+    # Calcula o próximo mês e ano
+    prox_mes_ano = ano
+    prox_mes_num = mes_num + 1
+    if prox_mes_num > 12:
+        prox_mes_num = 1
+        prox_mes_ano += 1
+        
+    # Último dia do próximo mês
+    ultimo_dia_prox_mes = calendar.monthrange(prox_mes_ano, prox_mes_num)[1]
+    vencimento = date(prox_mes_ano, prox_mes_num, ultimo_dia_prox_mes)
+    
+    # Ajusta para o último dia útil (retrocede se for sábado ou domingo)
+    while vencimento.weekday() >= 5:  # 5 = Sábado, 6 = Domingo
+        vencimento -= timedelta(days=1)
+    return vencimento
+
 def processar_operacoes(operacoes: List[OperacaoCreate], usuario_id: int) -> None:
     """
     Processa uma lista de operações, salvando-as no banco de dados
@@ -83,8 +106,8 @@ def _calcular_resultado_dia(operacoes_dia: List[Dict[str, Any]], usuario_id: int
     }
     
     resultado_day = {
-        "vendas": 0.0,
-        "custo": 0.0,
+        "vendas_total": 0.0, # Total de vendas (valor - taxas)
+        "custo_total": 0.0,  # Total de compras (valor + taxas)
         "ganho_liquido": 0.0,
         "irrf": 0.0
     }
@@ -105,11 +128,11 @@ def _calcular_resultado_dia(operacoes_dia: List[Dict[str, Any]], usuario_id: int
         if ticker in tickers_day_trade:
             # Day Trade
             if op["operation"] == "buy":
-                resultado_day["custo"] += valor + fees
+                resultado_day["custo_total"] += valor + fees
             else:  # sell
-                resultado_day["vendas"] += valor - fees
-                # IRRF de 1% sobre o valor da venda em day trade
-                resultado_day["irrf"] += valor * 0.01
+                resultado_day["vendas_total"] += valor - fees
+                # IRRF de 1% sobre o valor da venda em day trade (calculado sobre o valor bruto da venda)
+                resultado_day["irrf"] += (op["quantity"] * op["price"]) * 0.01 # IRRF is on gross sale value
         else:
             # Swing Trade
             if op["operation"] == "buy":
@@ -133,7 +156,7 @@ def _calcular_resultado_dia(operacoes_dia: List[Dict[str, Any]], usuario_id: int
                 
     # Calcula os ganhos líquidos
     resultado_swing["ganho_liquido"] = resultado_swing["vendas"] - resultado_swing["custo"]
-    resultado_day["ganho_liquido"] = resultado_day["vendas"] - resultado_day["custo"]
+    resultado_day["ganho_liquido"] = resultado_day["vendas_total"] - resultado_day["custo_total"]
     
     return resultado_swing, resultado_day
 
@@ -260,6 +283,10 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     # Limpa operações fechadas antigas do usuário
     limpar_operacoes_fechadas_usuario(usuario_id=usuario_id)
 
+    # Fetch monthly results to determine tax exemption status for swing trades
+    resultados_mensais_list = obter_resultados_mensais(usuario_id=usuario_id)
+    resultados_mensais_map = {rm['mes']: rm for rm in resultados_mensais_list}
+
     # Obtém todas as operações do usuário
     operacoes = obter_operacoes_para_calculo_fechadas(usuario_id=usuario_id)
     
@@ -337,8 +364,36 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                     op_atual_restante["quantity"] = quantidade_atual
                     vendas_pendentes.append(op_atual_restante)
 
-    # Salva todas as operações fechadas no banco
+    # Salva todas as operações fechadas no banco E adiciona status_ir
     for op_f in operacoes_fechadas_para_salvar:
+        # Determine status_ir
+        data_fechamento_obj = op_f["data_fechamento"]
+        # Ensure data_fechamento_obj is a date object if it's not already (it should be from _criar_operacao_fechada_detalhada)
+        if isinstance(data_fechamento_obj, str): 
+            data_fechamento_obj = datetime.fromisoformat(data_fechamento_obj.split("T")[0]).date()
+        
+        mes_fechamento_str = data_fechamento_obj.strftime("%Y-%m")
+        resultado_do_mes_dict = resultados_mensais_map.get(mes_fechamento_str)
+
+        if op_f["day_trade"]:
+            if op_f["resultado"] > 0:
+                op_f["status_ir"] = "Tributável Day Trade"
+            else:
+                op_f["status_ir"] = "Sem IR/Prejuízo (Day Trade)"
+        else:  # Swing Trade
+            is_exempt_swing = False 
+            if resultado_do_mes_dict and isinstance(resultado_do_mes_dict.get("isento_swing"), bool):
+                is_exempt_swing = resultado_do_mes_dict["isento_swing"]
+            
+            if is_exempt_swing:
+                op_f["status_ir"] = "Isenta Swing"
+            else:  # Not exempt swing trade
+                if op_f["resultado"] > 0:
+                    op_f["status_ir"] = "Tributável Swing"
+                else:
+                    op_f["status_ir"] = "Sem IR/Prejuízo (Swing Trade)"
+        
+        # Salva a operação fechada (que agora inclui status_ir, though salvar_operacao_fechada might not save it yet)
         salvar_operacao_fechada(op_f, usuario_id=usuario_id)
         
     return operacoes_fechadas_para_salvar
@@ -536,131 +591,104 @@ def recalcular_resultados(usuario_id: int) -> None:
         
         # Inicializa os resultados do mês
         resultado_mes_swing = {"vendas": 0.0, "custo": 0.0, "ganho_liquido": 0.0}
-        resultado_mes_day = {"vendas": 0.0, "custo": 0.0, "ganho_liquido": 0.0, "irrf": 0.0}
+        resultado_mes_day = {"vendas_total": 0.0, "custo_total": 0.0, "ganho_liquido": 0.0, "irrf": 0.0} # Updated keys from _calcular_resultado_dia
         
         # Processa cada dia em ordem cronológica
         for dia_str, ops_dia_list in sorted(operacoes_por_dia.items()):
-            # Passa usuario_id para _calcular_resultado_dia
             resultado_dia_swing, resultado_dia_day = _calcular_resultado_dia(ops_dia_list, usuario_id=usuario_id)
             
-            # Acumula os resultados do dia no mês
             resultado_mes_swing["vendas"] += resultado_dia_swing["vendas"]
             resultado_mes_swing["custo"] += resultado_dia_swing["custo"]
             resultado_mes_swing["ganho_liquido"] += resultado_dia_swing["ganho_liquido"]
             
-            resultado_mes_day["vendas"] += resultado_dia_day["vendas"]
-            resultado_mes_day["custo"] += resultado_dia_day["custo"]
-            resultado_mes_day["ganho_liquido"] += resultado_dia_day["ganho_liquido"]
+            resultado_mes_day["vendas_total"] += resultado_dia_day["vendas_total"]
+            resultado_mes_day["custo_total"] += resultado_dia_day["custo_total"]
+            resultado_mes_day["ganho_liquido"] += resultado_dia_day["ganho_liquido"] # ganho_liquido_day is (vendas_total - custo_total)
             resultado_mes_day["irrf"] += resultado_dia_day["irrf"]
         
         # Verifica se o swing trade é isento (vendas mensais até R$ 20.000)
         isento_swing = resultado_mes_swing["vendas"] <= 20000.0
         
-        # Aplica a compensação de prejuízos
-        if prejuizo_acumulado_swing > 0 and resultado_mes_swing["ganho_liquido"] > 0:
-            # Compensa o prejuízo acumulado de swing trade
-            compensacao = min(prejuizo_acumulado_swing, resultado_mes_swing["ganho_liquido"])
-            resultado_mes_swing["ganho_liquido"] -= compensacao
+        # Aplica a compensação de prejuízos (Swing Trade)
+        ganho_liquido_swing_antes_compensacao = resultado_mes_swing["ganho_liquido"]
+        if prejuizo_acumulado_swing > 0 and ganho_liquido_swing_antes_compensacao > 0:
+            compensacao = min(prejuizo_acumulado_swing, ganho_liquido_swing_antes_compensacao)
+            ganho_liquido_swing_apos_compensacao = ganho_liquido_swing_antes_compensacao - compensacao
             prejuizo_acumulado_swing -= compensacao
-        elif resultado_mes_swing["ganho_liquido"] < 0:
-            # Acumula o prejuízo de swing trade
-            prejuizo_acumulado_swing += abs(resultado_mes_swing["ganho_liquido"])
-            resultado_mes_swing["ganho_liquido"] = 0
-        
-        if prejuizo_acumulado_day > 0 and resultado_mes_day["ganho_liquido"] > 0:
-            # Compensa o prejuízo acumulado de day trade
-            compensacao = min(prejuizo_acumulado_day, resultado_mes_day["ganho_liquido"])
-            resultado_mes_day["ganho_liquido"] -= compensacao
-            prejuizo_acumulado_day -= compensacao
-        elif resultado_mes_day["ganho_liquido"] < 0:
-            # Acumula o prejuízo de day trade
-            prejuizo_acumulado_day += abs(resultado_mes_day["ganho_liquido"])
-            resultado_mes_day["ganho_liquido"] = 0
-        
-        # Calcula o IR devido
-        ir_devido_swing = 0.0 if isento_swing else resultado_mes_swing["ganho_liquido"] * 0.15
-        ir_devido_day = max(0, resultado_mes_day["ganho_liquido"] * 0.20)
-        
-        # Calcula o IR a pagar (já descontando o IRRF)
-        # ir_pagar_swing é o valor potencial do DARF de swing trade antes de verificar a regra dos R$10.
-        ir_pagar_swing = max(0, ir_devido_swing - (resultado_mes_swing["vendas"] * 0.00005 if not isento_swing else 0))
-        ir_pagar_day = max(0, ir_devido_day - resultado_mes_day["irrf"])
+        elif ganho_liquido_swing_antes_compensacao < 0:
+            prejuizo_acumulado_swing += abs(ganho_liquido_swing_antes_compensacao)
+            ganho_liquido_swing_apos_compensacao = 0.0
+        else:
+            ganho_liquido_swing_apos_compensacao = ganho_liquido_swing_antes_compensacao
 
-        # Novos campos a serem calculados
-        vendas_day_trade = resultado_mes_day["vendas"]
-        darf_swing_trade_valor_calc = ir_pagar_swing 
-        darf_day_trade_valor_calc = ir_pagar_day
+        # Aplica a compensação de prejuízos (Day Trade)
+        ganho_liquido_day_antes_compensacao = resultado_mes_day["ganho_liquido"]
+        if prejuizo_acumulado_day > 0 and ganho_liquido_day_antes_compensacao > 0:
+            compensacao_day = min(prejuizo_acumulado_day, ganho_liquido_day_antes_compensacao)
+            ganho_liquido_day_apos_compensacao = ganho_liquido_day_antes_compensacao - compensacao_day
+            prejuizo_acumulado_day -= compensacao_day
+        elif ganho_liquido_day_antes_compensacao < 0:
+            prejuizo_acumulado_day += abs(ganho_liquido_day_antes_compensacao)
+            ganho_liquido_day_apos_compensacao = 0.0
+        else:
+            ganho_liquido_day_apos_compensacao = ganho_liquido_day_antes_compensacao
 
-        status_darf_swing_trade_calc = "Pendente" if darf_swing_trade_valor_calc > 10.0 else None
-        status_darf_day_trade_calc = "Pendente" if darf_day_trade_valor_calc > 10.0 else None
-        
-        # Gera o DARF para Day Trade se necessário (valor principal do DARF)
-        darf = None
-        # A regra de > 10 para gerar DARF é aplicada aqui para o darf principal (day trade)
-        if darf_day_trade_valor_calc > 10.0: # Alterado de ir_pagar_day para darf_day_trade_valor_calc
-            # Calcula a data de vencimento (último dia útil do mês seguinte)
-            ano, mes_num_int = map(int, mes_str.split('-')) # mes_str usado aqui
-            
-            # Calcula o próximo mês e ano
-            prox_mes_ano = ano
-            prox_mes_num = mes_num_int + 1
-            if prox_mes_num > 12:
-                prox_mes_num = 1
-                prox_mes_ano += 1
-                
-            ultimo_dia_prox_mes = calendar.monthrange(prox_mes_ano, prox_mes_num)[1]
-            vencimento = date(prox_mes_ano, prox_mes_num, ultimo_dia_prox_mes)
-            
-            # Ajusta para o último dia útil (simplificação: considera apenas finais de semana)
-            while vencimento.weekday() >= 5:  # 5 = sábado, 6 = domingo
-                vencimento -= timedelta(days=1)
-            
-            darf = {
-                "codigo": "6015",
-                "competencia": mes_str, # mes_str usado aqui
-                "valor": darf_day_trade_valor_calc, # Usar o valor calculado para o DARF
-                "vencimento": vencimento
-            }
-        
-        # Salva o resultado mensal
-        resultado = {
-            "mes": mes_str, # mes_str usado aqui
+        # Prepara o dicionário final para salvar no banco
+        resultado_dict: Dict[str, Any] = {
+            "mes": mes_str,
             "vendas_swing": resultado_mes_swing["vendas"],
             "custo_swing": resultado_mes_swing["custo"],
-            "ganho_liquido_swing": resultado_mes_swing["ganho_liquido"],
+            "ganho_liquido_swing": ganho_liquido_swing_apos_compensacao, # Já compensado
             "isento_swing": isento_swing,
-            "ganho_liquido_day": resultado_mes_day["ganho_liquido"],
-            "ir_devido_day": ir_devido_day, # Mantido para informação
-            "irrf_day": resultado_mes_day["irrf"],
-            "ir_pagar_day": ir_pagar_day, # Mantido para informação (é o mesmo que darf_day_trade_valor_calc)
             "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
+
+            "vendas_day_trade": resultado_mes_day["vendas_total"],
+            "custo_day_trade": resultado_mes_day["custo_total"],
+            "ganho_liquido_day": ganho_liquido_day_apos_compensacao, # Já compensado
+            "irrf_day": resultado_mes_day["irrf"],
             "prejuizo_acumulado_day": prejuizo_acumulado_day,
             
-            # Novos campos adicionados
-            "vendas_day_trade": vendas_day_trade,
-            "darf_swing_trade_valor": darf_swing_trade_valor_calc,
-            "darf_day_trade_valor": darf_day_trade_valor_calc,
-            "status_darf_swing_trade": status_darf_swing_trade_calc,
-            "status_darf_day_trade": status_darf_day_trade_calc
+            # Defaults for DARF fields
+            "darf_codigo_swing": None, "darf_competencia_swing": None, "darf_valor_swing": None, "darf_vencimento_swing": None, "status_darf_swing_trade": None,
+            "darf_codigo_day": None, "darf_competencia_day": None, "darf_valor_day": None, "darf_vencimento_day": None, "status_darf_day_trade": None,
         }
-        
-        if darf: # Se um DARF de day trade foi gerado (valor > R$10)
-            resultado.update({
-                "darf_codigo": darf["codigo"],
-                "darf_competencia": darf["competencia"],
-                "darf_valor": darf["valor"], # Este é o valor do DARF de day trade
-                "darf_vencimento": darf["vencimento"]
-            })
-        else: # Garante que os campos do DARF principal fiquem nulos se não houver DARF de day trade > R$10
-            resultado.update({
-                "darf_codigo": None,
-                "darf_competencia": None,
-                "darf_valor": None, # Changed to None to match Optional[float] = None in the model
-                "darf_vencimento": None
-            })
 
-        # Salva o resultado mensal no banco de dados
-        salvar_resultado_mensal(resultado, usuario_id=usuario_id)
+        # Swing Trade IR calculations
+        current_ir_devido_swing = 0.0
+        if not isento_swing and resultado_dict["ganho_liquido_swing"] > 0:
+            current_ir_devido_swing = resultado_dict["ganho_liquido_swing"] * 0.15
+        
+        # Simplificando ir_pagar_swing = current_ir_devido_swing (desconsiderando IRRF de 0,005% em swing, que não é comum reter para DARF)
+        current_ir_pagar_swing = max(0.0, current_ir_devido_swing) 
+        
+        resultado_dict["ir_devido_swing"] = current_ir_devido_swing
+        resultado_dict["ir_pagar_swing"] = current_ir_pagar_swing
+
+        if current_ir_pagar_swing >= 10.0:
+            resultado_dict["darf_valor_swing"] = current_ir_pagar_swing
+            resultado_dict["darf_codigo_swing"] = "6015" # Código genérico, pode ser diferente para swing
+            resultado_dict["darf_competencia_swing"] = mes_str
+            resultado_dict["darf_vencimento_swing"] = _calculate_darf_due_date(mes_str)
+            resultado_dict["status_darf_swing_trade"] = "Pendente"
+        
+        # Day Trade IR calculations
+        current_ir_devido_day = 0.0
+        if resultado_dict["ganho_liquido_day"] > 0:
+             current_ir_devido_day = resultado_dict["ganho_liquido_day"] * 0.20
+        
+        current_ir_pagar_day = max(0.0, current_ir_devido_day - resultado_dict["irrf_day"])
+
+        resultado_dict["ir_devido_day"] = current_ir_devido_day
+        resultado_dict["ir_pagar_day"] = current_ir_pagar_day
+
+        if current_ir_pagar_day >= 10.0:
+            resultado_dict["darf_valor_day"] = current_ir_pagar_day
+            resultado_dict["darf_codigo_day"] = "6015"
+            resultado_dict["darf_competencia_day"] = mes_str
+            resultado_dict["darf_vencimento_day"] = _calculate_darf_due_date(mes_str)
+            resultado_dict["status_darf_day_trade"] = "Pendente"
+            
+        salvar_resultado_mensal(resultado_dict, usuario_id=usuario_id)
 
 def listar_operacoes_service(usuario_id: int) -> List[Dict[str, Any]]:
     """

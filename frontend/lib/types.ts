@@ -44,3 +44,30 @@ export interface ResultadoTicker {
   operacoes_compra_total_quantidade: number;
   operacoes_venda_total_quantidade: number;
 }
+
+// Added OperacaoDetalhe and OperacaoFechada
+export interface OperacaoDetalhe {
+  id?: number; 
+  date: string;
+  operation: 'buy' | 'sell';
+  quantity: number;
+  price: number;
+  fees: number;
+  valor_total: number;
+}
+
+export interface OperacaoFechada {
+  ticker: string;
+  data_abertura: string; 
+  data_fechamento: string; 
+  tipo: string; 
+  quantidade: number;
+  valor_compra: number; 
+  valor_venda: number;  
+  taxas_total: number;
+  resultado: number;
+  percentual_lucro?: number; 
+  operacoes_relacionadas: OperacaoDetalhe[]; 
+  day_trade: boolean;
+  status_ir?: string; 
+}
