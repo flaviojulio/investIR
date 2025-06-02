@@ -191,10 +191,11 @@ class OperacaoFechada(BaseModel):
     data_fechamento: date
     tipo: str  # "compra-venda" ou "venda-compra" (venda a descoberto)
     quantidade: int
-    preco_abertura: float
-    preco_fechamento: float
+    valor_compra: float     # Changed from preco_abertura
+    valor_venda: float      # Changed from preco_fechamento
     taxas_total: float
     resultado: float  # Lucro ou prejuízo
+    percentual_lucro: float # Ensured this field is present
     operacoes_relacionadas: List[OperacaoDetalhe]
     day_trade: bool  # Indica se é day trade
     status_ir: Optional[str] = None # e.g., "Isenta Swing", "Tributável Swing", "Tributável Day Trade"
