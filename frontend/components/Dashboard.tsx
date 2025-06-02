@@ -13,13 +13,15 @@ import { UploadOperations } from "@/components/UploadOperations"
 import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"
 import { TaxResults } from "@/components/TaxResults"
+import { OperacoesEncerradasTable } from "@/components/OperacoesEncerradasTable"; // Import new component
 import { useToast } from "@/hooks/use-toast"
-import type { Operacao, CarteiraItem, ResultadoMensal } from "@/lib/types"
+import type { Operacao, CarteiraItem, ResultadoMensal, OperacaoFechada } from "@/lib/types" // Add OperacaoFechada
 
 interface DashboardData {
   carteira: CarteiraItem[]
   resultados: ResultadoMensal[]
   operacoes: Operacao[]
+  operacoes_fechadas: OperacaoFechada[]; // Add new data field
 }
 
 export function Dashboard() {
@@ -29,6 +31,7 @@ export function Dashboard() {
     carteira: [],
     resultados: [],
     operacoes: [],
+    operacoes_fechadas: [], // Initialize new data field
   })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("overview")
@@ -40,16 +43,18 @@ export function Dashboard() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true)
-      const [carteiraRes, resultadosRes, operacoesRes] = await Promise.all([
+      const [carteiraRes, resultadosRes, operacoesRes, operacoesFechadasRes] = await Promise.all([
         api.get("/carteira"),
         api.get("/resultados"),
         api.get("/operacoes"),
+        api.get("/operacoes/fechadas"), // Fetch closed operations
       ])
 
       setData({
         carteira: carteiraRes.data,
         resultados: resultadosRes.data,
         operacoes: operacoesRes.data,
+        operacoes_fechadas: operacoesFechadasRes.data, // Set closed operations data
       })
     } catch (error) {
       toast({
@@ -111,6 +116,11 @@ export function Dashboard() {
             <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} />
             <TaxMeter resultados={data.resultados} />
             <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
+            <OperacoesEncerradasTable 
+              operacoesFechadas={data.operacoes_fechadas} 
+              resultadosMensais={data.resultados}
+              onUpdateDashboard={handleDataUpdate} 
+            />
           </TabsContent>
 
           <TabsContent value="operations">

@@ -77,17 +77,47 @@ def criar_tabelas():
         if 'usuario_id' not in colunas:
             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN usuario_id INTEGER DEFAULT NULL')
 
-        # Verificar e adicionar novas colunas para resultados_mensais (adicionado em subtasks posteriores)
-        if 'vendas_day_trade' not in colunas:
+        # Ensure all columns from the new ResultadoMensal model exist
+        if 'custo_day_trade' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN custo_day_trade REAL DEFAULT 0.0')
+        if 'ir_devido_swing' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN ir_devido_swing REAL DEFAULT 0.0')
+        if 'ir_pagar_swing' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN ir_pagar_swing REAL DEFAULT 0.0')
+        
+        if 'darf_codigo_swing' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_codigo_swing TEXT DEFAULT NULL')
+        if 'darf_competencia_swing' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_competencia_swing TEXT DEFAULT NULL')
+        if 'darf_valor_swing' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_valor_swing REAL DEFAULT NULL')
+        if 'darf_vencimento_swing' not in colunas:
+            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_vencimento_swing TEXT DEFAULT NULL')
+        
+        # Rename old generic DARF columns to _day versions if they exist and new ones don't
+        # This is a simplified migration. A robust migration would check SQLite version for RENAME COLUMN support.
+        # For now, we'll add new _day columns and new code will use them.
+        # Old columns (darf_codigo, darf_competencia, darf_valor, darf_vencimento) will become unused.
+        if 'darf_codigo_day' not in colunas:
+             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_codigo_day TEXT DEFAULT NULL')
+        if 'darf_competencia_day' not in colunas:
+             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_competencia_day TEXT DEFAULT NULL')
+        if 'darf_valor_day' not in colunas:
+             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_valor_day REAL DEFAULT NULL')
+        if 'darf_vencimento_day' not in colunas:
+             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_vencimento_day TEXT DEFAULT NULL')
+
+        # These were added in previous steps, ensure checks remain if they are part of the new model
+        if 'vendas_day_trade' not in colunas: # Kept in new model
             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN vendas_day_trade REAL DEFAULT 0.0')
-        if 'darf_swing_trade_valor' not in colunas:
-            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_swing_trade_valor REAL DEFAULT 0.0')
-        if 'darf_day_trade_valor' not in colunas:
-            cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN darf_day_trade_valor REAL DEFAULT 0.0')
-        if 'status_darf_swing_trade' not in colunas:
+        if 'status_darf_swing_trade' not in colunas: # Kept in new model
             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN status_darf_swing_trade TEXT DEFAULT NULL')
-        if 'status_darf_day_trade' not in colunas:
+        if 'status_darf_day_trade' not in colunas: # Kept in new model
             cursor.execute('ALTER TABLE resultados_mensais ADD COLUMN status_darf_day_trade TEXT DEFAULT NULL')
+
+        # Columns 'darf_swing_trade_valor' and 'darf_day_trade_valor' are now redundant.
+        # We won't remove them here to avoid breaking existing dbs without a full migration,
+        # but new logic in salvar_resultado_mensal will not use them.
         
         # Tabela de carteira atual
         cursor.execute('''
@@ -434,74 +464,66 @@ def salvar_resultado_mensal(resultado: Dict[str, Any], usuario_id: int) -> int:
             # Se já existe, atualiza
             cursor.execute('''
             UPDATE resultados_mensais
-            SET vendas_swing = ?, custo_swing = ?, ganho_liquido_swing = ?,
-                isento_swing = ?, ganho_liquido_day = ?, ir_devido_day = ?,
-                irrf_day = ?, ir_pagar_day = ?, prejuizo_acumulado_swing = ?,
-                prejuizo_acumulado_day = ?, darf_codigo = ?, darf_competencia = ?,
-                darf_valor = ?, darf_vencimento = ?,
-                vendas_day_trade = ?, darf_swing_trade_valor = ?, darf_day_trade_valor = ?,
-                status_darf_swing_trade = ?, status_darf_day_trade = ?
-            WHERE mes = ? AND usuario_id = ?
+            SET mes = ?, 
+                vendas_swing = ?, custo_swing = ?, ganho_liquido_swing = ?, isento_swing = ?,
+                ir_devido_swing = ?, ir_pagar_swing = ?, darf_codigo_swing = ?, darf_competencia_swing = ?,
+                darf_valor_swing = ?, darf_vencimento_swing = ?, status_darf_swing_trade = ?,
+                vendas_day_trade = ?, custo_day_trade = ?, ganho_liquido_day = ?, ir_devido_day = ?,
+                irrf_day = ?, ir_pagar_day = ?, darf_codigo_day = ?, darf_competencia_day = ?,
+                darf_valor_day = ?, darf_vencimento_day = ?, status_darf_day_trade = ?,
+                prejuizo_acumulado_swing = ?, prejuizo_acumulado_day = ?
+            WHERE id = ? AND usuario_id = ? 
             ''', (
-                resultado["vendas_swing"],
-                resultado["custo_swing"],
-                resultado["ganho_liquido_swing"],
-                1 if resultado["isento_swing"] else 0,
-                resultado["ganho_liquido_day"],
-                resultado["ir_devido_day"],
-                resultado["irrf_day"],
-                resultado["ir_pagar_day"],
-                resultado["prejuizo_acumulado_swing"],
-                resultado["prejuizo_acumulado_day"],
-                resultado.get("darf_codigo"),
-                resultado.get("darf_competencia"),
-                resultado.get("darf_valor"),
-                darf_vencimento_iso,
-                resultado.get("vendas_day_trade", 0.0), # Add new fields
-                resultado.get("darf_swing_trade_valor", 0.0),
-                resultado.get("darf_day_trade_valor", 0.0),
+                resultado["mes"], 
+                resultado["vendas_swing"], resultado["custo_swing"], resultado["ganho_liquido_swing"],
+                1 if resultado["isento_swing"] else 0, 
+                resultado["ir_devido_swing"], resultado["ir_pagar_swing"],
+                resultado.get("darf_codigo_swing"), resultado.get("darf_competencia_swing"),
+                resultado.get("darf_valor_swing"), 
+                resultado.get("darf_vencimento_swing").isoformat() if resultado.get("darf_vencimento_swing") else None,
                 resultado.get("status_darf_swing_trade"),
+                resultado["vendas_day_trade"], resultado["custo_day_trade"], resultado["ganho_liquido_day"],
+                resultado["ir_devido_day"], resultado["irrf_day"], resultado["ir_pagar_day"],
+                resultado.get("darf_codigo_day"), resultado.get("darf_competencia_day"),
+                resultado.get("darf_valor_day"),
+                resultado.get("darf_vencimento_day").isoformat() if resultado.get("darf_vencimento_day") else None,
                 resultado.get("status_darf_day_trade"),
-                resultado["mes"],
+                resultado["prejuizo_acumulado_swing"], resultado["prejuizo_acumulado_day"],
+                existente["id"], 
                 usuario_id
             ))
             conn.commit()
             return existente["id"]
         else:
             # Se não existe, insere
+            # Note: The old generic darf_codigo, darf_competencia, darf_valor, darf_vencimento columns are omitted here
+            # as they are replaced by specific _swing and _day versions in the new model.
+            # Also, darf_swing_trade_valor and darf_day_trade_valor are omitted as they are redundant.
             cursor.execute('''
             INSERT INTO resultados_mensais (
-                mes, vendas_swing, custo_swing, ganho_liquido_swing,
-                isento_swing, ganho_liquido_day, ir_devido_day,
-                irrf_day, ir_pagar_day, prejuizo_acumulado_swing,
-                prejuizo_acumulado_day, darf_codigo, darf_competencia,
-                darf_valor, darf_vencimento, usuario_id,
-                vendas_day_trade, darf_swing_trade_valor, darf_day_trade_valor,
-                status_darf_swing_trade, status_darf_day_trade
+                mes, vendas_swing, custo_swing, ganho_liquido_swing, isento_swing,
+                ir_devido_swing, ir_pagar_swing, darf_codigo_swing, darf_competencia_swing,
+                darf_valor_swing, darf_vencimento_swing, status_darf_swing_trade,
+                vendas_day_trade, custo_day_trade, ganho_liquido_day, ir_devido_day,
+                irrf_day, ir_pagar_day, darf_codigo_day, darf_competencia_day,
+                darf_valor_day, darf_vencimento_day, status_darf_day_trade,
+                prejuizo_acumulado_swing, prejuizo_acumulado_day, usuario_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                resultado["mes"],
-                resultado["vendas_swing"],
-                resultado["custo_swing"],
-                resultado["ganho_liquido_swing"],
-                1 if resultado["isento_swing"] else 0,
-                resultado["ganho_liquido_day"],
-                resultado["ir_devido_day"],
-                resultado["irrf_day"],
-                resultado["ir_pagar_day"],
-                resultado["prejuizo_acumulado_swing"],
-                resultado["prejuizo_acumulado_day"],
-                resultado.get("darf_codigo"),
-                resultado.get("darf_competencia"),
-                resultado.get("darf_valor"),
-                darf_vencimento_iso,
-                usuario_id,
-                resultado.get("vendas_day_trade", 0.0), # Add new fields
-                resultado.get("darf_swing_trade_valor", 0.0),
-                resultado.get("darf_day_trade_valor", 0.0),
+                resultado["mes"], resultado["vendas_swing"], resultado["custo_swing"], resultado["ganho_liquido_swing"],
+                1 if resultado["isento_swing"] else 0, resultado["ir_devido_swing"], resultado["ir_pagar_swing"],
+                resultado.get("darf_codigo_swing"), resultado.get("darf_competencia_swing"),
+                resultado.get("darf_valor_swing"),
+                resultado.get("darf_vencimento_swing").isoformat() if resultado.get("darf_vencimento_swing") else None,
                 resultado.get("status_darf_swing_trade"),
-                resultado.get("status_darf_day_trade")
+                resultado["vendas_day_trade"], resultado["custo_day_trade"], resultado["ganho_liquido_day"],
+                resultado["ir_devido_day"], resultado["irrf_day"], resultado["ir_pagar_day"],
+                resultado.get("darf_codigo_day"), resultado.get("darf_competencia_day"),
+                resultado.get("darf_valor_day"),
+                resultado.get("darf_vencimento_day").isoformat() if resultado.get("darf_vencimento_day") else None,
+                resultado.get("status_darf_day_trade"),
+                resultado["prejuizo_acumulado_swing"], resultado["prejuizo_acumulado_day"], usuario_id
             ))
             
             conn.commit()
