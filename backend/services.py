@@ -376,6 +376,30 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
     else:
         raise ValueError(f"Tipo de fechamento desconhecido: {tipo_fechamento}")
 
+    # Cálculo do percentual de lucro/prejuízo
+    custo_para_calculo_percentual = 0.0
+    if op_abertura["operation"] == "buy": # Abertura foi uma compra
+        custo_para_calculo_percentual = (op_abertura["price"] * quantidade_fechada) + taxas_proporcionais_abertura
+    elif op_abertura["operation"] == "sell": # Abertura foi uma venda (short sale)
+        # Base é o valor recebido na venda, líquido de taxas da venda.
+        # O resultado_liquido já considera o lucro/prejuízo.
+        # A base para o percentual deve ser o "investimento" ou "risco" inicial.
+        # Para short sale, o "investimento" é o valor que se espera recomprar, mas o ganho é sobre o valor vendido.
+        # Se vendi por 100 (líquido de taxas) e recomprei por 80, lucro de 20. Percentual é 20/100 = 20%.
+        # Se vendi por 100 e recomprei por 120, prejuízo de 20. Percentual é -20/100 = -20%.
+        custo_para_calculo_percentual = (op_abertura["price"] * quantidade_fechada) - taxas_proporcionais_abertura
+        
+    percentual_lucro = 0.0
+    base_para_percentual_abs = abs(custo_para_calculo_percentual)
+    if base_para_percentual_abs != 0:
+        percentual_lucro = (resultado_liquido / base_para_percentual_abs) * 100.0
+    else:
+        if resultado_liquido > 0:
+            percentual_lucro = 100.0 
+        elif resultado_liquido < 0:
+            percentual_lucro = -100.0
+        # Se resultado_liquido for 0 e base também, percentual_lucro permanece 0.0
+
     operacoes_relacionadas = [
         {
             "id": op_abertura.get("id"),
@@ -403,10 +427,11 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
         "data_fechamento": data_fec,
         "tipo": tipo_operacao_fechada,
         "quantidade": quantidade_fechada,
-        "valor_compra": preco_unitario_abertura,    # Changed key
-        "valor_venda": preco_unitario_fechamento,  # Changed key
+        "valor_compra": preco_unitario_abertura,
+        "valor_venda": preco_unitario_fechamento,
         "taxas_total": taxas_proporcionais_abertura + taxas_proporcionais_fechamento,
         "resultado": resultado_liquido,
+        "percentual_lucro": percentual_lucro, # Added this key
         "operacoes_relacionadas": operacoes_relacionadas,
         "day_trade": op_abertura["date"] == op_fechamento["date"]
     }
