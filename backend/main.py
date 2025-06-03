@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 from typing import List, Dict, Any
 import uvicorn
+import logging # Added logging import
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
 
@@ -419,13 +420,14 @@ async def deletar_funcao_existente(
 
 # Endpoints de operações com autenticação
 @app.get("/api/operacoes", response_model=List[Operacao])
-async def listar_operacoes(usuario: Dict[str, Any] = Depends(get_current_user)): # Type hint improved
+async def listar_operacoes(usuario: UsuarioResponse = Depends(get_current_user)):
     try:
-        # Use the new service function
-        operacoes = listar_operacoes_service(usuario_id=usuario["id"])
+        operacoes = listar_operacoes_service(usuario_id=usuario.id)
         return operacoes
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao listar operações: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown"
+        logging.error(f"Error in /api/operacoes for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes. Check logs.")
 
 @app.get("/api/operacoes/ticker/{ticker}", response_model=List[Operacao])
 async def listar_operacoes_por_ticker(
@@ -484,15 +486,17 @@ async def upload_operacoes(
         raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
 
 @app.get("/api/resultados", response_model=List[ResultadoMensal])
-async def obter_resultados(usuario: Dict = Depends(get_current_user)):
+async def obter_resultados(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna os resultados mensais de apuração de imposto de renda.
     """
     try:
-        resultados = calcular_resultados_mensais(usuario_id=usuario["id"])
+        resultados = calcular_resultados_mensais(usuario_id=usuario.id)
         return resultados
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao calcular resultados: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown"
+        logging.error(f"Error in /api/resultados for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/resultados. Check logs.")
 
 @app.get("/api/resultados/ticker/{ticker}", response_model=ResultadoTicker)
 async def listar_resultados_por_ticker(
@@ -510,18 +514,20 @@ async def listar_resultados_por_ticker(
         raise HTTPException(status_code=500, detail=f"Erro ao calcular resultados por ticker: {str(e)}")
 
 @app.get("/api/carteira", response_model=List[CarteiraAtual])
-async def obter_carteira(usuario: Dict = Depends(get_current_user)):
+async def obter_carteira(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna a carteira atual de ações.
     """
     try:
-        carteira = calcular_carteira_atual(usuario_id=usuario["id"])
+        carteira = calcular_carteira_atual(usuario_id=usuario.id)
         return carteira
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao calcular carteira: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown"
+        logging.error(f"Error in /api/carteira for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/carteira. Check logs.")
 
 @app.get("/api/darfs", response_model=List[DARF])
-async def obter_darfs(usuario: Dict = Depends(get_current_user)):
+async def obter_darfs(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna os DARFs gerados para pagamento de imposto de renda.
     """
@@ -654,19 +660,21 @@ async def deletar_item_carteira(
         raise HTTPException(status_code=500, detail=f"Erro ao remover ação da carteira: {str(e)}")
 
 @app.get("/api/operacoes/fechadas", response_model=List[OperacaoFechada])
-async def obter_operacoes_fechadas(usuario: Dict = Depends(get_current_user)):
+async def obter_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna as operações fechadas (compra seguida de venda ou vice-versa).
     Inclui detalhes como data de abertura e fechamento, preços, quantidade e resultado.
     """
     try:
-        operacoes_fechadas = calcular_operacoes_fechadas(usuario_id=usuario["id"])
+        operacoes_fechadas = calcular_operacoes_fechadas(usuario_id=usuario.id)
         return operacoes_fechadas
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao calcular operações fechadas: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown"
+        logging.error(f"Error in /api/operacoes/fechadas for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes/fechadas. Check logs.")
 
 @app.get("/api/operacoes/fechadas/resumo", response_model=Dict[str, Any])
-async def obter_resumo_operacoes_fechadas(usuario: Dict = Depends(get_current_user)):
+async def obter_resumo_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna um resumo das operações fechadas, incluindo:
     - Total de operações fechadas
