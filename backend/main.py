@@ -50,6 +50,9 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import auth # Keep this for other auth functions
 # auth.get_db removed from here
 
+# Import the new router
+from routers import analysis_router
+
 # Inicialização do banco de dados
 criar_tabelas() # Creates non-auth tables
 auth.inicializar_autenticacao() # Initializes authentication system (creates auth tables, modifies others, adds admin)
@@ -68,6 +71,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include the analysis router
+app.include_router(analysis_router.router, prefix="/api") # Assuming all API routes are prefixed with /api
 
 # Configuração do OAuth2
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")

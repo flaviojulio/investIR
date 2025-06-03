@@ -10,6 +10,7 @@ import { LogOut, TrendingUp, PlusCircle, UploadCloud } from "lucide-react"
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import { TaxMeter } from "@/components/TaxMeter"
+import { PortfolioEquityChart } from "@/components/PortfolioEquityChart" // Import the new chart
 import { UploadOperations } from "@/components/UploadOperations"
 import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"
@@ -145,7 +146,10 @@ export function Dashboard() {
 
           <TabsContent value="overview" className="space-y-6">
             <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} />
-            <TaxMeter resultados={data.resultados} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <PortfolioEquityChart />
+              <TaxMeter resultados={data.resultados} />
+            </div>
             <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
             <OperacoesEncerradasTable 
               operacoesFechadas={data.operacoes_fechadas} 
