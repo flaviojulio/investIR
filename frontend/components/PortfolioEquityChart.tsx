@@ -60,7 +60,7 @@ export function PortfolioEquityChart() {
     switch (period) {
       case "6m":
         startDate = subMonths(today, 6)
-        frequency = "daily" 
+        frequency = "daily"
         break
       case "12m":
         startDate = subMonths(today, 12)
@@ -83,10 +83,10 @@ export function PortfolioEquityChart() {
       default:
         startDate = subMonths(today, 12)
     }
-    return { 
-      startDate: format(startDate, "yyyy-MM-dd"), 
+    return {
+      startDate: format(startDate, "yyyy-MM-dd"),
       endDate: format(today, "yyyy-MM-dd"),
-      frequency 
+      frequency
     }
   }
 
@@ -94,13 +94,13 @@ export function PortfolioEquityChart() {
     const fetchData = async () => {
       setIsLoading(true)
       setError(null)
-      
+
       const { startDate, endDate, frequency } = calculateDates(selectedPeriod)
 
       try {
         // Use the actual API function
         const response = await getPortfolioEquityHistory(startDate, endDate, frequency)
-        
+
         // The API returns dates as "YYYY-MM-DD" or "YYYY-MM".
         // XAxis tickFormatter will handle display formatting.
         setChartData(response.equity_curve)
@@ -121,7 +121,7 @@ export function PortfolioEquityChart() {
     fetchData()
   }, [selectedPeriod])
 
-  const formatCurrency = (value: number) => 
+  const formatCurrency = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
   const formatDateTick = (tickItem: string) => {
@@ -162,27 +162,27 @@ export function PortfolioEquityChart() {
               <ChartContainer config={chartConfig} className="h-full w-full">
                 <BarChart data={chartData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="date" 
+                  <XAxis
+                    dataKey="date"
                     tickFormatter={formatDateTick}
                     axisLine={false}
                     tickLine={false}
                   />
-                  <YAxis 
+                  <YAxis
                     tickFormatter={(value) => formatCurrency(value)}
                     axisLine={false}
                     tickLine={false}
-                    width={80} 
+                    width={80}
                   />
                   <Tooltip
-                    content={<ChartTooltipContent 
+                    content={<ChartTooltipContent
                                 formatter={(value, name, props) => {
                                    if (typeof value === 'number') {
                                      return [formatCurrency(value), chartConfig.portfolioValue.label];
                                    }
                                    return [String(value), name];
                                 }}
-                                labelFormatter={(label) => format(parseISO(label), 'dd/MM/yyyy HH:mm')} 
+                                labelFormatter={(label) => format(parseISO(label), 'dd/MM/yyyy HH:mm')}
                              />}
                   />
                   <Bar dataKey="value" fill="var(--color-portfolioValue)" radius={4} name="Valor da Carteira" />
@@ -192,17 +192,17 @@ export function PortfolioEquityChart() {
             {profitability && (
               <div className="mt-4 text-center">
                 <p className="text-lg font-semibold">
-                  Rentabilidade no Período: 
+                  Rentabilidade no Período:
                   <span className={profitability.absolute >= 0 ? "text-green-600" : "text-red-600"}>
                     {` ${formatCurrency(profitability.absolute)} (${profitability.percentage.toFixed(2)}%)`}
                   </span>
                 </p>
                 <div className="text-sm text-muted-foreground mt-1">
-                  <span>Valor Inicial: {formatCurrency(profitability.initial_portfolio_value)}</span> | 
+                  <span>Valor Inicial: {formatCurrency(profitability.initial_portfolio_value)}</span> |
                   <span> Valor Final: {formatCurrency(profitability.final_portfolio_value)}</span>
                 </div>
                  <div className="text-sm text-muted-foreground">
-                  <span>Investido: {formatCurrency(profitability.cash_invested_in_period)}</span> | 
+                  <span>Investido: {formatCurrency(profitability.cash_invested_in_period)}</span> |
                   <span> Retornado (Vendas): {formatCurrency(profitability.cash_returned_in_period)}</span> |
                   <span> Aporte Líquido: {formatCurrency(profitability.net_investment_change)}</span>
                 </div>

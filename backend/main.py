@@ -110,14 +110,14 @@ app.include_router(analysis_router.router, prefix="/api") # Assuming all API rou
 #     except Exception as e: # Capture and potentially log the original exception
 #         # Log the exception e for debugging (e.g., import logging; logging.exception("Unexpected error"))
 #         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
 #             detail={"message": f"Erro inesperado durante a verificação do token: {str(e)}", "error_code": "UNEXPECTED_TOKEN_VERIFICATION_ERROR"},
 #         )
 
 #     sub_str = payload.get("sub")
-#     if not sub_str: 
+#     if not sub_str:
 #         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED, 
+#             status_code=status.HTTP_401_UNAUTHORIZED,
 #             detail={"message": "Token inválido: ID de usuário (sub) ausente no payload.", "error_code": "TOKEN_PAYLOAD_MISSING_SUB"},
 #             headers={"WWW-Authenticate": "Bearer"},
 #         )
@@ -125,13 +125,13 @@ app.include_router(analysis_router.router, prefix="/api") # Assuming all API rou
 #         usuario_id = int(sub_str) # Converte para int
 #     except ValueError:
 #         raise HTTPException(
-#             status_code=status.HTTP_401_UNAUTHORIZED, 
+#             status_code=status.HTTP_401_UNAUTHORIZED,
 #             detail={"message": "Token inválido: ID de usuário (sub) não é um inteiro válido.", "error_code": "TOKEN_PAYLOAD_INVALID_SUB_FORMAT"},
 #             headers={"WWW-Authenticate": "Bearer"},
 #         )
 
 #     # Agora usuario_id é um int e pode ser usado para chamar auth.obter_usuario
-#     usuario_data = auth.obter_usuario(usuario_id) 
+#     usuario_data = auth.obter_usuario(usuario_id)
 #     if not usuario_data:
 #         raise HTTPException(
 #             status_code=status.HTTP_401_UNAUTHORIZED, # Ou status.HTTP_404_NOT_FOUND

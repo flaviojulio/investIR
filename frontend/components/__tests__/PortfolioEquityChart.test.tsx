@@ -52,12 +52,12 @@ describe('PortfolioEquityChart', () => {
       // Period buttons
       expect(screen.getByRole('button', { name: /12M/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /6M/i })).toBeInTheDocument();
-      
+
       // Check for chart elements (presence of SVG is a good indicator)
       // Note: specific Recharts class names might be brittle
       expect(screen.getByRole('graphics-document')).toBeInTheDocument(); // Generic role for SVG/chart container
     });
-    
+
     // Check profitability figures (example)
     // Formatting needs to be considered, this checks for parts of the string
     expect(await screen.findByText(/Rentabilidade no Período:/i)).toBeInTheDocument();
@@ -74,11 +74,11 @@ describe('PortfolioEquityChart', () => {
   test('2. Period Selection Change (e.g., to 6M)', async () => {
     const initialMockData = mockApiResponse([mockEquityDataPoint('2023-01-01', 10000)]);
     const sixMonthsMockData = mockApiResponse([mockEquityDataPoint('2023-07-01', 10500)]);
-    
+
     mockGetPortfolioEquityHistory.mockResolvedValueOnce(initialMockData); // For initial 12M load
-    
+
     render(<PortfolioEquityChart />);
-    
+
     // Wait for initial load to complete
     await waitFor(() => expect(mockGetPortfolioEquityHistory).toHaveBeenCalledTimes(1));
 
@@ -112,7 +112,7 @@ describe('PortfolioEquityChart', () => {
     );
 
     render(<PortfolioEquityChart />);
-    
+
     expect(screen.getByText(/Carregando dados.../i)).toBeInTheDocument();
     await waitFor(() => {
       // After loading, the "no data" message might appear if mock is empty, or chart if data
@@ -130,7 +130,7 @@ describe('PortfolioEquityChart', () => {
       expect(screen.getByText(`Erro: ${errorMessage}`)).toBeInTheDocument();
     });
   });
-  
+
   test('5. No Data State Display', async () => {
     const noDataResponse = mockApiResponse([]); // Empty equity curve
     mockGetPortfolioEquityHistory.mockResolvedValue(noDataResponse);

@@ -21,19 +21,19 @@ class TestPortfolioAnalysisService(unittest.TestCase):
         # For simplicity, our mock data_dict should already be in range for tests.
         dates = pd.to_datetime(list(data_dict.keys()))
         closes = list(data_dict.values())
-        
+
         df = pd.DataFrame({'Close': closes}, index=pd.Index(dates, name="Date"))
-        
+
         # yfinance history filtering behavior (approximated)
         start_dt = pd.to_datetime(start_date_str)
         end_dt = pd.to_datetime(end_date_str)
-        
+
         # yfinance includes start_date, and for end_date it's typically up to the beginning of end_date.
         # However, when start=end, it often gives data for that single day.
         # For multi-day range, it's [start, end).
         # Let's assume our mock will be precise for the dates we want.
         # This mock will just return data for dates explicitly in data_dict that fall in range.
-        
+
         filtered_df = df[(df.index >= start_dt) & (df.index < end_dt)]
         # If start_date_str == end_date_str, yfinance usually returns data for that specific day if available.
         if start_date_str == end_date_str and not filtered_df.empty: # this condition is tricky with < end_dt
@@ -52,7 +52,7 @@ class TestPortfolioAnalysisService(unittest.TestCase):
                  return pd.DataFrame({'Close': []}, index=pd.to_datetime([]))
 
 
-        return df[(df.index >= pd.to_datetime(start_date_str)) & 
+        return df[(df.index >= pd.to_datetime(start_date_str)) &
                     (df.index <= pd.to_datetime(end_date_str))]
 
 
@@ -60,7 +60,7 @@ class TestPortfolioAnalysisService(unittest.TestCase):
     def test_get_historical_prices_success(self, mock_yfinance_ticker):
         mock_ticker_instance = MagicMock()
         mock_yfinance_ticker.return_value = mock_ticker_instance
-        
+
         mock_data = {
             '2023-01-01': 150.0,
             '2023-01-02': 152.5,
@@ -135,7 +135,7 @@ class TestPortfolioAnalysisService(unittest.TestCase):
         # Test case 5: Empty operations list
         holdings5 = get_holdings_on_date([], '2023-01-15')
         self.assertEqual(holdings5, {})
-        
+
         # Test case 6: Operations as raw dicts (service should handle parsing)
         raw_ops = [
             {'ticker': 'GOOG', 'date': '2023-02-01', 'operation_type': 'buy', 'quantity': 20, 'price': 100, 'fees': 10},
@@ -172,12 +172,12 @@ class TestPortfolioAnalysisService(unittest.TestCase):
                 # This simplified mock returns all prices and lets the main function pick.
                 return {k: v for k, v in all_prices_aapl.items() if start_str <= k <= end_str}
             return {}
-        
+
         mock_get_historical_prices.side_effect = mock_price_fetcher
 
         # Test daily frequency for a very short period
         history_daily = calculate_portfolio_history(operations_data, '2023-01-01', '2023-01-02', 'daily')
-        
+
         # Expected Equity Curve (Daily)
         # Jan 1: 10 shares AAPL @ 150 = 1500
         # Jan 2: 10 shares AAPL @ 152 = 1520
@@ -194,7 +194,7 @@ class TestPortfolioAnalysisService(unittest.TestCase):
         # Capital gain/loss: (1520 - 1500) - 1505 = 20 - 1505 = -1485
         # Denominator for percentage: IPV (1500) + Cash Invested (1505) = 3005
         # Profit Percentage: (-1485 / 3005) * 100 approx -49.417
-        
+
         profit_daily = history_daily['profitability']
         self.assertAlmostEqual(profit_daily['initial_portfolio_value'], 1500.0)
         self.assertAlmostEqual(profit_daily['final_portfolio_value'], 1520.0)
@@ -248,14 +248,14 @@ class TestPortfolioAnalysisService(unittest.TestCase):
         # Scenario: No initial portfolio value, and no cash invested during period, but somehow FPV changes (e.g. error or weird data)
         # Or more realistically, IPV = 0, cash_invested = 0. Profit should be 0 or undefined.
         # The service's current logic for denominator: initial_portfolio_value + cash_invested_in_period
-        
+
         operations_data = [] # No operations means cash_invested_in_period = 0
-        
+
         # Mock prices such that initial and final values are zero (as no holdings)
         mock_get_historical_prices.return_value = {}
 
         history = calculate_portfolio_history(operations_data, '2023-01-01', '2023-01-05', 'daily')
-        
+
         # Expect equity curve to be all zeros if no holdings and no operations
         # The service returns "No data for equity curve" if operations_data is empty
         self.assertEqual(history['equity_curve'], [])
