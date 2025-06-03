@@ -8,31 +8,14 @@ import { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { Button } from '@/components/ui/button';
 import { DarfDetailsModal } from './DarfDetailsModal'; 
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"; 
-import { FileText, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react"; // Added sort icons
+import { FileText, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react"; 
 import { Input } from "@/components/ui/input"; 
+import { formatCurrency, formatNumber, formatDate } from "@/lib/utils"; // Import centralized formatters
 
-// Helper functions
-const formatCurrency = (value: number | null | undefined, placeholder: string = "R$ 0,00") => {
-  if (value == null || isNaN(value)) return placeholder;
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
-};
-
-const formatNumber = (value: number | null | undefined, placeholder: string = "0") => {
-  if (value == null || isNaN(value)) return placeholder;
-  return new Intl.NumberFormat("pt-BR").format(value);
-};
-
-const formatDate = (dateString: string | null | undefined, placeholder: string = "N/A") => {
-  if (!dateString) return placeholder;
-  try {
-    // Attempt to create a valid date object, handling potential ISO string with time
-    const date = new Date(dateString.split('T')[0]); // Use only date part if timestamp
-    if (isNaN(date.getTime())) return placeholder; // Invalid date
-    return date.toLocaleDateString("pt-BR", { year: 'numeric', month: '2-digit', day: '2-digit' });
-  } catch (e) {
-    return placeholder; // Error parsing date
-  }
-};
+// Helper functions (now imported from utils.ts)
+// const formatCurrency = ... (removed)
+// const formatNumber = ... (removed)
+// const formatDate = ... (removed)
 
 interface OperacoesEncerradasTableProps {
   operacoesFechadas: OperacaoFechada[];
@@ -101,7 +84,7 @@ export function OperacoesEncerradasTable({ operacoesFechadas, resultadosMensais,
     }
 
     setProcessedOperacoes(newProcessedData);
-  }, [operacoesFechadas, searchTerm, sortConfig, formatDate]); // Added formatDate to dependency array
+  }, [operacoesFechadas, searchTerm, sortConfig]); // Removed formatDate from dependency array
 
   const requestSort = (key: string) => {
     let direction: 'ascending' | 'descending' = 'ascending';

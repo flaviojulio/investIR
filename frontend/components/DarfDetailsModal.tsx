@@ -14,37 +14,10 @@ import { Button } from "@/components/ui/button";
 import { OperacaoFechada, ResultadoMensal } from "@/lib/types"; 
 import { api } from '@/lib/api'; 
 import { useToast } from '@/hooks/use-toast'; 
-import jsPDF from 'jspdf'; // Added jsPDF import
+import jsPDF from 'jspdf'; 
+import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils"; // Import centralized formatters
 
-// Helper functions (can be defined locally or imported if centralized)
-const formatCurrency = (value: number | null | undefined, placeholder: string = "R$ 0,00") => {
-  if (value == null || isNaN(value)) return placeholder;
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
-};
-
-const formatDate = (dateString: string | Date | null | undefined, placeholder: string = "N/A") => {
-  if (!dateString) return placeholder;
-  try {
-    const date = typeof dateString === 'string' ? new Date(dateString.split('T')[0]) : new Date(dateString);
-    if (isNaN(date.getTime())) return placeholder;
-    return date.toLocaleDateString("pt-BR", { year: 'numeric', month: '2-digit', day: '2-digit' });
-  } catch (e) {
-    return placeholder;
-  }
-};
-
-const formatMonthYear = (dateString: string | null | undefined, placeholder: string = "N/A") => {
-  if (!dateString) return placeholder; // Expects "YYYY-MM" from mes_competencia or similar
-  try {
-    const [year, month] = dateString.split('-');
-    const date = new Date(Number(year), Number(month) - 1);
-    if (isNaN(date.getTime())) return placeholder;
-    return date.toLocaleDateString("pt-BR", { month: 'long', year: 'numeric' });
-  } catch (e) {
-    return placeholder;
-  }
-};
-
+// Helper functions are now imported from utils.ts
 
 interface DarfDetailsModalProps {
   isOpen: boolean;
