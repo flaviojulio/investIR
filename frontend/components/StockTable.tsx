@@ -13,6 +13,7 @@ import Link from 'next/link'; // Import Link for navigation
 import type { CarteiraItem } from "@/lib/types"
 import { api } from "@/lib/api" // For API calls
 import { useToast } from "@/hooks/use-toast" // For notifications
+import { formatCurrency, formatNumber } from "@/lib/utils"; // Import centralized formatters
 
 interface StockTableProps {
   carteira: CarteiraItem[]
@@ -202,16 +203,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
     }
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL",
-    }).format(value)
-  }
-
-  const formatNumber = (value: number) => {
-    return new Intl.NumberFormat("pt-BR").format(value)
-  }
+  // Removed local formatCurrency and formatNumber definitions
 
   // Simular preço atual (em uma aplicação real, viria de uma API de cotações)
   const getSimulatedCurrentPrice = (avgPrice: number) => {
