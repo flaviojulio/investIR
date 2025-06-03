@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react" // For modal and form state
+import { useState, useEffect } from "react" // For modal and form state, added useEffect
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog" // AlertDialog components
 import { Input } from "@/components/ui/input" // Input for form
 import { Label } from "@/components/ui/label" // Label for form
-import { TrendingUp, TrendingDown, Edit, Trash2 } from "lucide-react" // Edit and Trash2 icons
+import { TrendingUp, TrendingDown, Edit, Trash2, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react" // Edit, Trash2, and Sort icons
 import Link from 'next/link'; // Import Link for navigation
 import type { CarteiraItem } from "@/lib/types"
 import { api } from "@/lib/api" // For API calls
@@ -31,6 +31,94 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isDeleteAlertOpen, setIsDeleteAlertOpen] = useState(false);
 
+  // New state for sorting
+  const [sortConfigST, setSortConfigST] = useState<{ key: string; direction: 'ascending' | 'descending' } | null>(null);
+  
+  // New state for search term
+  const [searchTermST, setSearchTermST] = useState<string>("");
+  
+  // New state for data to be displayed in the table
+  const [processedCarteira, setProcessedCarteira] = useState<CarteiraItem[]>(carteira); 
+
+  useEffect(() => {
+    // Augment items with values needed for sorting/filtering, especially calculated ones
+    const augmentedCarteira = carteira.map(item => {
+      const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
+      const valorInicial = item.custo_total; 
+      const valorAtualCalculated = item.quantidade * currentPrice;
+      const resultadoAtualCalculated = valorAtualCalculated - valorInicial;
+      const resultadoPercentualCalculated = valorInicial !== 0 ? (resultadoAtualCalculated / valorInicial) * 100 : 0;
+      return {
+        ...item,
+        _valorAtualCalculated: valorAtualCalculated, 
+        _resultadoPercentualCalculated: resultadoPercentualCalculated,
+      };
+    });
+
+    let newProcessedData = [...augmentedCarteira];
+
+    // 1. Filtering based on searchTermST
+    if (searchTermST) {
+      const lowercasedSearchTerm = searchTermST.toLowerCase();
+      newProcessedData = newProcessedData.filter(item => {
+        return (
+          item.ticker.toLowerCase().includes(lowercasedSearchTerm) ||
+          item.quantidade.toString().includes(lowercasedSearchTerm) ||
+          item.custo_total.toString().includes(lowercasedSearchTerm) || 
+          formatCurrency(item._valorAtualCalculated).toLowerCase().includes(lowercasedSearchTerm) || // Search formatted currency
+          (item._resultadoPercentualCalculated.toFixed(2) + "%").toLowerCase().includes(lowercasedSearchTerm)
+        );
+      });
+    }
+
+    // 2. Sorting based on sortConfigST
+    if (sortConfigST !== null) {
+      newProcessedData.sort((a, b) => {
+        const getSortValue = (item: any, key: string) => { // item is augmented type
+          switch (key) {
+            case 'ticker':
+              return item.ticker.toLowerCase();
+            case 'quantidade':
+              return item.quantidade;
+            case 'custo_total': // Valor Inicial
+              return item.custo_total;
+            case 'calculated_valorAtual':
+              return item._valorAtualCalculated;
+            case 'calculated_resultadoPercentual':
+              return item._resultadoPercentualCalculated;
+            default:
+              // Should not happen if keys are correct, but good to have a fallback
+              const val = item[key];
+              return typeof val === 'string' ? val.toLowerCase() : val;
+          }
+        };
+
+        const valA = getSortValue(a, sortConfigST.key);
+        const valB = getSortValue(b, sortConfigST.key);
+
+        let comparison = 0;
+        if (valA === null || valA === undefined) comparison = -1; // Treat null/undefined as smaller
+        else if (valB === null || valB === undefined) comparison = 1;
+        else if (typeof valA === 'number' && typeof valB === 'number') {
+          comparison = valA - valB;
+        } else if (typeof valA === 'string' && typeof valB === 'string') {
+          comparison = valA.localeCompare(valB);
+        }
+        
+        return sortConfigST.direction === 'descending' ? comparison * -1 : comparison;
+      });
+    }
+
+    setProcessedCarteira(newProcessedData);
+  }, [carteira, searchTermST, sortConfigST, formatCurrency]); // formatCurrency is stable if defined outside or memoized
+
+  const requestSortST = (key: string) => {
+    let direction: 'ascending' | 'descending' = 'ascending';
+    if (sortConfigST && sortConfigST.key === key && sortConfigST.direction === 'ascending') {
+      direction = 'descending';
+    }
+    setSortConfigST({ key, direction });
+  };
 
   const handleOpenEditModal = (item: CarteiraItem) => {
     setEditingItem(item);
@@ -161,23 +249,76 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
         <CardDescription>Suas posições em ações com resultados atuais (simulados).</CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="mb-4">
+          <Input
+            placeholder="Buscar na carteira..."
+            value={searchTermST}
+            onChange={(e) => setSearchTermST(e.target.value)}
+            className="max-w-sm"
+          />
+        </div>
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Ação</TableHead>
-                <TableHead className="text-right">Quantidade</TableHead>
-                <TableHead className="text-right">Preço Médio</TableHead>
-                <TableHead className="text-right">Valor Inicial</TableHead>
-                <TableHead className="text-right">Preço Atual*</TableHead>
-                <TableHead className="text-right">Valor Atual*</TableHead>
-                <TableHead className="text-right">Resultado*</TableHead>
-                <TableHead className="text-right">Resultado (%)*</TableHead>
+                <TableHead onClick={() => requestSortST('ticker')} className="cursor-pointer hover:bg-muted/50">
+                  <div className="flex items-center">
+                    Ação
+                    {sortConfigST?.key === 'ticker' ? (
+                      sortConfigST.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                    ) : (
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead onClick={() => requestSortST('quantidade')} className="cursor-pointer hover:bg-muted/50 text-right">
+                  <div className="flex items-center justify-end">
+                    Quantidade
+                    {sortConfigST?.key === 'quantidade' ? (
+                      sortConfigST.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                    ) : (
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead className="text-right">Preço Médio</TableHead> {/* Not sortable as per current instructions */}
+                <TableHead onClick={() => requestSortST('custo_total')} className="cursor-pointer hover:bg-muted/50 text-right">
+                  <div className="flex items-center justify-end">
+                    Valor Inicial
+                    {sortConfigST?.key === 'custo_total' ? (
+                      sortConfigST.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                    ) : (
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead className="text-right">Preço Atual*</TableHead> {/* Not sortable */}
+                <TableHead onClick={() => requestSortST('calculated_valorAtual')} className="cursor-pointer hover:bg-muted/50 text-right">
+                  <div className="flex items-center justify-end">
+                    Valor Atual*
+                    {sortConfigST?.key === 'calculated_valorAtual' ? (
+                      sortConfigST.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                    ) : (
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    )}
+                  </div>
+                </TableHead>
+                <TableHead className="text-right">Resultado*</TableHead> {/* Not sortable as per current instructions (absolute value) */}
+                <TableHead onClick={() => requestSortST('calculated_resultadoPercentual')} className="cursor-pointer hover:bg-muted/50 text-right">
+                  <div className="flex items-center justify-end">
+                    Resultado (%)*
+                    {sortConfigST?.key === 'calculated_resultadoPercentual' ? (
+                      sortConfigST.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                    ) : (
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    )}
+                  </div>
+                </TableHead>
                 <TableHead className="text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {carteira.map((item) => {
+              {processedCarteira.map((item) => { // Changed to map over processedCarteira
                 const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
                 const valorInicial = item.custo_total;
                 const valorAtual = item.quantidade * currentPrice;

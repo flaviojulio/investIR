@@ -263,16 +263,30 @@ export function OperacoesEncerradasTable({ operacoesFechadas, resultadosMensais,
                           statusIrContent = <Badge variant="secondary">Isento</Badge>;
                           break;
                         case "Tributável":
-                          const isActionableForIcon = isPreviousMonthOrEarlier(op.data_fechamento); // Redundant if isDarfActionable is defined above
+                          const isActionableForIcon = isPreviousMonthOrEarlier(op.data_fechamento);
+                          
+                          let monthlyDarfStatusForIcon: string | undefined | null = null;
+                          if (isActionableForIcon) { // Only fetch status if icon is potentially shown
+                            const mesFechamento = op.data_fechamento.substring(0, 7);
+                            const resultadoMensalCorrespondente = resultadosMensais.find(rm => rm.mes === mesFechamento);
+                            if (resultadoMensalCorrespondente) {
+                              monthlyDarfStatusForIcon = op.day_trade 
+                                ? resultadoMensalCorrespondente.status_darf_day_trade 
+                                : resultadoMensalCorrespondente.status_darf_swing_trade;
+                            }
+                          }
+
                           statusIrContent = (
                             <div className="flex items-center space-x-1 justify-start">
                               <Badge variant="destructive">Tributável</Badge>
-                              {isActionableForIcon && ( // or use isDarfActionable
+                              {isActionableForIcon && (
                                 <TooltipProvider>
                                   <Tooltip delayDuration={300}>
                                     <TooltipTrigger asChild>
                                       <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDarfClick(op)}>
-                                        <FileText className="h-4 w-4 text-blue-600" />
+                                        <FileText 
+                                          className={`h-4 w-4 ${monthlyDarfStatusForIcon === 'Pago' ? 'text-green-600' : 'text-blue-600'}`} 
+                                        />
                                       </Button>
                                     </TooltipTrigger>
                                     <TooltipContent>

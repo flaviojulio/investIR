@@ -65,6 +65,7 @@ export function DarfDetailsModal({
 }: DarfDetailsModalProps) {
   const { toast } = useToast();
   const [isMarkingPaid, setIsMarkingPaid] = useState(false);
+  const [isMarkingPendente, setIsMarkingPendente] = useState(false);
 
   if (!isOpen || !operacaoFechada || !resultadoMensal) {
     return null; // Don't render if not open or essential data is missing
@@ -94,6 +95,33 @@ export function DarfDetailsModal({
       });
     } finally {
       setIsMarkingPaid(false);
+    }
+  };
+
+  const handleMarkAsPendente = async () => {
+    if (!resultadoMensal || !resultadoMensal.mes || !tipoDarf) {
+      toast({ title: "Erro", description: "Dados insuficientes para marcar DARF como pendente.", variant: "destructive" });
+      return;
+    }
+
+    setIsMarkingPendente(true);
+    try {
+      await api.put(`/impostos/darf_status/${resultadoMensal.mes}/${tipoDarf}`, { status: "Pendente" });
+      toast({
+        title: "Sucesso!",
+        description: `DARF ${tipoDarf === 'swing' ? 'Swing Trade' : 'Day Trade'} para ${formatMonthYear(resultadoMensal.mes)} marcado como pendente.`,
+      });
+      onUpdateDashboard(); // Refresh dashboard data
+      onClose(); // Close the modal
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.detail || `Erro ao marcar DARF como pendente.`;
+      toast({
+        title: "Erro",
+        description: typeof errorMsg === 'string' ? errorMsg : "Ocorreu um erro.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsMarkingPendente(false);
     }
   };
 
@@ -189,28 +217,43 @@ export function DarfDetailsModal({
           </div>
         </div>
 
-        <DialogFooter className="sm:justify-between">
-          <div className="flex space-x-2">
+        <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-between sm:space-x-2 pt-4">
+          <div className="mt-2 sm:mt-0"> 
             <Button variant="outline" size="sm" onClick={handleSavePdf}>
               Salvar PDF
             </Button>
           </div>
-          <div className="flex space-x-2">
+          
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
             <DialogClose asChild>
-              <Button type="button" variant="secondary" size="sm">
+              <Button type="button" variant="secondary" size="sm" className="mt-2 sm:mt-0">
                 Fechar
               </Button>
             </DialogClose>
-            {/* Placeholder for Marcar como Pago button - Step 8 */}
-            {darfStatus !== 'Pago' && darfValorMensal && darfValorMensal >= 10.0 && ( // DARF only generated if >= 10
-                 <Button 
-                   type="button" 
-                   size="sm" 
-                   onClick={handleMarkAsPaid}
-                   disabled={isMarkingPaid}
-                 >
-                    {isMarkingPaid ? "Marcando..." : "Marcar DARF Mensal como Pago"}
-                 </Button>
+            
+            {darfStatus !== 'Pago' && darfValorMensal && darfValorMensal >= 10.0 && (
+              <Button 
+                type="button" 
+                size="sm" 
+                onClick={handleMarkAsPaid}
+                disabled={isMarkingPaid}
+                className="mt-2 sm:mt-0"
+              >
+                {isMarkingPaid ? "Marcando..." : "Marcar DARF Mensal como Pago"}
+              </Button>
+            )}
+            
+            {darfStatus === 'Pago' && darfValorMensal && darfValorMensal > 0 && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleMarkAsPendente}
+                disabled={isMarkingPendente}
+                className="mt-2 sm:mt-0"
+              >
+                {isMarkingPendente ? "Marcando..." : "Marcar como Pendente"}
+              </Button>
             )}
           </div>
         </DialogFooter>
