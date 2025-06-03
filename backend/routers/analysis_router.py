@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional, Any, Dict
 from datetime import date
 
-from backend.app.services.portfolio_analysis_service import calculate_portfolio_history
-from backend.schemas import PortfolioHistoryResponseSchema, EquityPointSchema, ProfitabilityDetailsSchema
-from backend.models import UsuarioResponse # Assuming this is the user model from auth
-from backend.auth import get_current_active_user # Assuming this path is correct
-from backend.services import listar_operacoes_service # Assuming this path
+from app.services.portfolio_analysis_service import calculate_portfolio_history # Corrected
+from schemas import PortfolioHistoryResponseSchema, EquityPointSchema, ProfitabilityDetailsSchema # Corrected
+from models import UsuarioResponse # Corrected
+from ..dependencies import get_current_user # Corrected to import from dependencies.py
+from services import listar_operacoes_service # Corrected
 
 router = APIRouter(
     prefix="/analysis",
@@ -19,7 +19,7 @@ async def get_portfolio_equity_history(
     start_date: date,
     end_date: date,
     frequency: Optional[str] = Query('monthly', enum=['daily', 'monthly']),
-    current_user: UsuarioResponse = Depends(get_current_active_user)
+    current_user: UsuarioResponse = Depends(get_current_user) # Changed dependency function
 ):
     """
     Calculates and returns the historical equity curve and profitability of a user's portfolio.

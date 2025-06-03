@@ -52,6 +52,7 @@ import auth # Keep this for other auth functions
 
 # Import the new router
 from routers import analysis_router
+from dependencies import get_current_user, oauth2_scheme # Import from dependencies
 
 # Inicialização do banco de dados
 criar_tabelas() # Creates non-auth tables
@@ -76,72 +77,75 @@ app.add_middleware(
 app.include_router(analysis_router.router, prefix="/api") # Assuming all API routes are prefixed with /api
 
 # Configuração do OAuth2
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login") # MOVED to dependencies.py
 
 # Função para obter o usuário atual
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
-    try:
-        payload = auth.verificar_token(token)
-    except TokenExpiredError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": "O token de autenticação expirou.", "error_code": "TOKEN_EXPIRED"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except InvalidTokenError as e: # Use 'as e' to include original error message
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": f"O token de autenticação é inválido ou malformado: {str(e)}", "error_code": "TOKEN_INVALID"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except TokenNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": "O token de autenticação não foi reconhecido.", "error_code": "TOKEN_NOT_FOUND"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except TokenRevokedError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": "O token de autenticação foi revogado (ex: logout ou alteração de senha).", "error_code": "TOKEN_REVOKED"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except Exception as e: # Capture and potentially log the original exception
-        # Log the exception e for debugging (e.g., import logging; logging.exception("Unexpected error"))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail={"message": f"Erro inesperado durante a verificação do token: {str(e)}", "error_code": "UNEXPECTED_TOKEN_VERIFICATION_ERROR"},
-        )
+# async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]: # MOVED to dependencies.py
+#     try:
+#         payload = auth.verificar_token(token)
+#     except TokenExpiredError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": "O token de autenticação expirou.", "error_code": "TOKEN_EXPIRED"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     except InvalidTokenError as e: # Use 'as e' to include original error message
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": f"O token de autenticação é inválido ou malformado: {str(e)}", "error_code": "TOKEN_INVALID"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     except TokenNotFoundError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": "O token de autenticação não foi reconhecido.", "error_code": "TOKEN_NOT_FOUND"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     except TokenRevokedError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": "O token de autenticação foi revogado (ex: logout ou alteração de senha).", "error_code": "TOKEN_REVOKED"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     except Exception as e: # Capture and potentially log the original exception
+#         # Log the exception e for debugging (e.g., import logging; logging.exception("Unexpected error"))
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+#             detail={"message": f"Erro inesperado durante a verificação do token: {str(e)}", "error_code": "UNEXPECTED_TOKEN_VERIFICATION_ERROR"},
+#         )
 
-    sub_str = payload.get("sub")
-    if not sub_str: 
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail={"message": "Token inválido: ID de usuário (sub) ausente no payload.", "error_code": "TOKEN_PAYLOAD_MISSING_SUB"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    try:
-        usuario_id = int(sub_str) # Converte para int
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail={"message": "Token inválido: ID de usuário (sub) não é um inteiro válido.", "error_code": "TOKEN_PAYLOAD_INVALID_SUB_FORMAT"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+#     sub_str = payload.get("sub")
+#     if not sub_str: 
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED, 
+#             detail={"message": "Token inválido: ID de usuário (sub) ausente no payload.", "error_code": "TOKEN_PAYLOAD_MISSING_SUB"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     try:
+#         usuario_id = int(sub_str) # Converte para int
+#     except ValueError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED, 
+#             detail={"message": "Token inválido: ID de usuário (sub) não é um inteiro válido.", "error_code": "TOKEN_PAYLOAD_INVALID_SUB_FORMAT"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
 
-    # Agora usuario_id é um int e pode ser usado para chamar auth.obter_usuario
-    usuario_data = auth.obter_usuario(usuario_id) 
-    if not usuario_data:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, # Ou status.HTTP_404_NOT_FOUND
-            detail={"message": "Usuário associado ao token não encontrado.", "error_code": "USER_FOR_TOKEN_NOT_FOUND"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+#     # Agora usuario_id é um int e pode ser usado para chamar auth.obter_usuario
+#     usuario_data = auth.obter_usuario(usuario_id) 
+#     if not usuario_data:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED, # Ou status.HTTP_404_NOT_FOUND
+#             detail={"message": "Usuário associado ao token não encontrado.", "error_code": "USER_FOR_TOKEN_NOT_FOUND"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
     
-    return usuario_data
+#     return usuario_data
 
 # Função para verificar se o usuário é administrador
-async def get_admin_user(usuario: Dict = Depends(get_current_user)) -> Dict:
+# Note: The type hint for `usuario` should ideally be UsuarioResponse after this change.
+# However, get_current_user in dependencies.py returns UsuarioResponse.
+# FastAPI handles this correctly due to Pydantic model.
+async def get_admin_user(usuario: UsuarioResponse = Depends(get_current_user)) -> UsuarioResponse:
     if "admin" not in usuario.get("funcoes", []):
         raise HTTPException(
             status_code=403,
