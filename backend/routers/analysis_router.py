@@ -35,7 +35,7 @@ async def get_portfolio_equity_history(
             transformed_op = op_raw.copy() # Ensure all original fields are there
             if 'operation' in transformed_op:
                 transformed_op['operation_type'] = transformed_op.pop('operation')
-            
+
             # Ensure date is string "YYYY-MM-DD" if it's not already (it should be from DB/model)
             # The portfolio_analysis_service.Operacao model expects a string or date object for 'date'
             # and its validator will handle it. So, direct pass-through of date object is fine.
@@ -61,7 +61,7 @@ async def get_portfolio_equity_history(
             end_date_str=end_date.isoformat(),
             period_frequency=frequency
         )
-        
+
         # Ensure the output from calculate_portfolio_history matches the response schema
         # FastAPI will validate this, but manual check can be useful for debugging
         # Example: history_data might be {'equity_curve': [...], 'profitability': {...details...}}

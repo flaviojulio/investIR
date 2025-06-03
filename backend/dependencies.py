@@ -47,24 +47,24 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UsuarioRespon
         # It's good practice to log the actual error e here
         print(f"Unexpected error during token verification: {e}") # Basic logging
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"message": f"Erro inesperado durante a verificação do token.", "error_code": "UNEXPECTED_TOKEN_VERIFICATION_ERROR"},
             # Avoid exposing internal error details like str(e) directly to the client in production for security.
         )
 
     sub_str = payload.get("sub")
-    if not sub_str: 
+    if not sub_str:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"message": "Token inválido: ID de usuário (sub) ausente no payload.", "error_code": "TOKEN_PAYLOAD_MISSING_SUB"},
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     try:
         usuario_id = int(sub_str)
     except ValueError:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"message": "Token inválido: ID de usuário (sub) não é um inteiro válido.", "error_code": "TOKEN_PAYLOAD_INVALID_SUB_FORMAT"},
             headers={"WWW-Authenticate": "Bearer"},
         )
@@ -76,7 +76,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> UsuarioRespon
             detail={"message": "Usuário associado ao token não encontrado.", "error_code": "USER_FOR_TOKEN_NOT_FOUND"},
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     # Convert the dictionary to the Pydantic model UsuarioResponse
     # This ensures the response shape is consistent and validated.
     try:
