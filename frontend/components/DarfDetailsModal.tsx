@@ -164,7 +164,7 @@ export function DarfDetailsModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Detalhes do DARF - {tipoDarf === 'swing' ? 'Swing Trade' : 'Day Trade'}</DialogTitle>
+          <DialogTitle>DARF {tipoDarf === 'swing' ? '' : ' - Day Trade'}</DialogTitle>
           <DialogDescription>
             Mês de Competência: {formatMonthYear(darfCompetencia)}
           </DialogDescription>
@@ -199,9 +199,6 @@ export function DarfDetailsModal({
           
           <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
             <DialogClose asChild>
-              <Button type="button" variant="secondary" size="sm" className="mt-2 sm:mt-0">
-                Fechar
-              </Button>
             </DialogClose>
             
             {darfStatus !== 'Pago' && darfValorMensal && darfValorMensal >= 10.0 && (
@@ -212,7 +209,7 @@ export function DarfDetailsModal({
                 disabled={isMarkingPaid}
                 className="mt-2 sm:mt-0"
               >
-                {isMarkingPaid ? "Marcando..." : "Marcar DARF Mensal como Pago"}
+                {isMarkingPaid ? "Marcando..." : "Marcar Como Pago"}
               </Button>
             )}
             
