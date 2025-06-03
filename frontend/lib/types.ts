@@ -71,3 +71,27 @@ export interface OperacaoFechada {
   day_trade: boolean;
   status_ir?: string; 
 }
+
+// Types for Portfolio Equity History
+export interface EquityDataPoint {
+  date: string; // "YYYY-MM-DD" or "YYYY-MM" from API
+  value: number;
+}
+
+export interface ProfitabilityDetails {
+  absolute: number;
+  percentage: number;
+  initial_portfolio_value: number;
+  final_portfolio_value: number;
+  cash_invested_in_period: number;
+  cash_returned_in_period: number;
+  net_investment_change: number;
+  // Note: The backend service might return 'capital_gain_loss' as 'absolute'.
+  // If the API response uses 'capital_gain_loss', this interface should match.
+  // Based on the backend router and schema, it uses 'absolute'.
+}
+
+export interface PortfolioHistoryResponse {
+  equity_curve: EquityDataPoint[];
+  profitability: ProfitabilityDetails;
+}
