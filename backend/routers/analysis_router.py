@@ -5,7 +5,7 @@ from datetime import date
 from app.services.portfolio_analysis_service import calculate_portfolio_history # Corrected
 from schemas import PortfolioHistoryResponseSchema, EquityPointSchema, ProfitabilityDetailsSchema # Corrected
 from models import UsuarioResponse # Corrected
-from ..dependencies import get_current_user # Corrected to import from dependencies.py
+from dependencies import get_current_user # Corrected import path
 from services import listar_operacoes_service # Corrected
 
 router = APIRouter(
