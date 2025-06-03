@@ -4,8 +4,9 @@ import { useState, useEffect } from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp } from "lucide-react"
+import { LogOut, TrendingUp, PlusCircle, UploadCloud } from "lucide-react"
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import { TaxMeter } from "@/components/TaxMeter"
@@ -103,11 +104,41 @@ export function Dashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6 flex space-x-4">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button size="lg" variant="outline">
+                <PlusCircle className="h-5 w-5 mr-2" />
+                Cadastrar Nova Operação
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Cadastrar Nova Operação</DialogTitle>
+              </DialogHeader>
+              <AddOperation onSuccess={handleDataUpdate} />
+            </DialogContent>
+          </Dialog>
+
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button size="lg" variant="outline">
+                <UploadCloud className="h-5 w-5 mr-2" />
+                Importar Operações B3
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Importar Operações da B3</DialogTitle>
+              </DialogHeader>
+              <UploadOperations onSuccess={handleDataUpdate} />
+            </DialogContent>
+          </Dialog>
+        </div>
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-            <TabsTrigger value="operations">Operações</TabsTrigger>
-            <TabsTrigger value="upload">Upload</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
           </TabsList>
@@ -121,14 +152,6 @@ export function Dashboard() {
               resultadosMensais={data.resultados}
               onUpdateDashboard={handleDataUpdate} 
             />
-          </TabsContent>
-
-          <TabsContent value="operations">
-            <AddOperation onSuccess={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="upload">
-            <UploadOperations onSuccess={handleDataUpdate} />
           </TabsContent>
 
           <TabsContent value="taxes">
