@@ -62,6 +62,13 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
 
       const resultadoPercentualDaPosicao = valorInicial !== 0 ? (resultadoDaPosicao / Math.abs(valorInicial)) * 100 : 0; // Usar Math.abs(valorInicial) para base percentual
 
+      if (valorInicial === 0 && resultadoDaPosicao !== 0) {
+        console.warn("StockTable: Calculando resultado percentual com valorInicial zero e resultadoDaPosicao não-zero.", { item, resultadoDaPosicao });
+      }
+      if (isNaN(resultadoPercentualDaPosicao) || !isFinite(resultadoPercentualDaPosicao)) {
+        console.error("StockTable: resultadoPercentualDaPosicao é NaN ou Infinity.", { item, valorInicial, resultadoDaPosicao, resultadoPercentualDaPosicao });
+      }
+
       return {
         ...item,
         _valorAtualCalculated: valorDeMercadoAtualDaPosicao, // Coluna "Valor Atual*"
@@ -327,6 +334,8 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
             </TableHeader>
             <TableBody>
               {processedCarteira.map((item) => { // Changed to map over processedCarteira
+                console.log("StockTable rendering item:", item); // <--- ADICIONAR ESTE LOG
+            
                 // Utilizar os valores pré-calculados e corrigidos do useEffect
                 const valorInicial = item.custo_total; // Mantém para clareza, ou pode ser removido se não usado diretamente abaixo
                 const currentPrice = getSimulatedCurrentPrice(item.preco_medio); // Necessário para a coluna "Preço Atual*"
@@ -362,11 +371,11 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                     </TableCell>
                     <TableCell
                       className={`text-right font-medium ${
-                        resultadoPercentualAtualDisplay >= 0 ? "text-green-600" : "text-red-600"
+                        typeof resultadoPercentualAtualDisplay === 'number' && resultadoPercentualAtualDisplay >= 0 ? "text-green-600" : "text-red-600"
                       }`}
                     >
-                      {resultadoPercentualAtualDisplay >= 0 ? "+" : ""}
-                      {resultadoPercentualAtualDisplay.toFixed(2)}%
+                      {typeof resultadoPercentualAtualDisplay === 'number' && resultadoPercentualAtualDisplay >= 0 ? "+" : ""}
+                      {typeof resultadoPercentualAtualDisplay === 'number' ? resultadoPercentualAtualDisplay.toFixed(2) : 'N/A'}%
                     </TableCell>
                     <TableCell className="text-center space-x-1">
                       <Button variant="ghost" size="sm" onClick={() => handleOpenEditModal(item)} title="Editar">
