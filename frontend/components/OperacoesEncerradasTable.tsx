@@ -350,29 +350,25 @@ export function OperacoesEncerradasTable({
                             <Badge variant="secondary">Isento</Badge>
                           );
                           break;
-                        case "Tributável":
+                        case "Tributável Day Trade":
+                        case "Tributável Swing":
                           const isActionableForIcon = isPreviousMonthOrEarlier(
                             op.data_fechamento
                           );
 
-                          let monthlyDarfStatusForIcon:
-                            | string
-                            | undefined
-                            | null = null;
+                          let monthlyDarfStatusForIcon: string | undefined | null = null;
                           if (isActionableForIcon) {
-                            // Only fetch status if icon is potentially shown
-                            const mesFechamento = op.data_fechamento.substring(
-                              0,
-                              7
-                            );
+                            const mesFechamento = op.data_fechamento.substring(0,7);
                             const resultadoMensalCorrespondente =
                               resultadosMensais.find(
                                 (rm) => rm.mes === mesFechamento
                               );
                             if (resultadoMensalCorrespondente) {
-                              monthlyDarfStatusForIcon = op.day_trade
-                                ? resultadoMensalCorrespondente.status_darf_day_trade
-                                : resultadoMensalCorrespondente.status_darf_swing_trade;
+                              if (op.status_ir === "Tributável Day Trade") {
+                                monthlyDarfStatusForIcon = resultadoMensalCorrespondente.status_darf_day_trade;
+                              } else { // Tributável Swing
+                                monthlyDarfStatusForIcon = resultadoMensalCorrespondente.status_darf_swing_trade;
+                              }
                             }
                           }
 
