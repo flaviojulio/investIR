@@ -17,6 +17,10 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
     *   Corrigida a lógica em `recalcular_carteira` para o tratamento de operações de compra que cobrem posições vendidas, assegurando que o `custo_total` da carteira seja zerado corretamente quando uma posição vendida é totalmente liquidada.
     *   A função `atualizar_carteira` (em `database.py`) foi modificada para aceitar o `custo_total` como um argumento vindo da camada de serviço, em vez de recalculá-lo. Isso garante que o `custo_total` (positivo para vendas) determinado pela lógica de negócios seja o valor efetivamente salvo no banco de dados.
     *   A função `obter_carteira_atual` (em `database.py`) foi ajustada para buscar todas as posições com `quantidade <> 0`, permitindo que as posições vendidas (com quantidade negativa e `custo_total` positivo) sejam corretamente enviadas para o frontend.
+    *   **Correção na Edição Manual de Itens da Carteira (`backend/services.py` - `atualizar_item_carteira`):**
+        *   Ajustada a função de serviço `atualizar_item_carteira` para calcular e fornecer corretamente o argumento `custo_total` ao chamar a função `database.atualizar_carteira`.
+        *   Isso resolve um `TypeError` que ocorria ao tentar editar a quantidade ou preço médio de uma ação via API (`PUT /api/carteira/{ticker}`).
+        *   Garantido que, ao editar manualmente uma posição para ser vendida (quantidade negativa), o `custo_total` calculado e salvo seja positivo, representando o valor da posição vendida.
 
 ### Apuração de Resultados para Imposto de Renda (`backend/services.py` - `recalcular_resultados`)
 

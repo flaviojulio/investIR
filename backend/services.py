@@ -225,8 +225,17 @@ def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None
         dados: Novos dados do item da carteira (ticker, quantidade e preço médio).
         usuario_id: ID do usuário.
     """
+    custo_total_calculado: float
+    if dados.quantidade < 0:
+        # Para posições vendidas editadas manualmente, o custo_total deve ser o valor (positivo) da posição vendida.
+        # O preco_medio fornecido em 'dados' para uma qtd negativa é o PM de venda.
+        custo_total_calculado = abs(dados.quantidade) * dados.preco_medio
+    else:
+        # Para posições compradas ou zeradas (quantidade >= 0)
+        custo_total_calculado = dados.quantidade * dados.preco_medio
+
     # Atualiza o item na carteira
-    atualizar_carteira(dados.ticker, dados.quantidade, dados.preco_medio, usuario_id=usuario_id)
+    atualizar_carteira(dados.ticker, dados.quantidade, dados.preco_medio, custo_total_calculado, usuario_id=usuario_id)
     
     # Adiciona chamadas para recalcular tudo após a atualização manual da carteira
     # REMOVED: recalcular_carteira(usuario_id=usuario_id) 
