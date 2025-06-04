@@ -364,7 +364,7 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                     ir_pagar_mensal_day_trade = resultado_do_mes_dict["ir_pagar_day"]
                 
                 if ir_pagar_mensal_day_trade > 0:
-                    op_f["status_ir"] = "Tributável"
+                    op_f["status_ir"] = "Tributável Day Trade"
                 else: 
                     op_f["status_ir"] = "Lucro Compensado"
                     
@@ -381,7 +381,7 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                         ir_pagar_mensal_swing_trade = resultado_do_mes_dict["ir_pagar_swing"]
                     
                     if ir_pagar_mensal_swing_trade > 0:
-                        op_f["status_ir"] = "Tributável"
+                        op_f["status_ir"] = "Tributável Swing"
                     else: 
                         op_f["status_ir"] = "Lucro Compensado"
         
