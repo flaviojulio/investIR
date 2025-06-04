@@ -58,6 +58,8 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
 
     let newProcessedData = [...augmentedCarteira];
 
+    newProcessedData = newProcessedData.filter(item => item.quantidade !== 0);
+
     // 1. Filtering based on searchTermST
     if (searchTermST) {
       const lowercasedSearchTerm = searchTermST.toLowerCase();
