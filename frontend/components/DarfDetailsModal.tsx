@@ -152,10 +152,10 @@ export function DarfDetailsModal({
     // If opFechada.status_ir is "Tributável...", then this calculation applies. If "Isenta", it's 0.
 
   let impostoCalculadoDaOperacao = 0;
-  if (operacaoFechada.status_ir === "Tributável Day Trade") {
+  if (operacaoFechada.status_ir === "Tributável" && operacaoFechada.day_trade) {
     impostoCalculadoDaOperacao = operacaoFechada.resultado * 0.20; 
     // Consider IRRF if it was part of opFechada.resultado or needs separate handling.
-  } else if (operacaoFechada.status_ir === "Tributável Swing") {
+  } else if (operacaoFechada.status_ir === "Tributável") {
     impostoCalculadoDaOperacao = operacaoFechada.resultado * 0.15;
   }
 
