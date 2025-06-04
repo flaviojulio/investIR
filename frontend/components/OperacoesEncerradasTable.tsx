@@ -55,11 +55,11 @@ export function OperacoesEncerradasTable({
     "swing" | "daytrade"
   >("daytrade");
 
-  // New state for sorting
+  // New state for sorting (default: data_fechamento descending)
   const [sortConfig, setSortConfig] = useState<{
     key: string;
     direction: "ascending" | "descending";
-  } | null>(null);
+  }>({ key: "data_fechamento", direction: "descending" });
 
   // New state for search term
   const [searchTerm, setSearchTerm] = useState<string>("");

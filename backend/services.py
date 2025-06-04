@@ -225,8 +225,17 @@ def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None
         dados: Novos dados do item da carteira (ticker, quantidade e preço médio).
         usuario_id: ID do usuário.
     """
+    custo_total_calculado: float
+    if dados.quantidade < 0:
+        # Para posições vendidas editadas manualmente, o custo_total deve ser o valor (positivo) da posição vendida.
+        # O preco_medio fornecido em 'dados' para uma qtd negativa é o PM de venda.
+        custo_total_calculado = abs(dados.quantidade) * dados.preco_medio 
+    else:
+        # Para posições compradas ou zeradas (quantidade >= 0)
+        custo_total_calculado = dados.quantidade * dados.preco_medio
+
     # Atualiza o item na carteira
-    atualizar_carteira(dados.ticker, dados.quantidade, dados.preco_medio, usuario_id=usuario_id)
+    atualizar_carteira(dados.ticker, dados.quantidade, dados.preco_medio, custo_total_calculado, usuario_id=usuario_id)
     
     # Adiciona chamadas para recalcular tudo após a atualização manual da carteira
     # REMOVED: recalcular_carteira(usuario_id=usuario_id) 
@@ -671,7 +680,7 @@ def recalcular_resultados(usuario_id: int) -> None:
                 if posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"] > 0:
                     qtd_a_cobrir = min(posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"], quantidade_compra_total)
                     pm_venda_anterior = posicoes_vendidas_estado_atual[ticker]["preco_medio_venda"]
-
+                    
                     valor_da_venda_original_para_acoes_cobertas = qtd_a_cobrir * pm_venda_anterior # Valor bruto da venda original
                     custo_da_recompra_para_acoes_cobertas_bruto = qtd_a_cobrir * preco_compra_unitario
                     fees_compra_proporcional = (fees_compra_total / quantidade_compra_total) * qtd_a_cobrir if quantidade_compra_total > 0 else 0
@@ -679,17 +688,17 @@ def recalcular_resultados(usuario_id: int) -> None:
                     # Adiciona o custo da recompra ao resultado do mês.
                     # A venda original já foi adicionada a resultado_mes_swing["vendas"].
                     resultado_mes_swing["custo"] += custo_da_recompra_para_acoes_cobertas_bruto + fees_compra_proporcional
-
+                    
                     # Atualiza posicoes_vendidas_estado_atual
                     posicoes_vendidas_estado_atual[ticker]["valor_total_venda"] -= valor_da_venda_original_para_acoes_cobertas # Deduz o valor bruto das ações recompradas
                     posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"] -= qtd_a_cobrir
-
+                    
                     if posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"] > 0:
                         posicoes_vendidas_estado_atual[ticker]["preco_medio_venda"] = posicoes_vendidas_estado_atual[ticker]["valor_total_venda"] / posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"]
                     else: # Zerou a posição vendida
                         posicoes_vendidas_estado_atual[ticker]["preco_medio_venda"] = 0.0
                         posicoes_vendidas_estado_atual[ticker]["valor_total_venda"] = 0.0 # Garante zeragem
-
+                    
                     logging.info(f"[recalcular_resultados] COMPRA COBRINDO VENDA ({ticker}): Qtd Coberta:{qtd_a_cobrir}, Preço Compra:{preco_compra_unitario}, PM Venda Anterior:{pm_venda_anterior}")
                     logging.info(f"[recalcular_resultados] Estado Pos Vendida APÓS COBERTURA ({ticker}): Qtd:{posicoes_vendidas_estado_atual[ticker]['quantidade_vendida']}, PM Vendido:{posicoes_vendidas_estado_atual[ticker]['preco_medio_venda']}")
 
@@ -698,7 +707,7 @@ def recalcular_resultados(usuario_id: int) -> None:
                         # Trata o restante como uma compra normal para a carteira_estado_atual (posição comprada)
                         valor_compra_restante_bruto = quantidade_compra_restante * preco_compra_unitario
                         fees_compra_restante = (fees_compra_total / quantidade_compra_total) * quantidade_compra_restante if quantidade_compra_total > 0 else 0
-
+                        
                         carteira_estado_atual[ticker]["quantidade"] += quantidade_compra_restante
                         carteira_estado_atual[ticker]["custo_total"] += valor_compra_restante_bruto + fees_compra_restante
                         if carteira_estado_atual[ticker]["quantidade"] > 0: # Sempre será >0 aqui
@@ -721,7 +730,7 @@ def recalcular_resultados(usuario_id: int) -> None:
                 quantidade_venda_total = venda_op["quantity"]
                 preco_venda_unitario = venda_op["price"]
                 fees_total_venda = venda_op.get("fees", 0.0)
-
+                
                 quantidade_vendida_de_posicao_comprada = 0
                 quantidade_vendida_a_descoberto = 0
 
@@ -729,7 +738,7 @@ def recalcular_resultados(usuario_id: int) -> None:
                 if carteira_estado_atual[ticker]["quantidade"] > 0:
                     pm_para_venda_comprada = carteira_estado_atual[ticker]["preco_medio"]
                     quantidade_vendida_de_posicao_comprada = min(carteira_estado_atual[ticker]["quantidade"], quantidade_venda_total)
-
+                    
                     custo_da_parte_comprada_vendida = quantidade_vendida_de_posicao_comprada * pm_para_venda_comprada
                     valor_bruto_da_parte_comprada_vendida = quantidade_vendida_de_posicao_comprada * preco_venda_unitario
                     fees_da_parte_comprada_vendida = (fees_total_venda / quantidade_venda_total) * quantidade_vendida_de_posicao_comprada if quantidade_venda_total > 0 else 0
@@ -737,18 +746,18 @@ def recalcular_resultados(usuario_id: int) -> None:
 
                     resultado_mes_swing["vendas"] += valor_liquido_da_parte_comprada_vendida
                     resultado_mes_swing["custo"] += custo_da_parte_comprada_vendida
-
+                    
                     carteira_estado_atual[ticker]["quantidade"] -= quantidade_vendida_de_posicao_comprada
                     carteira_estado_atual[ticker]["custo_total"] -= custo_da_parte_comprada_vendida
                     if carteira_estado_atual[ticker]["quantidade"] <= 0:
                         carteira_estado_atual[ticker]["custo_total"] = 0.0
                         carteira_estado_atual[ticker]["preco_medio"] = 0.0
-
+                    
                     logging.info(f"[recalcular_resultados] VENDA DE POS_COMPRADA ({ticker}): Qtd:{quantidade_vendida_de_posicao_comprada}, Preço:{preco_venda_unitario}, PM Usado:{pm_para_venda_comprada}, Custo Venda:{custo_da_parte_comprada_vendida}")
 
                 # Parte 2: Venda a descoberto (o restante da quantidade da operação de venda)
                 quantidade_vendida_a_descoberto = quantidade_venda_total - quantidade_vendida_de_posicao_comprada
-
+                
                 if quantidade_vendida_a_descoberto > 0:
                     valor_desta_venda_descoberto_bruto = quantidade_vendida_a_descoberto * preco_venda_unitario
                     fees_desta_venda_descoberto = (fees_total_venda / quantidade_venda_total) * quantidade_vendida_a_descoberto if quantidade_venda_total > 0 else 0
@@ -759,10 +768,10 @@ def recalcular_resultados(usuario_id: int) -> None:
 
                     posicoes_vendidas_estado_atual[ticker]["valor_total_venda"] += valor_desta_venda_descoberto_bruto # Acumula valor bruto para PM de venda
                     posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"] += quantidade_vendida_a_descoberto
-
+                    
                     if posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"] > 0:
                         posicoes_vendidas_estado_atual[ticker]["preco_medio_venda"] = posicoes_vendidas_estado_atual[ticker]["valor_total_venda"] / posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"]
-
+                    
                     logging.info(f"[recalcular_resultados] VENDA A DESCOBERTO ({ticker}): Qtd:{quantidade_vendida_a_descoberto}, Preço:{preco_venda_unitario}, Novo PM Vendido:{posicoes_vendidas_estado_atual[ticker]['preco_medio_venda']}")
 
                 logging.info(f"[recalcular_resultados] Estado Carteira APÓS VENDA ({ticker}): Qtd:{carteira_estado_atual[ticker]['quantidade']}, CustoTotal:{carteira_estado_atual[ticker]['custo_total']}, PM:{carteira_estado_atual[ticker]['preco_medio']}")
