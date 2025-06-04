@@ -44,36 +44,31 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
   useEffect(() => {
     // Augment items with values needed for sorting/filtering, especially calculated ones
     const augmentedCarteira = carteira.map(item => {
-      const currentPrice = getSimulatedCurrentPrice(item.preco_medio); // Assume item.preco_medio é o PM de compra ou de venda
-      const valorInicial = item.custo_total; // Para comprados: custo de aquisição. Para vendidos: valor recebido na venda.
-      const valorDeMercadoAtualDaPosicao = item.quantidade * currentPrice; // Para comprados: positivo. Para vendidos: negativo.
+      const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
+      const valorInicial = item.custo_total; // Para comprados: custo. Para vendidos: valor recebido na venda.
+
+      // _valorAtualCalculated agora é sempre positivo (valor de mercado absoluto)
+      const valorDeMercadoAbsoluto = Math.abs(item.quantidade * currentPrice);
 
       let resultadoDaPosicao;
       if (item.quantidade > 0) { // Posição Comprada
-        resultadoDaPosicao = valorDeMercadoAtualDaPosicao - valorInicial;
+        resultadoDaPosicao = valorDeMercadoAbsoluto - valorInicial;
       } else { // Posição Vendida (item.quantidade < 0)
-        // Lucro = valor recebido na venda - custo de recompra
-        // valorInicial (item.custo_total) é o valor recebido na venda (positivo)
-        // valorDeMercadoAtualDaPosicao é o "valor de mercado da dívida" (negativo)
-        // Ex: Vendi por 1000 (valorInicial). Devo ações que valem 950 (representado por valorDeMercadoAtualDaPosicao = -950).
-        // Lucro = 1000 + (-950) = 50.
-        resultadoDaPosicao = valorInicial + valorDeMercadoAtualDaPosicao;
+        resultadoDaPosicao = valorInicial - valorDeMercadoAbsoluto;
       }
 
-      const resultadoPercentualDaPosicao = valorInicial !== 0 ? (resultadoDaPosicao / Math.abs(valorInicial)) * 100 : 0; // Usar Math.abs(valorInicial) para base percentual
+      const resultadoPercentualDaPosicao = valorInicial !== 0 ? (resultadoDaPosicao / Math.abs(valorInicial)) * 100 : 0;
 
+      // Logging (mantenha por enquanto, conforme plano anterior)
       if (valorInicial === 0 && resultadoDaPosicao !== 0) {
         console.warn("StockTable: Calculando resultado percentual com valorInicial zero e resultadoDaPosicao não-zero.", { item, resultadoDaPosicao });
-      }
-      if (isNaN(resultadoPercentualDaPosicao) || !isFinite(resultadoPercentualDaPosicao)) {
-        console.error("StockTable: resultadoPercentualDaPosicao é NaN ou Infinity.", { item, valorInicial, resultadoDaPosicao, resultadoPercentualDaPosicao });
       }
 
       return {
         ...item,
-        _valorAtualCalculated: valorDeMercadoAtualDaPosicao, // Coluna "Valor Atual*"
-        _resultadoAtualCalculated: resultadoDaPosicao, // Usado para ordenação da coluna de resultado e exibição
-        _resultadoPercentualCalculated: resultadoPercentualDaPosicao, // Usado para ordenação e exibição
+        _valorAtualCalculated: valorDeMercadoAbsoluto, // Coluna "Valor Atual*" - agora sempre positivo
+        _resultadoAtualCalculated: resultadoDaPosicao, // Coluna "Resultado*"
+        _resultadoPercentualCalculated: resultadoPercentualDaPosicao, // Coluna "Resultado (%)*"
       };
     });
 
@@ -334,8 +329,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
             </TableHeader>
             <TableBody>
               {processedCarteira.map((item) => { // Changed to map over processedCarteira
-                console.log("StockTable rendering item:", item); // <--- ADICIONAR ESTE LOG
-            
+
                 // Utilizar os valores pré-calculados e corrigidos do useEffect
                 const valorInicial = item.custo_total; // Mantém para clareza, ou pode ser removido se não usado diretamente abaixo
                 const currentPrice = getSimulatedCurrentPrice(item.preco_medio); // Necessário para a coluna "Preço Atual*"

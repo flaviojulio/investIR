@@ -506,13 +506,33 @@ def recalcular_carteira(usuario_id: int) -> None:
         valor_op_bruto = quantidade_op * op["price"] # Renomeado para clareza (valor bruto da operação)
         fees_op = op.get("fees", 0.0)
 
-        # Salva o estado ANTES de modificar quantidade e PM para lógica de venda
+        # Salva o estado ANTES de modificar quantidade, custo_total e PM para lógica de compra/venda
         estado_anterior_quantidade = carteira_temp[ticker]["quantidade"]
         estado_anterior_preco_medio = carteira_temp[ticker]["preco_medio"]
+        estado_anterior_custo_total = carteira_temp[ticker]["custo_total"] # Captura o custo total anterior
 
         if op["operation"] == "buy":
-            carteira_temp[ticker]["quantidade"] += quantidade_op
-            carteira_temp[ticker]["custo_total"] += valor_op_bruto + fees_op
+            custo_da_compra_atual_total = valor_op_bruto + fees_op
+
+            if estado_anterior_quantidade < 0: # Estava vendido e esta compra está cobrindo (parcialmente ou totalmente)
+                quantidade_acoes_sendo_cobertas = min(abs(estado_anterior_quantidade), quantidade_op)
+
+                carteira_temp[ticker]["quantidade"] += quantidade_op
+
+                if carteira_temp[ticker]["quantidade"] == 0: # Compra zerou exatamente a posição vendida
+                    carteira_temp[ticker]["custo_total"] = 0.0
+                elif carteira_temp[ticker]["quantidade"] > 0: # Compra cobriu a posição vendida e iniciou uma nova posição comprada
+                    quantidade_comprada_excedente = carteira_temp[ticker]["quantidade"]
+                    custo_da_parte_excedente = (custo_da_compra_atual_total / quantidade_op) * quantidade_comprada_excedente if quantidade_op != 0 else 0
+                    carteira_temp[ticker]["custo_total"] = custo_da_parte_excedente
+                else: # Compra apenas reduziu a posição vendida (carteira_temp[ticker]["quantidade"] < 0)
+                    reducao_valor_pos_vendida = estado_anterior_preco_medio * quantidade_acoes_sendo_cobertas
+                    carteira_temp[ticker]["custo_total"] = estado_anterior_custo_total - reducao_valor_pos_vendida
+                    if carteira_temp[ticker]["custo_total"] < 0: # Garante que não fique negativo
+                        carteira_temp[ticker]["custo_total"] = 0.0
+            else: # Estava zerado ou já comprado (caso normal de compra)
+                carteira_temp[ticker]["quantidade"] += quantidade_op
+                carteira_temp[ticker]["custo_total"] += custo_da_compra_atual_total
         elif op["operation"] == "sell":
             # valor_liquido_venda = valor_op_bruto - fees_op # Valor que efetivamente altera o caixa ou valor da posição
 
