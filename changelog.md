@@ -1,0 +1,31 @@
+# Changelog
+
+Este arquivo documenta as principais mudanças e correções implementadas no sistema.
+
+## Melhorias Recentes (Junho 2024)
+
+### Tabela "Carteira Atual" e Cálculo de Posições
+
+*   **Exibição de Posições na Carteira Atual (`frontend/components/StockTable.tsx`):**
+    *   Corrigida a exibição para permitir que posições vendidas (com quantidade negativa) apareçam corretamente.
+    *   Implementada a ocultação de posições com saldo zerado (quantidade igual a zero).
+    *   Ajustadas as colunas "Valor Inicial" e "Valor Atual\*" para sempre exibirem valores monetários positivos, mesmo para posições vendidas.
+    *   Corrigido o cálculo das colunas "Resultado\*" e "Resultado (%)\*" para refletir com precisão o lucro/prejuízo tanto de posições compradas quanto vendidas, considerando a nova convenção de exibição dos valores monetários.
+
+*   **Cálculo e Persistência de Dados da Carteira (`backend/services.py` - `recalcular_carteira` e `backend/database.py`):**
+    *   A função `recalcular_carteira` agora garante que o `custo_total` para posições vendidas seja calculado como um valor positivo, representando o valor bruto recebido na(s) venda(s) a descoberto. O `preco_medio` para posições vendidas também reflete o preço médio de venda (positivo).
+    *   Corrigida a lógica em `recalcular_carteira` para o tratamento de operações de compra que cobrem posições vendidas, assegurando que o `custo_total` da carteira seja zerado corretamente quando uma posição vendida é totalmente liquidada.
+    *   A função `atualizar_carteira` (em `database.py`) foi modificada para aceitar o `custo_total` como um argumento vindo da camada de serviço, em vez de recalculá-lo. Isso garante que o `custo_total` (positivo para vendas) determinado pela lógica de negócios seja o valor efetivamente salvo no banco de dados.
+    *   A função `obter_carteira_atual` (em `database.py`) foi ajustada para buscar todas as posições com `quantidade <> 0`, permitindo que as posições vendidas (com quantidade negativa e `custo_total` positivo) sejam corretamente enviadas para o frontend.
+
+### Apuração de Resultados para Imposto de Renda (`backend/services.py` - `recalcular_resultados`)
+
+*   **Cálculo de Resultados de Swing Trade com Vendas a Descoberto:**
+    *   Implementado o rastreamento de posições vendidas a descoberto (`posicoes_vendidas_estado_atual`) que persistem entre os meses.
+    *   A lógica de vendas swing trade agora registra os detalhes de vendas a descoberto (quantidade, valor bruto da venda, preço médio de venda). O valor líquido da venda é contabilizado nas "Vendas" do mês.
+    *   A lógica de compras swing trade foi ajustada para identificar se uma compra está cobrindo uma posição vendida existente. Em caso afirmativo:
+        *   O resultado (lucro ou prejuízo) da operação de venda a descoberto (considerando o valor da venda original e o custo da recompra atual, incluindo taxas proporcionais da compra) é apurado.
+        *   O custo da recompra é adicionado aos "Custos" do mês.
+        *   O estado da posição vendida aberta é atualizado (reduzido ou zerado).
+    *   Isso garante que o `ganho_liquido_swing` mensal reflita corretamente os resultados de operações de venda a descoberto que são liquidadas (cobertas) no respectivo mês.
+    *   A separação e o cálculo para operações de Day Trade foram mantidos e não devem ser afetados por estas mudanças no Swing Trade.
