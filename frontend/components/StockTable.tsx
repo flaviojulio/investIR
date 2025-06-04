@@ -44,6 +44,15 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
   useEffect(() => {
     // Augment items with values needed for sorting/filtering, especially calculated ones
     const augmentedCarteira = carteira.map(item => {
+      // Log para item vendido, ANTES de qualquer cálculo local com item.custo_total ou item.preco_medio
+      if (item.quantidade < 0) {
+        console.log("StockTable: Item Vendido Detalhes (useEffect)", {
+          ticker: item.ticker,
+          quantidade: item.quantidade,
+          custo_total_backend: item.custo_total,
+          preco_medio_backend: item.preco_medio
+        });
+      }
       const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
       const valorInicial = item.custo_total; // Para comprados: custo. Para vendidos: valor recebido na venda.
 
@@ -59,9 +68,9 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
 
       const resultadoPercentualDaPosicao = valorInicial !== 0 ? (resultadoDaPosicao / Math.abs(valorInicial)) * 100 : 0;
 
-      // Logging (mantenha por enquanto, conforme plano anterior)
+      // Logging
       if (valorInicial === 0 && resultadoDaPosicao !== 0) {
-        console.warn("StockTable: Calculando resultado percentual com valorInicial zero e resultadoDaPosicao não-zero.", { item, resultadoDaPosicao });
+        console.warn("StockTable (useEffect): Calculando resultado percentual com valorInicial zero e resultadoDaPosicao não-zero.", { ticker: item.ticker, quantidade: item.quantidade, custo_total: item.custo_total, preco_medio: item.preco_medio, valorInicial, resultadoDaPosicao });
       }
 
       return {
@@ -329,9 +338,10 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
             </TableHeader>
             <TableBody>
               {processedCarteira.map((item) => { // Changed to map over processedCarteira
+                console.log("StockTable: Rendering item", { ticker: item.ticker, quantidade: item.quantidade, custo_total: item.custo_total, preco_medio: item.preco_medio, _valorAtualCalculated: item._valorAtualCalculated, _resultadoAtualCalculated: item._resultadoAtualCalculated, _resultadoPercentualCalculated: item._resultadoPercentualCalculated }); // <--- ADICIONAR/CONFIRMAR ESTE LOG
 
                 // Utilizar os valores pré-calculados e corrigidos do useEffect
-                const valorInicial = item.custo_total; // Mantém para clareza, ou pode ser removido se não usado diretamente abaixo
+                // const valorInicial = item.custo_total; // Esta linha pode ser removida
                 const currentPrice = getSimulatedCurrentPrice(item.preco_medio); // Necessário para a coluna "Preço Atual*"
                 const valorAtualDisplay = item._valorAtualCalculated; // Valor para a coluna "Valor Atual*"
                 const resultadoAtualDisplay = item._resultadoAtualCalculated; // Valor para a coluna "Resultado*"
@@ -348,7 +358,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                     </TableCell>
                     <TableCell className="text-right">{formatNumber(item.quantidade)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(item.preco_medio)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(valorInicial)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(Math.abs(item.custo_total))}</TableCell>
                     <TableCell className="text-right">{formatCurrency(currentPrice)}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(valorAtualDisplay)}</TableCell>
                     <TableCell
