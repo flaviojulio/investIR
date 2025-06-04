@@ -589,7 +589,7 @@ def recalcular_carteira(usuario_id: int) -> None:
         # então se a quantidade for 0, ela ainda será salva assim.
         # Se quisermos remover, precisaríamos de uma lógica de DELETE no DB.
         # Por ora, salvar com quantidade zero é aceitável.
-        atualizar_carteira(ticker, dados["quantidade"], dados["preco_medio"], usuario_id=usuario_id)
+        atualizar_carteira(ticker, dados["quantidade"], dados["preco_medio"], dados["custo_total"], usuario_id=usuario_id)
 
 
 def recalcular_resultados(usuario_id: int) -> None:

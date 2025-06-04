@@ -383,7 +383,7 @@ def remover_operacao(operacao_id: int, usuario_id: int) -> bool:
 
 # Comment about duplicate function already removed as the function itself was removed in prior step.
 
-def atualizar_carteira(ticker: str, quantidade: int, preco_medio: float, usuario_id: int) -> None:
+def atualizar_carteira(ticker: str, quantidade: int, preco_medio: float, custo_total: float, usuario_id: int) -> None:
     """
     Atualiza ou insere um item na carteira atual de um usuário.
     
@@ -391,12 +391,11 @@ def atualizar_carteira(ticker: str, quantidade: int, preco_medio: float, usuario
         ticker: Código da ação.
         quantidade: Quantidade de ações.
         preco_medio: Preço médio das ações.
+        custo_total: Custo total da posição.
         usuario_id: ID do usuário.
     """
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        custo_total = quantidade * preco_medio
         
         # Usa INSERT OR REPLACE para simplificar (considerando UNIQUE(ticker, usuario_id))
         # A tabela carteira_atual já deve ter a restrição UNIQUE(ticker, usuario_id)
