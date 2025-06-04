@@ -33,3 +33,12 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
         *   O estado da posição vendida aberta é atualizado (reduzido ou zerado).
     *   Isso garante que o `ganho_liquido_swing` mensal reflita corretamente os resultados de operações de venda a descoberto que são liquidadas (cobertas) no respectivo mês.
     *   A separação e o cálculo para operações de Day Trade foram mantidos e não devem ser afetados por estas mudanças no Swing Trade.
+*   **Detalhes do Imposto por Operação no Modal DARF:**
+    *   Corrigida a atribuição do `status_ir` na função `calcular_operacoes_fechadas` (em `services.py`) para usar os valores específicos "Tributável Day Trade" e "Tributável Swing" (em vez de apenas "Tributável").
+    *   Esta correção permite que o modal DARF no frontend (`DarfDetailsModal.tsx`) calcule e exiba corretamente o "Imosto Estimado da Operação" individual, que estava anteriormente aparecendo zerado devido à string de status IR genérica.
+
+### Frontend e Tipos de Dados
+
+*   **Correção de Tipos no Frontend (`frontend/lib/types.ts`):**
+    *   Atualizada a interface `ResultadoMensal` para alinhar com a estrutura de dados do backend, incluindo todos os campos DARF específicos para swing trade e day trade (e.g., `darf_codigo_swing`, `darf_competencia_day`, etc.) e outros campos de resultados mensais.
+    *   Esta correção resolveu erros de compilação TypeScript no componente `DarfDetailsModal.tsx` que ocorriam devido a campos ausentes na definição do tipo.
