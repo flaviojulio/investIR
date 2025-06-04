@@ -427,7 +427,7 @@ def obter_carteira_atual(usuario_id: int) -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         
-        cursor.execute('SELECT * FROM carteira_atual WHERE usuario_id = ? AND quantidade > 0 ORDER BY ticker', (usuario_id,))
+        cursor.execute('SELECT * FROM carteira_atual WHERE usuario_id = ? AND quantidade <> 0 ORDER BY ticker', (usuario_id,))
         
         # Converte os resultados para dicionários
         carteira = [dict(row) for row in cursor.fetchall()]

@@ -44,15 +44,29 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
   useEffect(() => {
     // Augment items with values needed for sorting/filtering, especially calculated ones
     const augmentedCarteira = carteira.map(item => {
-      const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
-      const valorInicial = item.custo_total; 
-      const valorAtualCalculated = item.quantidade * currentPrice;
-      const resultadoAtualCalculated = valorAtualCalculated - valorInicial;
-      const resultadoPercentualCalculated = valorInicial !== 0 ? (resultadoAtualCalculated / valorInicial) * 100 : 0;
+      const currentPrice = getSimulatedCurrentPrice(item.preco_medio); // Assume item.preco_medio é o PM de compra ou de venda
+      const valorInicial = item.custo_total; // Para comprados: custo de aquisição. Para vendidos: valor recebido na venda.
+      const valorDeMercadoAtualDaPosicao = item.quantidade * currentPrice; // Para comprados: positivo. Para vendidos: negativo.
+
+      let resultadoDaPosicao;
+      if (item.quantidade > 0) { // Posição Comprada
+        resultadoDaPosicao = valorDeMercadoAtualDaPosicao - valorInicial;
+      } else { // Posição Vendida (item.quantidade < 0)
+        // Lucro = valor recebido na venda - custo de recompra
+        // valorInicial (item.custo_total) é o valor recebido na venda (positivo)
+        // valorDeMercadoAtualDaPosicao é o "valor de mercado da dívida" (negativo)
+        // Ex: Vendi por 1000 (valorInicial). Devo ações que valem 950 (representado por valorDeMercadoAtualDaPosicao = -950).
+        // Lucro = 1000 + (-950) = 50.
+        resultadoDaPosicao = valorInicial + valorDeMercadoAtualDaPosicao;
+      }
+
+      const resultadoPercentualDaPosicao = valorInicial !== 0 ? (resultadoDaPosicao / Math.abs(valorInicial)) * 100 : 0; // Usar Math.abs(valorInicial) para base percentual
+
       return {
         ...item,
-        _valorAtualCalculated: valorAtualCalculated, 
-        _resultadoPercentualCalculated: resultadoPercentualCalculated,
+        _valorAtualCalculated: valorDeMercadoAtualDaPosicao, // Coluna "Valor Atual*"
+        _resultadoAtualCalculated: resultadoDaPosicao, // Usado para ordenação da coluna de resultado e exibição
+        _resultadoPercentualCalculated: resultadoPercentualDaPosicao, // Usado para ordenação e exibição
       };
     });
 
@@ -313,11 +327,12 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
             </TableHeader>
             <TableBody>
               {processedCarteira.map((item) => { // Changed to map over processedCarteira
-                const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
-                const valorInicial = item.custo_total;
-                const valorAtual = item.quantidade * currentPrice;
-                const resultadoAtual = valorAtual - valorInicial;
-                const resultadoPercentualAtual = valorInicial !== 0 ? (resultadoAtual / valorInicial) * 100 : 0;
+                // Utilizar os valores pré-calculados e corrigidos do useEffect
+                const valorInicial = item.custo_total; // Mantém para clareza, ou pode ser removido se não usado diretamente abaixo
+                const currentPrice = getSimulatedCurrentPrice(item.preco_medio); // Necessário para a coluna "Preço Atual*"
+                const valorAtualDisplay = item._valorAtualCalculated; // Valor para a coluna "Valor Atual*"
+                const resultadoAtualDisplay = item._resultadoAtualCalculated; // Valor para a coluna "Resultado*"
+                const resultadoPercentualAtualDisplay = item._resultadoPercentualCalculated; // Valor para a coluna "Resultado (%)*"
 
                 return (
                   <TableRow key={item.ticker}>
@@ -332,26 +347,26 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                     <TableCell className="text-right">{formatCurrency(item.preco_medio)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(valorInicial)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(currentPrice)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(valorAtual)}</TableCell>
+                    <TableCell className="text-right font-medium">{formatCurrency(valorAtualDisplay)}</TableCell>
                     <TableCell
-                      className={`text-right font-medium ${resultadoAtual >= 0 ? "text-green-600" : "text-red-600"}`}
+                      className={`text-right font-medium ${resultadoAtualDisplay >= 0 ? "text-green-600" : "text-red-600"}`}
                     >
                       <div className="flex items-center justify-end gap-1">
-                        {resultadoAtual >= 0 ? (
+                        {resultadoAtualDisplay >= 0 ? (
                           <TrendingUp className="h-4 w-4" />
                         ) : (
                           <TrendingDown className="h-4 w-4" />
                         )}
-                        {formatCurrency(Math.abs(resultadoAtual))}
+                        {formatCurrency(Math.abs(resultadoAtualDisplay))}
                       </div>
                     </TableCell>
                     <TableCell
                       className={`text-right font-medium ${
-                        resultadoPercentualAtual >= 0 ? "text-green-600" : "text-red-600"
+                        resultadoPercentualAtualDisplay >= 0 ? "text-green-600" : "text-red-600"
                       }`}
                     >
-                      {resultadoPercentualAtual >= 0 ? "+" : ""}
-                      {resultadoPercentualAtual.toFixed(2)}%
+                      {resultadoPercentualAtualDisplay >= 0 ? "+" : ""}
+                      {resultadoPercentualAtualDisplay.toFixed(2)}%
                     </TableCell>
                     <TableCell className="text-center space-x-1">
                       <Button variant="ghost" size="sm" onClick={() => handleOpenEditModal(item)} title="Editar">
