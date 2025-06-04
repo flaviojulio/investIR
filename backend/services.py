@@ -503,34 +503,62 @@ def recalcular_carteira(usuario_id: int) -> None:
         logging.info(f"[recalcular_carteira] ANTES op ({op['ticker']}): Qtd: {carteira_temp[ticker]['quantidade']}, CustoTotal: {carteira_temp[ticker]['custo_total']}, PM: {pm_antes}")
 
         quantidade_op = op["quantity"]
-        valor_op = quantidade_op * op["price"]
+        valor_op_bruto = quantidade_op * op["price"] # Renomeado para clareza (valor bruto da operação)
         fees_op = op.get("fees", 0.0)
+
+        # Salva o estado ANTES de modificar quantidade e PM para lógica de venda
+        estado_anterior_quantidade = carteira_temp[ticker]["quantidade"]
+        estado_anterior_preco_medio = carteira_temp[ticker]["preco_medio"]
 
         if op["operation"] == "buy":
             carteira_temp[ticker]["quantidade"] += quantidade_op
-            carteira_temp[ticker]["custo_total"] += valor_op + fees_op
+            carteira_temp[ticker]["custo_total"] += valor_op_bruto + fees_op
         elif op["operation"] == "sell":
-            # Custo da venda é baseado no preço médio antes da venda
-            # Isso já deve estar refletido no cálculo do resultado da operação fechada.
-            # Aqui, apenas ajustamos a quantidade e o custo total restante.
-            custo_venda = carteira_temp[ticker]["preco_medio"] * quantidade_op if carteira_temp[ticker]["quantidade"] > 0 else 0
-            
-            carteira_temp[ticker]["quantidade"] -= quantidade_op
-            # O custo total é reduzido pelo custo das ações vendidas (baseado no preço médio)
-            carteira_temp[ticker]["custo_total"] -= custo_venda
-            # Se a quantidade for zerada, o custo total também deve ser zerado para evitar divisão por zero.
-            if carteira_temp[ticker]["quantidade"] <= 0:
-                 carteira_temp[ticker]["custo_total"] = 0
+            # valor_liquido_venda = valor_op_bruto - fees_op # Valor que efetivamente altera o caixa ou valor da posição
+
+            # Se estava comprado antes desta venda
+            if estado_anterior_quantidade > 0:
+                quantidade_vendida_da_posicao_comprada = min(estado_anterior_quantidade, quantidade_op)
+                custo_a_baixar = estado_anterior_preco_medio * quantidade_vendida_da_posicao_comprada
+                carteira_temp[ticker]["custo_total"] -= custo_a_baixar
+                carteira_temp[ticker]["quantidade"] -= quantidade_vendida_da_posicao_comprada
+
+                quantidade_op_restante_apos_vender_comprado = quantidade_op - quantidade_vendida_da_posicao_comprada
+                if quantidade_op_restante_apos_vender_comprado > 0: # Venda excedeu a posição comprada, virou vendido
+                    # Custo_total da parte comprada deve ter sido zerado ou estar próximo de zero.
+                    # Agora, custo_total representa o valor da nova posição vendida.
+                    proporcao_restante = quantidade_op_restante_apos_vender_comprado / quantidade_op if quantidade_op else 0
+                    carteira_temp[ticker]["custo_total"] = (valor_op_bruto * proporcao_restante) # Usar valor bruto para PM de venda, taxas afetam resultado.
+                    carteira_temp[ticker]["quantidade"] -= quantidade_op_restante_apos_vender_comprado
+            else: # Estava zerado ou já vendido (aumentando a posição vendida)
+                carteira_temp[ticker]["quantidade"] -= quantidade_op
+                # Custo_total para vendidos acumula o valor (bruto) obtido com as vendas.
+                # O preco_medio será (custo_total / abs(quantidade))
+                carteira_temp[ticker]["custo_total"] += valor_op_bruto
 
         logging.info(f"[recalcular_carteira] APÓS op ({op['ticker']}): Qtd: {carteira_temp[ticker]['quantidade']}, CustoTotal: {carteira_temp[ticker]['custo_total']}")
 
-        # Recalcula o preço médio após cada operação
-        if carteira_temp[ticker]["quantidade"] > 0:
+        # Recalcula o preço médio final da posição
+        if carteira_temp[ticker]["quantidade"] > 0: # Posição comprada
             carteira_temp[ticker]["preco_medio"] = carteira_temp[ticker]["custo_total"] / carteira_temp[ticker]["quantidade"]
-            logging.info(f"[recalcular_carteira] NOVO PM ({op['ticker']}): {carteira_temp[ticker]['preco_medio']}")
-        else: # Zerar se não houver mais ações
+            logging.info(f"[recalcular_carteira] NOVO PM COMPRADO ({op['ticker']}): {carteira_temp[ticker]['preco_medio']}")
+        elif carteira_temp[ticker]["quantidade"] < 0: # Posição vendida
+            # Se a quantidade é negativa, o custo_total deve representar o valor total obtido
+            # com as vendas a descoberto, e o preco_medio o preço médio dessas vendas.
+            # Estes valores devem ter sido calculados corretamente no bloco 'if op["operation"] == "sell"'.
+            # Aqui, apenas garantimos que sejam usados para o preco_medio e não zerados.
+            if abs(carteira_temp[ticker]["quantidade"]) > 0 and carteira_temp[ticker]["custo_total"] != 0: # Evitar divisão por zero se custo_total ainda for 0 por algum motivo
+                carteira_temp[ticker]["preco_medio"] = carteira_temp[ticker]["custo_total"] / abs(carteira_temp[ticker]["quantidade"])
+            elif op["operation"] == "sell": # Se foi uma venda que resultou em pos negativa e custo_total está 0 (deveria ter sido setado)
+                 carteira_temp[ticker]["preco_medio"] = op["price"] # Usa o preço da operação atual como PM
+                 # O custo_total também deveria ter sido op["price"] * op["quantity"] no bloco da venda
+                 # Se o custo_total ficou 0 para AERI3, precisamos garantir que ele seja atualizado no bloco de venda.
+            else:
+                 carteira_temp[ticker]["preco_medio"] = 0.0 # Fallback
+            logging.info(f"[recalcular_carteira] NOVO PM VENDIDO ({op['ticker']}): {carteira_temp[ticker]['preco_medio']}, CustoTotal: {carteira_temp[ticker]['custo_total']}")
+        else: # Quantidade é zero
             carteira_temp[ticker]["preco_medio"] = 0.0
-            carteira_temp[ticker]["custo_total"] = 0.0 # Garante que o custo total seja zero
+            carteira_temp[ticker]["custo_total"] = 0.0
             logging.info(f"[recalcular_carteira] PM ZERADO ({op['ticker']}): Qtd zero.")
             
     # Atualiza a carteira no banco de dados para o usuário
