@@ -229,7 +229,7 @@ def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None
     if dados.quantidade < 0:
         # Para posições vendidas editadas manualmente, o custo_total deve ser o valor (positivo) da posição vendida.
         # O preco_medio fornecido em 'dados' para uma qtd negativa é o PM de venda.
-        custo_total_calculado = abs(dados.quantidade) * dados.preco_medio 
+        custo_total_calculado = abs(dados.quantidade) * dados.preco_medio
     else:
         # Para posições compradas ou zeradas (quantidade >= 0)
         custo_total_calculado = dados.quantidade * dados.preco_medio
@@ -364,7 +364,7 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                     ir_pagar_mensal_day_trade = resultado_do_mes_dict["ir_pagar_day"]
                 
                 if ir_pagar_mensal_day_trade > 0:
-                    op_f["status_ir"] = "Tributável"
+                    op_f["status_ir"] = "Tributável Day Trade"
                 else: 
                     op_f["status_ir"] = "Lucro Compensado"
                     
@@ -381,7 +381,7 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                         ir_pagar_mensal_swing_trade = resultado_do_mes_dict["ir_pagar_swing"]
                     
                     if ir_pagar_mensal_swing_trade > 0:
-                        op_f["status_ir"] = "Tributável"
+                        op_f["status_ir"] = "Tributável Swing"
                     else: 
                         op_f["status_ir"] = "Lucro Compensado"
         
