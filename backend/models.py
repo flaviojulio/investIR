@@ -71,30 +71,38 @@ class Operacao(OperacaoBase):
     usuario_id: Optional[int] = None
 
 class ResultadoMensal(BaseModel):
-    """
-    Modelo para o resultado mensal de apuração de imposto de renda.
-    """
     mes: str  # Formato: YYYY-MM
-    vendas_swing: float
-    custo_swing: float
-    ganho_liquido_swing: float
-    isento_swing: bool
-    ganho_liquido_day: float
-    ir_devido_day: float
-    irrf_day: float
-    ir_pagar_day: float
-    prejuizo_acumulado_swing: float
-    prejuizo_acumulado_day: float
-    darf_codigo: Optional[str] = None
-    darf_competencia: Optional[str] = None
-    darf_valor: Optional[float] = None
-    darf_vencimento: Optional[date] = None
-    vendas_day_trade: Optional[float] = Field(default=0.0)
-    darf_swing_trade_valor: Optional[float] = Field(default=0.0)
-    darf_day_trade_valor: Optional[float] = Field(default=0.0)
-    status_darf_swing_trade: Optional[str] = Field(default=None)
-    status_darf_day_trade: Optional[str] = Field(default=None)
+    
+    # Swing Trade
+    vendas_swing: float = 0.0
+    custo_swing: float = 0.0
+    ganho_liquido_swing: float = 0.0
+    isento_swing: bool = False
+    ir_devido_swing: float = 0.0 # IR calculated before R$10 rule / final payment value
+    ir_pagar_swing: float = 0.0  # Actual tax to be paid for DARF
+    darf_codigo_swing: Optional[str] = None
+    darf_competencia_swing: Optional[str] = None
+    darf_valor_swing: Optional[float] = None # Actual value on the DARF document
+    darf_vencimento_swing: Optional[date] = None
+    status_darf_swing_trade: Optional[str] = Field(default=None) # e.g., 'Pendente', 'Pago'
 
+    # Day Trade
+    vendas_day_trade: float = 0.0 # Was Optional, now required with default
+    custo_day_trade: float = 0.0 # New field
+    ganho_liquido_day: float = 0.0
+    ir_devido_day: float = 0.0 # IR calculated before IRRF and R$10 rule
+    irrf_day: float = 0.0
+    ir_pagar_day: float = 0.0 # Actual tax to be paid for DARF
+    darf_codigo_day: Optional[str] = None # Renamed from darf_codigo
+    darf_competencia_day: Optional[str] = None # Renamed from darf_competencia
+    darf_valor_day: Optional[float] = None # Renamed from darf_valor
+    darf_vencimento_day: Optional[date] = None # Renamed from darf_vencimento
+    status_darf_day_trade: Optional[str] = Field(default=None) # e.g., 'Pendente', 'Pago'
+
+    # Accumulated Losses
+    prejuizo_acumulado_swing: float = 0.0
+    prejuizo_acumulado_day: float = 0.0
+    
     model_config = ConfigDict(from_attributes=True)
 
 class CarteiraAtual(BaseModel):
@@ -183,12 +191,14 @@ class OperacaoFechada(BaseModel):
     data_fechamento: date
     tipo: str  # "compra-venda" ou "venda-compra" (venda a descoberto)
     quantidade: int
-    preco_abertura: float
-    preco_fechamento: float
+    valor_compra: float     # Changed from preco_abertura
+    valor_venda: float      # Changed from preco_fechamento
     taxas_total: float
     resultado: float  # Lucro ou prejuízo
+    percentual_lucro: float # Ensured this field is present
     operacoes_relacionadas: List[OperacaoDetalhe]
     day_trade: bool  # Indica se é day trade
+    status_ir: Optional[str] = None # e.g., "Isenta Swing", "Tributável Swing", "Tributável Day Trade"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -197,4 +207,16 @@ class TokenResponse(BaseModel):
     token_type: str
 
     model_config = ConfigDict(from_attributes=True)
+
+class ResultadoTicker(BaseModel):
+    ticker: str
+    quantidade_atual: Optional[int] = 0
+    preco_medio_atual: Optional[float] = 0.0
+    custo_total_atual: Optional[float] = 0.0
+    total_investido_historico: float = 0.0  # Sum of (quantity * price + fees) for all buy operations
+    total_vendido_historico: float = 0.0    # Sum of (quantity * price - fees) for all sell operations
+    lucro_prejuizo_realizado_total: float = 0.0 # Sum of 'resultado' from operacoes_fechadas for this ticker
+    operacoes_compra_total_quantidade: int = 0 # Sum of quantity for buy operations
+    operacoes_venda_total_quantidade: int = 0  # Sum of quantity for sell operations
     
+    model_config = ConfigDict(from_attributes=True)

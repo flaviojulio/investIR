@@ -4,22 +4,26 @@ import { useState, useEffect } from "react"
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp } from "lucide-react"
+import { LogOut, TrendingUp, PlusCircle, UploadCloud } from "lucide-react"
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import { TaxMeter } from "@/components/TaxMeter"
+import { PortfolioEquityChart } from "@/components/PortfolioEquityChart" // Import the new chart
 import { UploadOperations } from "@/components/UploadOperations"
 import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"
 import { TaxResults } from "@/components/TaxResults"
+import { OperacoesEncerradasTable } from "@/components/OperacoesEncerradasTable"; // Import new component
 import { useToast } from "@/hooks/use-toast"
-import type { Operacao, CarteiraItem, ResultadoMensal } from "@/lib/types"
+import type { Operacao, CarteiraItem, ResultadoMensal, OperacaoFechada } from "@/lib/types" // Add OperacaoFechada
 
 interface DashboardData {
   carteira: CarteiraItem[]
   resultados: ResultadoMensal[]
   operacoes: Operacao[]
+  operacoes_fechadas: OperacaoFechada[]; // Add new data field
 }
 
 export function Dashboard() {
@@ -29,6 +33,7 @@ export function Dashboard() {
     carteira: [],
     resultados: [],
     operacoes: [],
+    operacoes_fechadas: [], // Initialize new data field
   })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("overview")
@@ -40,16 +45,18 @@ export function Dashboard() {
   const fetchDashboardData = async () => {
     try {
       setLoading(true)
-      const [carteiraRes, resultadosRes, operacoesRes] = await Promise.all([
+      const [carteiraRes, resultadosRes, operacoesRes, operacoesFechadasRes] = await Promise.all([
         api.get("/carteira"),
         api.get("/resultados"),
         api.get("/operacoes"),
+        api.get("/operacoes/fechadas"), // Fetch closed operations
       ])
 
       setData({
         carteira: carteiraRes.data,
         resultados: resultadosRes.data,
         operacoes: operacoesRes.data,
+        operacoes_fechadas: operacoesFechadasRes.data, // Set closed operations data
       })
     } catch (error) {
       toast({
@@ -98,27 +105,57 @@ export function Dashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-6 flex space-x-4">
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button size="lg" variant="outline">
+                <PlusCircle className="h-5 w-5 mr-2" />
+                Cadastrar Nova Operação
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Cadastrar Nova Operação</DialogTitle>
+              </DialogHeader>
+              <AddOperation onSuccess={handleDataUpdate} />
+            </DialogContent>
+          </Dialog>
+
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button size="lg" variant="outline">
+                <UploadCloud className="h-5 w-5 mr-2" />
+                Importar Operações B3
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Importar Operações da B3</DialogTitle>
+              </DialogHeader>
+              <UploadOperations onSuccess={handleDataUpdate} />
+            </DialogContent>
+          </Dialog>
+        </div>
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-            <TabsTrigger value="operations">Operações</TabsTrigger>
-            <TabsTrigger value="upload">Upload</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
             <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} />
-            <TaxMeter resultados={data.resultados} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <PortfolioEquityChart />
+              <TaxMeter resultados={data.resultados} />
+            </div>
             <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="operations">
-            <AddOperation onSuccess={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="upload">
-            <UploadOperations onSuccess={handleDataUpdate} />
+            <OperacoesEncerradasTable 
+              operacoesFechadas={data.operacoes_fechadas} 
+              resultadosMensais={data.resultados}
+              onUpdateDashboard={handleDataUpdate} 
+            />
           </TabsContent>
 
           <TabsContent value="taxes">

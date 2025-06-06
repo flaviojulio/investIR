@@ -65,7 +65,7 @@ export function TaxMeter({ resultados }: TaxMeterProps) {
           <div>
             <CardTitle className="flex items-center gap-2">
               {getStatusIcon()}
-              Impostômetro - Swing Trade
+              Isentômetro - Operações Comuns
             </CardTitle>
             <CardDescription>Acompanhe seu limite de isenção de R$ 20.000 mensais</CardDescription>
           </div>

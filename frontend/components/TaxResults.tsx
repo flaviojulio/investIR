@@ -304,7 +304,7 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
                             disabled={darfUpdating === `${resultado.mes}-swing`}
                             className="text-xs h-7 px-2"
                           >
-                            {darfUpdating === `${resultado.mes}-swing` ? "..." : "Pagar ST"}
+                            {darfUpdating === `${resultado.mes}-swing` ? "..." : "Pagar ST"} 
                           </Button>
                         )}
                         {resultado.status_darf_day_trade === 'Pendente' && resultado.darf_day_trade_valor && resultado.darf_day_trade_valor > 0 && (

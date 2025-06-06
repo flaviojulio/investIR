@@ -3,12 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 from typing import List, Dict, Any
 import uvicorn
+import logging # Added logging import
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
 
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
-    DARF, AtualizacaoCarteira, OperacaoFechada,
+    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, # Added ResultadoTicker
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
@@ -40,12 +41,19 @@ from services import (
     obter_operacao_service, # Added for returning created operacao
     gerar_resumo_operacoes_fechadas, # Added for summary
     deletar_todas_operacoes_service, # Added for bulk delete
-    atualizar_status_darf_service # Added for DARF status update
+    atualizar_status_darf_service, # Added for DARF status update
+    remover_item_carteira_service, # Added for deleting single portfolio item
+    listar_operacoes_por_ticker_service, # Added for fetching operations by ticker
+    calcular_resultados_por_ticker_service # Added for ticker results
 )
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import auth # Keep this for other auth functions
 # auth.get_db removed from here
+
+# Import the new router
+from routers import analysis_router
+from dependencies import get_current_user, oauth2_scheme # Import from dependencies
 
 # Inicialização do banco de dados
 criar_tabelas() # Creates non-auth tables
@@ -66,74 +74,81 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Include the analysis router
+app.include_router(analysis_router.router, prefix="/api") # Assuming all API routes are prefixed with /api
+
 # Configuração do OAuth2
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+# oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login") # MOVED to dependencies.py
 
 # Função para obter o usuário atual
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]:
-    try:
-        payload = auth.verificar_token(token)
-    except TokenExpiredError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": "O token de autenticação expirou.", "error_code": "TOKEN_EXPIRED"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except InvalidTokenError as e: # Use 'as e' to include original error message
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": f"O token de autenticação é inválido ou malformado: {str(e)}", "error_code": "TOKEN_INVALID"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except TokenNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": "O token de autenticação não foi reconhecido.", "error_code": "TOKEN_NOT_FOUND"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except TokenRevokedError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": "O token de autenticação foi revogado (ex: logout ou alteração de senha).", "error_code": "TOKEN_REVOKED"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except Exception as e: # Capture and potentially log the original exception
-        # Log the exception e for debugging (e.g., import logging; logging.exception("Unexpected error"))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-            detail={"message": f"Erro inesperado durante a verificação do token: {str(e)}", "error_code": "UNEXPECTED_TOKEN_VERIFICATION_ERROR"},
-        )
+# async def get_current_user(token: str = Depends(oauth2_scheme)) -> Dict[str, Any]: # MOVED to dependencies.py
+#     try:
+#         payload = auth.verificar_token(token)
+#     except TokenExpiredError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": "O token de autenticação expirou.", "error_code": "TOKEN_EXPIRED"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     except InvalidTokenError as e: # Use 'as e' to include original error message
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": f"O token de autenticação é inválido ou malformado: {str(e)}", "error_code": "TOKEN_INVALID"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     except TokenNotFoundError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": "O token de autenticação não foi reconhecido.", "error_code": "TOKEN_NOT_FOUND"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     except TokenRevokedError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": "O token de autenticação foi revogado (ex: logout ou alteração de senha).", "error_code": "TOKEN_REVOKED"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     except Exception as e: # Capture and potentially log the original exception
+#         # Log the exception e for debugging (e.g., import logging; logging.exception("Unexpected error"))
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail={"message": f"Erro inesperado durante a verificação do token: {str(e)}", "error_code": "UNEXPECTED_TOKEN_VERIFICATION_ERROR"},
+#         )
 
-    sub_str = payload.get("sub")
-    if not sub_str: 
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail={"message": "Token inválido: ID de usuário (sub) ausente no payload.", "error_code": "TOKEN_PAYLOAD_MISSING_SUB"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    try:
-        usuario_id = int(sub_str) # Converte para int
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail={"message": "Token inválido: ID de usuário (sub) não é um inteiro válido.", "error_code": "TOKEN_PAYLOAD_INVALID_SUB_FORMAT"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+#     sub_str = payload.get("sub")
+#     if not sub_str:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": "Token inválido: ID de usuário (sub) ausente no payload.", "error_code": "TOKEN_PAYLOAD_MISSING_SUB"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
+#     try:
+#         usuario_id = int(sub_str) # Converte para int
+#     except ValueError:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED,
+#             detail={"message": "Token inválido: ID de usuário (sub) não é um inteiro válido.", "error_code": "TOKEN_PAYLOAD_INVALID_SUB_FORMAT"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
 
-    # Agora usuario_id é um int e pode ser usado para chamar auth.obter_usuario
-    usuario_data = auth.obter_usuario(usuario_id) 
-    if not usuario_data:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, # Ou status.HTTP_404_NOT_FOUND
-            detail={"message": "Usuário associado ao token não encontrado.", "error_code": "USER_FOR_TOKEN_NOT_FOUND"},
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+#     # Agora usuario_id é um int e pode ser usado para chamar auth.obter_usuario
+#     usuario_data = auth.obter_usuario(usuario_id)
+#     if not usuario_data:
+#         raise HTTPException(
+#             status_code=status.HTTP_401_UNAUTHORIZED, # Ou status.HTTP_404_NOT_FOUND
+#             detail={"message": "Usuário associado ao token não encontrado.", "error_code": "USER_FOR_TOKEN_NOT_FOUND"},
+#             headers={"WWW-Authenticate": "Bearer"},
+#         )
     
-    return usuario_data
+#     return usuario_data
 
 # Função para verificar se o usuário é administrador
-async def get_admin_user(usuario: Dict = Depends(get_current_user)) -> Dict:
-    if "admin" not in usuario.get("funcoes", []):
+# Note: The type hint for `usuario` should ideally be UsuarioResponse after this change.
+# However, get_current_user in dependencies.py returns UsuarioResponse.
+# FastAPI handles this correctly due to Pydantic model.
+async def get_admin_user(usuario: UsuarioResponse = Depends(get_current_user)) -> UsuarioResponse:
+    # Access 'funcoes' as an attribute of the Pydantic model
+    if "admin" not in usuario.funcoes:
         raise HTTPException(
             status_code=403,
             detail="Acesso negado. Permissão de administrador necessária.",
@@ -184,7 +199,7 @@ async def logout(token: str = Depends(oauth2_scheme)):
     return {"mensagem": "Sessão encerrada com sucesso"}
 
 @app.get("/api/auth/me", response_model=UsuarioResponse)
-async def get_me(usuario: Dict = Depends(get_current_user)):
+async def get_me(usuario: UsuarioResponse = Depends(get_current_user)): # Changed type hint
     """
     Retorna os dados do usuário autenticado.
     """
@@ -192,7 +207,7 @@ async def get_me(usuario: Dict = Depends(get_current_user)):
 
 # Endpoints de administração de usuários (apenas para administradores)
 @app.get("/api/usuarios", response_model=List[UsuarioResponse])
-async def listar_usuarios(admin: Dict = Depends(get_admin_user)):
+async def listar_usuarios(admin: UsuarioResponse = Depends(get_admin_user)): # Changed type hint
     """
     Lista todos os usuários do sistema.
     Requer permissão de administrador.
@@ -202,7 +217,7 @@ async def listar_usuarios(admin: Dict = Depends(get_admin_user)):
 @app.get("/api/usuarios/{usuario_id}", response_model=UsuarioResponse)
 async def obter_usuario_por_id(
     usuario_id: int = Path(..., description="ID do usuário"),
-    admin: Dict = Depends(get_admin_user)
+    admin: UsuarioResponse = Depends(get_admin_user) # Changed type hint
 ):
     """
     Obtém os dados de um usuário pelo ID.
@@ -219,7 +234,7 @@ async def obter_usuario_por_id(
 async def atualizar_usuario_por_id(
     usuario_data: UsuarioUpdate,
     usuario_id: int = Path(..., description="ID do usuário"),
-    admin: Dict = Depends(get_admin_user)
+    admin: UsuarioResponse = Depends(get_admin_user) # Changed type hint
 ):
     """
     Atualiza os dados de um usuário.
@@ -240,7 +255,7 @@ async def atualizar_usuario_por_id(
 @app.delete("/api/usuarios/{usuario_id}")
 async def excluir_usuario(
     usuario_id: int = Path(..., description="ID do usuário"),
-    admin: Dict = Depends(get_admin_user)
+    admin: UsuarioResponse = Depends(get_admin_user) # Changed type hint
 ):
     """
     Exclui um usuário do sistema.
@@ -257,7 +272,7 @@ async def excluir_usuario(
 async def adicionar_funcao_a_usuario(
     usuario_id: int = Path(..., description="ID do usuário"),
     funcao_nome: str = Path(..., description="Nome da função"),
-    admin: Dict = Depends(get_admin_user)
+    admin: UsuarioResponse = Depends(get_admin_user) # Changed type hint
 ):
     """
     Adiciona uma função a um usuário.
@@ -278,7 +293,7 @@ async def adicionar_funcao_a_usuario(
 async def remover_funcao_de_usuario(
     usuario_id: int = Path(..., description="ID do usuário"),
     funcao_nome: str = Path(..., description="Nome da função"),
-    admin: Dict = Depends(get_admin_user)
+    admin: UsuarioResponse = Depends(get_admin_user) # Changed type hint
 ):
     """
     Remove uma função de um usuário.
@@ -303,7 +318,7 @@ async def remover_funcao_de_usuario(
 
 # Endpoints para gerenciar funções
 @app.get("/api/funcoes", response_model=List[FuncaoResponse])
-async def listar_funcoes(admin: Dict = Depends(get_admin_user)):
+async def listar_funcoes(admin: UsuarioResponse = Depends(get_admin_user)): # Changed type hint
     """
     Lista todas as funções do sistema.
     Requer permissão de administrador.
@@ -313,7 +328,7 @@ async def listar_funcoes(admin: Dict = Depends(get_admin_user)):
 @app.post("/api/funcoes", response_model=FuncaoResponse)
 async def criar_nova_funcao(
     funcao: FuncaoCreate,
-    admin: Dict = Depends(get_admin_user)
+    admin: UsuarioResponse = Depends(get_admin_user) # Changed type hint
 ):
     """
     Cria uma nova função no sistema.
@@ -337,7 +352,7 @@ async def criar_nova_funcao(
 async def atualizar_funcao_existente(
     funcao_id: int = Path(..., description="ID da função a ser atualizada"),
     funcao_data: FuncaoUpdate = Body(...),
-    admin: Dict = Depends(get_admin_user)
+    admin: UsuarioResponse = Depends(get_admin_user) # Changed type hint
 ):
     """
     Atualiza uma função existente no sistema.
@@ -382,7 +397,7 @@ async def atualizar_funcao_existente(
 @app.delete("/api/funcoes/{funcao_id}", response_model=Dict[str, str])
 async def deletar_funcao_existente(
     funcao_id: int = Path(..., description="ID da função a ser excluída"),
-    admin: Dict = Depends(get_admin_user)
+    admin: UsuarioResponse = Depends(get_admin_user) # Changed type hint
 ):
     """
     Exclui uma função existente do sistema.
@@ -406,18 +421,35 @@ async def deletar_funcao_existente(
 
 # Endpoints de operações com autenticação
 @app.get("/api/operacoes", response_model=List[Operacao])
-async def listar_operacoes(usuario: Dict[str, Any] = Depends(get_current_user)): # Type hint improved
+async def listar_operacoes(usuario: UsuarioResponse = Depends(get_current_user)):
     try:
-        # Use the new service function
-        operacoes = listar_operacoes_service(usuario_id=usuario["id"])
+        operacoes = listar_operacoes_service(usuario_id=usuario.id)
         return operacoes
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao listar operações: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown"
+        logging.error(f"Error in /api/operacoes for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes. Check logs.")
+
+@app.get("/api/operacoes/ticker/{ticker}", response_model=List[Operacao])
+async def listar_operacoes_por_ticker(
+    ticker: str = Path(..., description="Ticker da ação"),
+    usuario: UsuarioResponse = Depends(get_current_user) # Changed type hint
+):
+    """
+    Lista todas as operações de um usuário para um ticker específico.
+    """
+    try:
+        operacoes = services.listar_operacoes_por_ticker_service(usuario_id=usuario.id, ticker=ticker) # Use .id
+        return operacoes
+    except Exception as e:
+        user_id_for_log = usuario.id if usuario else "Unknown" # Use .id
+        logging.error(f"Error in /api/operacoes/ticker/{ticker} for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes/ticker. Check logs.")
 
 @app.post("/api/upload", response_model=Dict[str, str])
 async def upload_operacoes(
     file: UploadFile = File(...),
-    usuario: Dict = Depends(get_current_user)
+    usuario: UsuarioResponse = Depends(get_current_user) # Changed type hint
 ):
     """
     Endpoint para upload de arquivo JSON com operações de compra e venda de ações.
@@ -446,7 +478,7 @@ async def upload_operacoes(
         operacoes = [OperacaoCreate(**op) for op in operacoes_json]
         
         # Salva as operações no banco de dados com o ID do usuário
-        processar_operacoes(operacoes, usuario_id=usuario["id"])
+        processar_operacoes(operacoes, usuario_id=usuario.id) # Use .id
         
         return {"mensagem": f"Arquivo processado com sucesso. {len(operacoes)} operações importadas."}
     
@@ -456,44 +488,66 @@ async def upload_operacoes(
         raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
 
 @app.get("/api/resultados", response_model=List[ResultadoMensal])
-async def obter_resultados(usuario: Dict = Depends(get_current_user)):
+async def obter_resultados(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna os resultados mensais de apuração de imposto de renda.
     """
     try:
-        resultados = calcular_resultados_mensais(usuario_id=usuario["id"])
+        resultados = calcular_resultados_mensais(usuario_id=usuario.id)
         return resultados
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao calcular resultados: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown"
+        logging.error(f"Error in /api/resultados for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/resultados. Check logs.")
+
+@app.get("/api/resultados/ticker/{ticker}", response_model=ResultadoTicker)
+async def listar_resultados_por_ticker(
+    ticker: str = Path(..., description="Ticker da ação"),
+    usuario: UsuarioResponse = Depends(get_current_user) # Changed type hint
+):
+    """
+    Lista resultados agregados para um ticker específico para o usuário logado.
+    """
+    try:
+        resultados = services.calcular_resultados_por_ticker_service(usuario_id=usuario.id, ticker=ticker) # Use .id
+        return resultados
+    except Exception as e:
+        user_id_for_log = usuario.id if usuario else "Unknown" # Use .id
+        logging.error(f"Error in /api/resultados/ticker/{ticker} for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/resultados/ticker. Check logs.")
 
 @app.get("/api/carteira", response_model=List[CarteiraAtual])
-async def obter_carteira(usuario: Dict = Depends(get_current_user)):
+async def obter_carteira(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna a carteira atual de ações.
     """
     try:
-        carteira = calcular_carteira_atual(usuario_id=usuario["id"])
+        carteira = calcular_carteira_atual(usuario_id=usuario.id)
         return carteira
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao calcular carteira: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown"
+        logging.error(f"Error in /api/carteira for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/carteira. Check logs.")
 
 @app.get("/api/darfs", response_model=List[DARF])
-async def obter_darfs(usuario: Dict = Depends(get_current_user)):
+async def obter_darfs(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna os DARFs gerados para pagamento de imposto de renda.
     """
     try:
-        darfs = gerar_darfs(usuario_id=usuario["id"])
+        darfs = gerar_darfs(usuario_id=usuario.id) # Use .id
         return darfs
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar DARFs: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown" # Use .id
+        logging.error(f"Error in /api/darfs for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/darfs. Check logs.")
 
 @app.put("/api/impostos/darf_status/{year_month}/{type}", response_model=Dict[str, str])
 async def atualizar_status_darf(
     year_month: str = Path(..., description="Ano e mês no formato YYYY-MM, e.g., 2023-12"),
     type: str = Path(..., description="Tipo de DARF: 'swing' ou 'daytrade'"),
     status_update: DARFStatusUpdate = Body(...),
-    usuario: Dict[str, Any] = Depends(get_current_user)
+    usuario: UsuarioResponse = Depends(get_current_user) # Changed type hint
 ):
     """
     Atualiza o status de um DARF específico (swing ou daytrade) para um determinado mês/ano.
@@ -504,19 +558,19 @@ async def atualizar_status_darf(
         # mas uma checagem extra aqui pode fornecer um erro mais imediato se desejado.
         # No entanto, o Path param 'type' não tem validação regex ou enum aqui.
         # A validação no service é suficiente.
-
+        
         # Convert type to lowercase to ensure consistency before calling service
         darf_type_lower = type.lower()
         if darf_type_lower not in ["swing", "daytrade"]:
             raise HTTPException(status_code=400, detail="Tipo de DARF inválido. Use 'swing' or 'daytrade'.")
 
         resultado = services.atualizar_status_darf_service(
-            usuario_id=usuario["id"],
+            usuario_id=usuario.id, # Use .id
             year_month=year_month,
             darf_type=darf_type_lower,
             new_status=status_update.status
         )
-
+        
         # Analisa a mensagem para determinar o código de status HTTP apropriado
         if "não encontrado" in resultado.get("mensagem", "").lower() or \
            "não necessitou alteração" in resultado.get("mensagem", "").lower() : # Check for "no change needed"
@@ -526,7 +580,7 @@ async def atualizar_status_darf(
             # A especificação pedia para levantar HTTPException se não encontrado.
              if "não encontrado" in resultado.get("mensagem", "").lower():
                 raise HTTPException(status_code=404, detail=resultado["mensagem"])
-
+        
         # Se chegou aqui e não é "não encontrado", consideramos sucesso.
         return resultado
     except ValueError as ve: # Captura ValueError do service (e.g., tipo de DARF inválido)
@@ -553,8 +607,8 @@ async def criar_operacao(
         operacao: Dados da operação a ser criada.
     """
     try:
-        new_operacao_id = services.inserir_operacao_manual(operacao, usuario_id=usuario["id"])
-        operacao_criada = services.obter_operacao_service(new_operacao_id, usuario_id=usuario["id"])
+        new_operacao_id = services.inserir_operacao_manual(operacao, usuario_id=usuario.id) # Use .id
+        operacao_criada = services.obter_operacao_service(new_operacao_id, usuario_id=usuario.id) # Use .id
         if not operacao_criada:
             # This case should ideally not happen if insertion and ID return were successful
             raise HTTPException(status_code=500, detail="Operação criada mas não pôde ser recuperada.")
@@ -582,27 +636,50 @@ async def atualizar_carteira(
         if ticker.upper() != dados.ticker.upper():
             raise HTTPException(status_code=400, detail="O ticker no path deve ser o mesmo do body")
         
-        atualizar_item_carteira(dados, usuario_id=usuario["id"])
+        atualizar_item_carteira(dados, usuario_id=usuario.id) # Use .id
         return {"mensagem": f"Ação {ticker.upper()} atualizada com sucesso."}
     except HTTPException as e:
         raise e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao atualizar ação: {str(e)}")
 
+@app.delete("/api/carteira/{ticker}", response_model=Dict[str, str])
+async def deletar_item_carteira(
+    ticker: str = Path(..., description="Ticker da ação a ser removida da carteira"),
+    usuario: Dict[str, Any] = Depends(get_current_user)
+):
+    """
+    Remove um item específico (ticker) da carteira atual do usuário.
+    Esta é uma ação de override manual e não aciona recálculos automáticos da carteira.
+    """
+    try:
+        success = services.remover_item_carteira_service(usuario_id=usuario.id, ticker=ticker.upper()) # Use .id
+        if success:
+            return {"mensagem": f"Ação {ticker.upper()} removida da carteira com sucesso."}
+        else:
+            raise HTTPException(status_code=404, detail=f"Ação {ticker.upper()} não encontrada na carteira do usuário.")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        # Log the exception e for detailed debugging
+        raise HTTPException(status_code=500, detail=f"Erro ao remover ação da carteira: {str(e)}")
+
 @app.get("/api/operacoes/fechadas", response_model=List[OperacaoFechada])
-async def obter_operacoes_fechadas(usuario: Dict = Depends(get_current_user)):
+async def obter_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna as operações fechadas (compra seguida de venda ou vice-versa).
     Inclui detalhes como data de abertura e fechamento, preços, quantidade e resultado.
     """
     try:
-        operacoes_fechadas = calcular_operacoes_fechadas(usuario_id=usuario["id"])
+        operacoes_fechadas = calcular_operacoes_fechadas(usuario_id=usuario.id)
         return operacoes_fechadas
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao calcular operações fechadas: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown"
+        logging.error(f"Error in /api/operacoes/fechadas for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes/fechadas. Check logs.")
 
 @app.get("/api/operacoes/fechadas/resumo", response_model=Dict[str, Any])
-async def obter_resumo_operacoes_fechadas(usuario: Dict = Depends(get_current_user)):
+async def obter_resumo_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna um resumo das operações fechadas, incluindo:
     - Total de operações fechadas
@@ -613,10 +690,12 @@ async def obter_resumo_operacoes_fechadas(usuario: Dict = Depends(get_current_us
     - Operações com maior prejuízo
     """
     try:
-        resumo = services.gerar_resumo_operacoes_fechadas(usuario_id=usuario["id"])
+        resumo = services.gerar_resumo_operacoes_fechadas(usuario_id=usuario.id) # Use .id
         return resumo
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao calcular resumo de operações fechadas: {str(e)}")
+        user_id_for_log = usuario.id if usuario else "Unknown" # Use .id
+        logging.error(f"Error in /api/operacoes/fechadas/resumo for user {user_id_for_log}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes/fechadas/resumo. Check logs.")
     
 @app.delete("/api/admin/reset-financial-data", response_model=Dict[str, str])
 async def resetar_banco(admin: Dict = Depends(get_admin_user)):
@@ -644,7 +723,7 @@ async def deletar_operacao(
     """
     try:
         # Use the new service function
-        success = deletar_operacao_service(operacao_id=operacao_id, usuario_id=usuario["id"])
+        success = deletar_operacao_service(operacao_id=operacao_id, usuario_id=usuario.id) # Use .id
         if success:
             return {"mensagem": f"Operação {operacao_id} removida com sucesso."}
         else:
@@ -667,10 +746,11 @@ async def deletar_todas_operacoes(
     Use com cuidado, esta ação é irreversível.
     """
     try:
-        resultado = services.deletar_todas_operacoes_service(usuario_id=usuario["id"])
+        resultado = services.deletar_todas_operacoes_service(usuario_id=usuario.id) # Use .id
         return resultado
     except Exception as e:
-        # Log the exception e for detailed debugging (e.g., import logging; logging.error(f"Error in deletar_todas_operacoes: {e}", exc_info=True))
+        user_id_for_log = usuario.id if usuario else "Unknown" # Use .id
+        logging.error(f"Error in /api/bulk-ops/operacoes/delete-all for user {user_id_for_log}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro ao deletar todas as operações: {str(e)}")
 
 if __name__ == "__main__":
