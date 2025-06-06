@@ -1,17 +1,19 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react" // Added useEffect
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, AlertCircle } from "lucide-react"
+import { Plus, AlertCircle, ChevronsUpDown } from "lucide-react" // Added ChevronsUpDown
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command" // Added Command components
+import type { AcaoInfo } from "@/lib/types" // Added AcaoInfo type import
 
 interface AddOperationProps {
   onSuccess: () => void
@@ -30,13 +32,45 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
   const [error, setError] = useState("")
   const { toast } = useToast()
 
+  const [acoesList, setAcoesList] = useState<AcaoInfo[]>([])
+  const [comboboxOpen, setComboboxOpen] = useState(false)
+
+  useEffect(() => {
+    const fetchAcoes = async () => {
+      try {
+        const response = await api.get<AcaoInfo[]>("/acoes")
+        setAcoesList(response.data || [])
+      } catch (err) {
+        console.error("Erro ao buscar ações:", err)
+        // Optionally set an error state or toast here
+        toast({
+          title: "Erro ao carregar tickers",
+          description: "Não foi possível buscar a lista de tickers disponíveis.",
+          variant: "destructive",
+        })
+      }
+    }
+    fetchAcoes()
+  }, [toast])
+
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({
       ...prev,
       [field]: value,
     }))
-    setError("")
+    setError("") // Clear general error when any field changes
   }
+
+  // Specific handler for ticker selection from Combobox
+  const handleTickerSelect = (tickerValue: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      ticker: tickerValue,
+    }));
+    setError(""); // Clear general error
+    setComboboxOpen(false); // Close combobox
+  };
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -114,14 +148,43 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
 
             <div className="space-y-2">
               <Label htmlFor="ticker">Ticker *</Label>
-              <Input
-                id="ticker"
-                type="text"
-                placeholder="Ex: ITUB4, PETR4"
-                value={formData.ticker}
-                onChange={(e) => handleInputChange("ticker", e.target.value.toUpperCase())}
-                required
-              />
+              <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={comboboxOpen}
+                    className="w-full justify-between"
+                  >
+                    {formData.ticker
+                      ? acoesList.find((acao) => acao.ticker === formData.ticker)?.nome || formData.ticker
+                      : "Selecione o ticker"}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                  <Command>
+                    <CommandInput placeholder="Buscar ticker..." />
+                    <CommandList>
+                      <CommandEmpty>Nenhum ticker encontrado.</CommandEmpty>
+                      <CommandGroup>
+                        {acoesList.map((acao) => (
+                          <CommandItem
+                            key={acao.ticker}
+                            value={acao.ticker}
+                            onSelect={(currentValue) => {
+                              // currentValue is the ticker string
+                              handleTickerSelect(currentValue === formData.ticker ? "" : currentValue)
+                            }}
+                          >
+                            {acao.ticker} - {acao.nome || "Nome não disponível"}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 

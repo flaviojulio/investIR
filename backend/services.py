@@ -24,7 +24,7 @@ from database import (
     limpar_resultados_mensais_usuario_db, # Added for clearing monthly results before recalc
     remover_item_carteira_db, # Added for deleting single portfolio item
     obter_operacoes_por_ticker_db, # Added for fetching operations by ticker
-    obter_todos_stocks # Added for listing all stocks
+    obter_todas_acoes # Renamed from obter_todos_stocks
 )
 
 def _calculate_darf_due_date(year_month_str: str) -> date:
@@ -1100,8 +1100,8 @@ def calcular_resultados_por_ticker_service(usuario_id: int, ticker: str) -> Resu
         operacoes_venda_total_quantidade=operacoes_venda_total_quantidade
     )
 
-def listar_todos_stocks_service() -> List[Dict[str, Any]]:
+def listar_todas_acoes_service() -> List[Dict[str, Any]]: # Renamed from listar_todos_stocks_service
     """
     Serviço para listar todas as ações (stocks) cadastradas.
     """
-    return obter_todos_stocks()
+    return obter_todas_acoes() # Renamed from obter_todos_stocks
