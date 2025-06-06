@@ -270,7 +270,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
       <CardContent>
         <div className="mb-4">
           <Input
-            placeholder="Buscar na carteira..."
+            placeholder="Buscar em todas as colunas..."
             value={searchTermST}
             onChange={(e) => setSearchTermST(e.target.value)}
             className="max-w-sm"
