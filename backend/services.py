@@ -23,7 +23,8 @@ from database import (
     limpar_carteira_usuario_db, # Added for clearing portfolio before recalc
     limpar_resultados_mensais_usuario_db, # Added for clearing monthly results before recalc
     remover_item_carteira_db, # Added for deleting single portfolio item
-    obter_operacoes_por_ticker_db # Added for fetching operations by ticker
+    obter_operacoes_por_ticker_db, # Added for fetching operations by ticker
+    obter_todos_stocks # Added for listing all stocks
 )
 
 def _calculate_darf_due_date(year_month_str: str) -> date:
@@ -60,7 +61,12 @@ def processar_operacoes(operacoes: List[OperacaoCreate], usuario_id: int) -> Non
     """
     # Salva as operações no banco de dados
     for op in operacoes:
-        inserir_operacao(op.model_dump(), usuario_id=usuario_id) # Use model_dump() for Pydantic v2
+        try:
+            inserir_operacao(op.model_dump(), usuario_id=usuario_id) # Use model_dump() for Pydantic v2
+        except ValueError as e:
+            # If any operation fails due to invalid ticker, stop processing and raise error.
+            # Note: Operations inserted before this error are not rolled back with current DB interaction pattern.
+            raise ValueError(f"Erro ao processar lote: Ticker {op.ticker} inválido. Nenhuma operação adicional foi salva.")
     
     # Recalcula a carteira atual
     recalcular_carteira(usuario_id=usuario_id)
@@ -194,7 +200,10 @@ def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int) -> int:
         int: ID da operação inserida.
     """
     # Insere a operação no banco de dados
-    new_operacao_id = inserir_operacao(operacao.model_dump(), usuario_id=usuario_id)
+    try:
+        new_operacao_id = inserir_operacao(operacao.model_dump(), usuario_id=usuario_id)
+    except ValueError: # Catching the specific ValueError from database.inserir_operacao
+        raise # Re-raise it to be handled by the router (e.g., converted to HTTPException)
     
     # Recalcula a carteira e os resultados
     recalcular_carteira(usuario_id=usuario_id)
@@ -1090,3 +1099,9 @@ def calcular_resultados_por_ticker_service(usuario_id: int, ticker: str) -> Resu
         operacoes_compra_total_quantidade=operacoes_compra_total_quantidade,
         operacoes_venda_total_quantidade=operacoes_venda_total_quantidade
     )
+
+def listar_todos_stocks_service() -> List[Dict[str, Any]]:
+    """
+    Serviço para listar todas as ações (stocks) cadastradas.
+    """
+    return obter_todos_stocks()

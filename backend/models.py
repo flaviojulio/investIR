@@ -110,6 +110,7 @@ class CarteiraAtual(BaseModel):
     Modelo para a carteira atual de ações.
     """
     ticker: str
+    nome: Optional[str] = None # Nome da ação, para exibição
     quantidade: int
     custo_total: float
     preco_medio: float
@@ -219,4 +220,16 @@ class ResultadoTicker(BaseModel):
     operacoes_compra_total_quantidade: int = 0 # Sum of quantity for buy operations
     operacoes_venda_total_quantidade: int = 0  # Sum of quantity for sell operations
     
+    model_config = ConfigDict(from_attributes=True)
+
+class StockInfo(BaseModel):
+    """
+    Modelo para informações de uma ação (stock/ticker).
+    """
+    ticker: str
+    nome: str
+    negocios: Optional[str] = None
+    ultima_negociacao: Optional[float] = None # Armazenado como REAL no BD
+    variacao: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)

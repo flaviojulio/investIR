@@ -9,7 +9,7 @@ from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, Token
 
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
-    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, # Added ResultadoTicker
+    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, StockInfo, # Added StockInfo
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
@@ -76,6 +76,21 @@ app.add_middleware(
 
 # Include the analysis router
 app.include_router(analysis_router.router, prefix="/api") # Assuming all API routes are prefixed with /api
+
+# Endpoint para listar todas as ações (stocks)
+@app.get("/api/stocks", response_model=List[StockInfo], tags=["Stocks"])
+async def listar_stocks():
+    """
+    Lista todas as ações cadastradas no sistema.
+    Este endpoint é público e não requer autenticação.
+    """
+    try:
+        stocks = services.listar_todos_stocks_service()
+        return stocks
+    except Exception as e:
+        # Log a exceção 'e' aqui para depuração
+        logging.error(f"Error in /api/stocks: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao listar ações: {str(e)}")
 
 # Configuração do OAuth2
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login") # MOVED to dependencies.py
@@ -478,7 +493,10 @@ async def upload_operacoes(
         operacoes = [OperacaoCreate(**op) for op in operacoes_json]
         
         # Salva as operações no banco de dados com o ID do usuário
-        processar_operacoes(operacoes, usuario_id=usuario.id) # Use .id
+        try:
+            processar_operacoes(operacoes, usuario_id=usuario.id) # Use .id
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         
         return {"mensagem": f"Arquivo processado com sucesso. {len(operacoes)} operações importadas."}
     
@@ -613,6 +631,8 @@ async def criar_operacao(
             # This case should ideally not happen if insertion and ID return were successful
             raise HTTPException(status_code=500, detail="Operação criada mas não pôde ser recuperada.")
         return operacao_criada
+    except ValueError as e: # Handle ticker validation error
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         # Log the exception e for detailed debugging
         raise HTTPException(status_code=500, detail=f"Erro ao criar operação: {str(e)}")

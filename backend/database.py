@@ -191,6 +191,20 @@ def criar_tabelas():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_mes ON resultados_mensais(mes)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_ticker ON operacoes_fechadas(ticker)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_data_fechamento ON operacoes_fechadas(data_fechamento)')
+
+        # Tabela de stocks
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS stocks (
+            ticker TEXT PRIMARY KEY,
+            nome TEXT,
+            negocios TEXT,
+            ultima_negociacao REAL,
+            variacao TEXT
+        )
+        ''')
+
+        # Criar índice para a coluna ticker na tabela stocks
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stocks_ticker ON stocks(ticker)')
         
         # Adiciona índices para as colunas usuario_id
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_id ON operacoes(usuario_id)')
@@ -201,7 +215,7 @@ def criar_tabelas():
         conn.commit()
     
     # Inicializa o sistema de autenticação
-    from auth import inicializar_autenticacao
+    from .auth import inicializar_autenticacao # Relative import
     inicializar_autenticacao()
     
 def date_converter(obj):
@@ -215,6 +229,7 @@ def date_converter(obj):
 def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None) -> int:
     """
     Insere uma operação no banco de dados.
+    Verifica se o ticker da operação existe na tabela `stocks`.
     
     Args:
         operacao: Dicionário com os dados da operação.
@@ -222,10 +237,19 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
         
     Returns:
         int: ID da operação inserida.
+
+    Raises:
+        ValueError: Se o ticker não for encontrado na tabela `stocks`.
     """
     with get_db() as conn:
         cursor = conn.cursor()
         
+        # Verifica se o ticker existe na tabela stocks
+        ticker_value = operacao["ticker"]
+        cursor.execute("SELECT 1 FROM stocks WHERE ticker = ?", (ticker_value,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Ticker {ticker_value} não encontrado na tabela de ações.")
+
         # Adiciona usuario_id ao INSERT
         cursor.execute('''
         INSERT INTO operacoes (date, ticker, operation, quantity, price, fees, usuario_id)
@@ -817,3 +841,16 @@ def obter_operacoes_por_ticker_db(usuario_id: int, ticker: str) -> List[Dict[str
                  operacao_dict["date"] = operacao_dict["date"].date()
             operacoes.append(operacao_dict)
         return operacoes
+
+def obter_todos_stocks() -> List[Dict[str, Any]]:
+    """
+    Obtém todas as ações (stocks) da tabela `stocks`.
+
+    Returns:
+        List[Dict[str, Any]]: Lista de dicionários, onde cada dicionário representa uma ação.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT ticker, nome, negocios, ultima_negociacao, variacao FROM stocks ORDER BY ticker")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
