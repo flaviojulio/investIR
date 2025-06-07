@@ -215,7 +215,7 @@ def criar_tabelas():
         conn.commit()
     
     # Inicializa o sistema de autenticação
-    from .auth import inicializar_autenticacao # Relative import
+    from auth import inicializar_autenticacao # Relative import
     inicializar_autenticacao()
     
 def date_converter(obj):
