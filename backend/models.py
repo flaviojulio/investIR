@@ -222,14 +222,16 @@ class ResultadoTicker(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
-class StockInfo(BaseModel):
+class AcaoInfo(BaseModel):
     """
-    Modelo para informações de uma ação (stock/ticker).
+    Modelo para informações de uma ação (ticker) da tabela 'acoes'.
     """
     ticker: str
-    nome: str
-    negocios: Optional[str] = None
-    ultima_negociacao: Optional[float] = None # Armazenado como REAL no BD
-    variacao: Optional[str] = None
+    nome: Optional[str] = None
+    razao_social: Optional[str] = None
+    cnpj: Optional[str] = None
+    ri: Optional[str] = None
+    classificacao: Optional[str] = None
+    isin: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

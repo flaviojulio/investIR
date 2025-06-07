@@ -192,19 +192,25 @@ def criar_tabelas():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_ticker ON operacoes_fechadas(ticker)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_data_fechamento ON operacoes_fechadas(data_fechamento)')
 
-        # Tabela de stocks
+        # Remover a tabela 'stocks' antiga se existir
+        cursor.execute('DROP TABLE IF EXISTS stocks;')
+
+        # Nova tabela 'acoes'
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS stocks (
-            ticker TEXT PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS acoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL UNIQUE,
             nome TEXT,
-            negocios TEXT,
-            ultima_negociacao REAL,
-            variacao TEXT
+            razao_social TEXT,
+            cnpj TEXT,
+            ri TEXT,
+            classificacao TEXT,
+            isin TEXT
         )
         ''')
 
-        # Criar índice para a coluna ticker na tabela stocks
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_stocks_ticker ON stocks(ticker)')
+        # Criar índice para a coluna ticker na tabela acoes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_acoes_ticker ON acoes(ticker);')
         
         # Adiciona índices para as colunas usuario_id
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_id ON operacoes(usuario_id)')
@@ -246,9 +252,11 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
         
         # Verifica se o ticker existe na tabela stocks
         ticker_value = operacao["ticker"]
-        cursor.execute("SELECT 1 FROM stocks WHERE ticker = ?", (ticker_value,))
+        # Modificado para consultar a nova tabela 'acoes'
+        cursor.execute("SELECT 1 FROM acoes WHERE ticker = ?", (ticker_value,))
         if cursor.fetchone() is None:
-            raise ValueError(f"Ticker {ticker_value} não encontrado na tabela de ações.")
+            # Mensagem de erro atualizada para refletir o nome da nova tabela
+            raise ValueError(f"Ticker {ticker_value} não encontrado na tabela de ações (acoes).")
 
         # Adiciona usuario_id ao INSERT
         cursor.execute('''
@@ -450,7 +458,20 @@ def obter_carteira_atual(usuario_id: int) -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         
-        cursor.execute('SELECT * FROM carteira_atual WHERE usuario_id = ? AND quantidade <> 0 ORDER BY ticker', (usuario_id,))
+        # Modificado para incluir o nome da ação da tabela 'acoes'
+        query = """
+        SELECT
+            ca.ticker,
+            ca.quantidade,
+            ca.custo_total,
+            ca.preco_medio,
+            a.nome
+        FROM carteira_atual ca
+        LEFT JOIN acoes a ON ca.ticker = a.ticker
+        WHERE ca.usuario_id = ? AND ca.quantidade <> 0
+        ORDER BY ca.ticker
+        """
+        cursor.execute(query, (usuario_id,))
         
         # Converte os resultados para dicionários
         carteira = [dict(row) for row in cursor.fetchall()]
@@ -842,15 +863,16 @@ def obter_operacoes_por_ticker_db(usuario_id: int, ticker: str) -> List[Dict[str
             operacoes.append(operacao_dict)
         return operacoes
 
-def obter_todos_stocks() -> List[Dict[str, Any]]:
+def obter_todas_acoes() -> List[Dict[str, Any]]: # Renamed from obter_todos_stocks
     """
-    Obtém todas as ações (stocks) da tabela `stocks`.
+    Obtém todas as ações (stocks) da tabela `acoes`. # Modificado para refletir a nova tabela 'acoes'
 
     Returns:
         List[Dict[str, Any]]: Lista de dicionários, onde cada dicionário representa uma ação.
     """
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT ticker, nome, negocios, ultima_negociacao, variacao FROM stocks ORDER BY ticker")
+        # Modificado para consultar a nova tabela 'acoes' e seus campos
+        cursor.execute("SELECT id, ticker, nome, razao_social, cnpj, ri, classificacao, isin FROM acoes ORDER BY ticker")
         rows = cursor.fetchall()
         return [dict(row) for row in rows]

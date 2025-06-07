@@ -11,6 +11,7 @@ export interface Operacao {
 
 export interface CarteiraItem {
   ticker: string;
+  nome?: string; // Nome da ação, para exibição
   quantidade: number;
   preco_medio: number;
   custo_total: number;
@@ -111,4 +112,14 @@ export interface ProfitabilityDetails {
 export interface PortfolioHistoryResponse {
   equity_curve: EquityDataPoint[];
   profitability: ProfitabilityDetails;
+}
+
+export interface AcaoInfo {
+  ticker: string;
+  nome?: string;
+  razao_social?: string;
+  cnpj?: string;
+  ri?: string;
+  classificacao?: string;
+  isin?: string;
 }

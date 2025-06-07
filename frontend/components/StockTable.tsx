@@ -91,6 +91,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
       newProcessedData = newProcessedData.filter(item => {
         return (
           item.ticker.toLowerCase().includes(lowercasedSearchTerm) ||
+          (item.nome || '').toLowerCase().includes(lowercasedSearchTerm) || // Added nome to filter
           item.quantidade.toString().includes(lowercasedSearchTerm) ||
           item.custo_total.toString().includes(lowercasedSearchTerm) || 
           formatCurrency(item._valorAtualCalculated).toLowerCase().includes(lowercasedSearchTerm) || // Search formatted currency
@@ -106,6 +107,8 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
           switch (key) {
             case 'ticker':
               return item.ticker.toLowerCase();
+            case 'nome': // Added nome sorting
+              return (item.nome || '').toLowerCase();
             case 'quantidade':
               return item.quantidade;
             case 'custo_total': // Valor Inicial
@@ -290,6 +293,16 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                     )}
                   </div>
                 </TableHead>
+                <TableHead onClick={() => requestSortST('nome')} className="cursor-pointer hover:bg-muted/50">
+                  <div className="flex items-center">
+                    Nome
+                    {sortConfigST?.key === 'nome' ? (
+                      sortConfigST.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
+                    ) : (
+                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
+                    )}
+                  </div>
+                </TableHead>
                 <TableHead onClick={() => requestSortST('quantidade')} className="cursor-pointer hover:bg-muted/50 text-right">
                   <div className="flex items-center justify-end">
                     Quantidade
@@ -356,6 +369,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                         </Badge>
                       </Link>
                     </TableCell>
+                    <TableCell>{item.nome || '-'}</TableCell> {/* Display stock name */}
                     <TableCell className="text-right">{formatNumber(item.quantidade)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(item.preco_medio)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(Math.abs(item.custo_total))}</TableCell>

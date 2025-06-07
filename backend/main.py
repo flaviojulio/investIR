@@ -9,7 +9,7 @@ from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, Token
 
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
-    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, StockInfo, # Added StockInfo
+    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo, # Changed StockInfo to AcaoInfo
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
@@ -77,19 +77,19 @@ app.add_middleware(
 # Include the analysis router
 app.include_router(analysis_router.router, prefix="/api") # Assuming all API routes are prefixed with /api
 
-# Endpoint para listar todas as ações (stocks)
-@app.get("/api/stocks", response_model=List[StockInfo], tags=["Stocks"])
-async def listar_stocks():
+# Endpoint para listar todas as ações (acoes)
+@app.get("/api/acoes", response_model=List[AcaoInfo], tags=["Ações"]) # Renamed path, response_model, tags
+async def listar_acoes(): # Renamed function
     """
     Lista todas as ações cadastradas no sistema.
     Este endpoint é público e não requer autenticação.
     """
     try:
-        stocks = services.listar_todos_stocks_service()
-        return stocks
+        acoes = services.listar_todas_acoes_service() # Renamed service call
+        return acoes
     except Exception as e:
         # Log a exceção 'e' aqui para depuração
-        logging.error(f"Error in /api/stocks: {e}", exc_info=True)
+        logging.error(f"Error in /api/acoes: {e}", exc_info=True) # Updated log message
         raise HTTPException(status_code=500, detail=f"Erro interno ao listar ações: {str(e)}")
 
 # Configuração do OAuth2

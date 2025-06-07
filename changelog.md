@@ -2,6 +2,23 @@
 
 Este arquivo documenta as principais mudanças e correções implementadas no sistema.
 
+## [Não Liberado]
+
+### Mudanças Significativas
+- **Nova Tabela `acoes`**: Introduzida a tabela `acoes` no banco de dados, substituindo a antiga tabela `stocks`. A nova estrutura inclui os campos: `id` (INTEGER PRIMARY KEY AUTOINCREMENT), `ticker` (TEXT NOT NULL UNIQUE), `nome` (TEXT), `razao_social` (TEXT), `cnpj` (TEXT), `ri` (TEXT), `classificacao` (TEXT), e `isin` (TEXT).
+- **Validação de Ticker nas Operações**: Ao inserir uma nova operação (manual ou via upload), o ticker informado é agora validado contra a tabela `acoes`. Se o ticker não existir na tabela `acoes`, a operação é rejeitada e um erro (HTTP 400) é retornado ao cliente.
+- **Endpoint de Listagem de Ações**: Adicionado um novo endpoint GET `/api/acoes` que permite listar todas as ações (empresas) cadastradas no sistema. Este endpoint é público.
+- **Melhoria no Endpoint de Carteira**: O endpoint GET `/api/carteira` foi atualizado para incluir o `nome` da ação (obtido da tabela `acoes`) em cada item da carteira retornada, enriquecendo a informação disponível para o frontend.
+- **Remoção do Script de População de Ações**: O script `backend/populate_stocks.py` (que populava a antiga tabela `stocks`) foi removido. A responsabilidade de popular a nova tabela `acoes` com os dados corretos das empresas agora é externa ao versionamento do código principal da aplicação (provavelmente via um script separado ou processo de administração).
+- **Renomeações Internas para Consistência**: Diversos modelos Pydantic, funções de serviço e funções de banco de dados foram renomeados para refletir a mudança conceitual de "stocks" (cotações/informações de mercado) para "acoes" (empresas/entidades). Exemplos incluem:
+    - Modelo Pydantic: `StockInfo` renomeado para `AcaoInfo`.
+    - Endpoint API: `/api/stocks` renomeado para `/api/acoes`.
+    - Funções de serviço: `listar_todos_stocks_service` para `listar_todas_acoes_service`.
+    - Funções de banco de dados: `obter_todos_stocks` para `obter_todas_acoes`.
+- **Melhoria na Adição de Operações (Frontend)**: O formulário de adicionar nova operação (`AddOperation.tsx`) agora utiliza um seletor com busca (Combobox) para o campo "Ticker". Este Combobox é populado com dados da API `/api/acoes`, substituindo a entrada de texto manual e melhorando a experiência do usuário e a validação dos dados.
+- **Exibição do Nome da Ação na Carteira (Frontend)**: A tabela da carteira (`StockTable.tsx`) agora exibe uma coluna com o "Nome" da ação, além do ticker. Esta nova coluna também permite ordenação e foi incluída na funcionalidade de busca/filtro da tabela.
+- **Tipos Frontend Atualizados**: A interface `CarteiraItem` em `frontend/lib/types.ts` foi atualizada para incluir o campo opcional `nome?: string;`. Adicionalmente, uma nova interface `AcaoInfo` foi criada para tipar os dados das ações buscados da API `/api/acoes`, correspondendo ao modelo Pydantic do backend.
+
 ## Melhorias Recentes (Junho 2024)
 
 ### Tabela "Carteira Atual" e Cálculo de Posições
