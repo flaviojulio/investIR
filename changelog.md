@@ -74,6 +74,8 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 ### Correções e Ajustes
 - **Correção**: Corrigido erro `ReferenceError: useMemo is not defined` na página "Meus Proventos" (`frontend/app/proventos/page.tsx`) pela adição da importação faltante do hook `useMemo` do React.
 - **Ajuste de UI**: O link de navegação "Proventos" na sidebar (`backend/components/app-sidebar.tsx`) foi reposicionado para aparecer imediatamente após "Visão Geral" (Dashboard) para melhor fluxo de usuário.
+- **Correção de Autenticação (Frontend)**: Resolvido problema que causava erros `401 Unauthorized` em chamadas à API para rotas protegidas. Adicionado um interceptor de requisição `axios` em `frontend/lib/api.ts` para incluir automaticamente o token JWT no header `Authorization`.
+- **Ajuste na Navegação (Sidebar)**: O código do componente da sidebar (`backend/components/app-sidebar.tsx`) foi verificado e o link "Proventos" está corretamente posicionado após "Visão Geral" (Dashboard). Instruções foram fornecidas ao usuário para limpar cache do navegador e reiniciar o servidor de desenvolvimento, caso o link não esteja visível devido a cache.
 
 ## Melhorias Recentes (Junho 2024)
 

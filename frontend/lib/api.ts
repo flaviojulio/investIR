@@ -11,6 +11,23 @@ export const api = axios.create({
   baseURL: "http://localhost:8000/api", // Ensure this matches your backend API prefix
 })
 
+// Interceptor para adicionar o token JWT ao header Authorization de todas as requisições
+api.interceptors.request.use(
+  (config) => {
+    // Verifica se o código está sendo executado no lado do cliente
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem("token"); // Chave do token no localStorage
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Interceptor para tratar erros de autenticação
 api.interceptors.response.use(
   (response) => response,
