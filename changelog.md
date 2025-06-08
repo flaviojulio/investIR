@@ -45,6 +45,32 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - As colunas de data nas tabelas `proventos` (`data_registro`, `data_ex`, `dt_pagamento`) e `eventos_corporativos` (`data_aprovacao`, `data_registro`, `data_ex`) foram alteradas de `TEXT` para `DATE` nas declarações `CREATE TABLE` em `backend/database.py`.
 - Esta mudança visa melhorar a semântica do esquema. A aplicação continua a interagir com o banco de dados usando strings no formato ISO "YYYY-MM-DD" para esses campos, o que é compatível com a afinidade de tipo `DATE` no SQLite (que internamente pode armazená-los como TEXT, REAL ou INTEGER).
 
+### Cálculo e Exibição de Proventos por Usuário (Backend)
+- **Lógica de Cálculo**: Implementada funcionalidade para calcular os proventos recebidos por um usuário específico, baseando-se na quantidade de ações que o usuário possuía na data anterior à `data_ex` do provento global. Esta lógica utiliza a função `obter_saldo_acao_em_data` para determinar a quantidade de ações relevantes.
+- **Serviços de Agregação**: Desenvolvidos serviços (`gerar_resumo_proventos_anuais_usuario_service`, `gerar_resumo_proventos_mensais_usuario_service`, `gerar_resumo_proventos_por_acao_usuario_service`) para gerar resumos anuais, mensais (filtrados por ano) e por ação dos proventos recebidos pelo usuário.
+- **Novos Modelos Pydantic**: Adicionados modelos (`ProventoRecebidoUsuario`, `DetalheTipoProvento`, `ResumoProventoAnual`, `ResumoProventoMensal`, `ResumoProventoPorAcao`) em `backend/models.py` para estruturar os dados de entrada e saída para os novos serviços e endpoints de resumo de proventos.
+- **Novos Endpoints da API (Autenticados)**:
+    - `GET /api/usuario/proventos/`: Lista detalhada de todos os proventos calculados para o usuário logado, utilizando o modelo `ProventoRecebidoUsuario`.
+    - `GET /api/usuario/proventos/resumo_anual/`: Retorna um resumo anual dos proventos do usuário, utilizando o modelo `ResumoProventoAnual`.
+    - `GET /api/usuario/proventos/resumo_mensal/{ano}/`: Retorna um resumo mensal dos proventos do usuário para um ano específico (com validação de `ano`), utilizando o modelo `ResumoProventoMensal`.
+    - `GET /api/usuario/proventos/resumo_por_acao/`: Retorna um resumo dos proventos do usuário agregado por ação, utilizando o modelo `ResumoProventoPorAcao`.
+
+### Nova Página de Proventos (Frontend)
+- **Layout e Navegação**: Criada a página `/proventos` (`frontend/app/proventos/page.tsx`) e adicionado um link "Proventos" na sidebar de navegação principal, facilitando o acesso à nova funcionalidade.
+- **Tipos e API**: Definidas interfaces TypeScript (`ProventoRecebidoUsuario`, `ResumoProventoAnualAPI`, etc.) em `frontend/lib/types.ts` para tipar os dados de proventos. Criadas funções em `frontend/lib/api.ts` para buscar os dados dos novos endpoints de proventos do usuário.
+- **Filtro por Ano**: Implementado um componente seletor de ano na página, permitindo ao usuário filtrar os dados exibidos nos cards informativos, gráfico de pizza por ação e na tabela detalhada de proventos para um ano específico. Os anos disponíveis no seletor são populados dinamicamente com base nos dados anuais de proventos do usuário.
+- **Cards Informativos**: Adicionados cards de resumo no topo da página (`frontend/components/InfoCard.tsx` reutilizado) que exibem informações chave para o ano selecionado, como: Total Recebido no Ano, Total de Dividendos, Total de JCP e a Ação com Maior Pagamento no Ano.
+- **Gráficos Interativos**:
+    - **Gráfico Anual**: Um gráfico de barras empilhadas exibe o total de proventos recebidos por ano (Dividendos, JCP, Outros) agregando todos os anos com dados.
+    - **Gráfico Mensal**: Um gráfico de barras empilhadas detalha os proventos recebidos a cada mês (Dividendos, JCP, Outros) para o ano selecionado no filtro.
+    - **Gráfico de Pizza por Ação**: Um gráfico de pizza mostra a distribuição percentual do total de proventos recebidos por cada ação no ano selecionado.
+    - Todos os gráficos utilizam a biblioteca `recharts` e wrappers customizados (`ChartContainer`, etc.) para consistência visual e interatividade (tooltips, legendas).
+- **Tabela Detalhada de Proventos**: Implementado o componente `frontend/components/TabelaProventos.tsx` que exibe uma lista detalhada de todos os proventos recebidos pelo usuário. As colunas incluem Data Ex, Data de Pagamento, Ticker da Ação, Nome da Ação, Tipo de Provento, Quantidade de Ações na Data Ex, Valor Unitário do Provento e Valor Total Recebido. A tabela possui:
+    - Ordenação clicável para as principais colunas.
+    - Formatação de datas e valores monetários.
+    - Design responsivo com ocultação de colunas menos críticas em telas menores.
+    - Filtragem dos dados exibidos de acordo com o ano selecionado no filtro da página (ou todos os proventos se nenhum ano for selecionado).
+
 ## Melhorias Recentes (Junho 2024)
 
 ### Tabela "Carteira Atual" e Cálculo de Posições

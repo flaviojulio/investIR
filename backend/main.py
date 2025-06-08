@@ -11,6 +11,7 @@ from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
     DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo, # Changed StockInfo to AcaoInfo
     ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # Added EventoCorporativo models
+    ProventoRecebidoUsuario, ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, # Novos modelos de resumo de proventos
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
@@ -50,6 +51,10 @@ from services import (
     registrar_provento_service,
     listar_proventos_por_acao_service,
     listar_todos_proventos_service,
+    listar_proventos_recebidos_pelo_usuario_service, # Service para proventos detalhados do usuário
+    gerar_resumo_proventos_anuais_usuario_service, # Service para resumo anual de proventos
+    gerar_resumo_proventos_mensais_usuario_service, # Service para resumo mensal de proventos
+    gerar_resumo_proventos_por_acao_usuario_service, # Service para resumo por ação de proventos
     # EventoCorporativo services
     registrar_evento_corporativo_service,
     listar_eventos_corporativos_por_acao_service,
@@ -197,6 +202,68 @@ async def listar_todos_os_eventos_corporativos_api( # Renamed to avoid conflict 
     except Exception as e:
         logging.error(f"Error in GET /api/eventos_corporativos: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno ao listar todos os eventos corporativos: {str(e)}")
+
+# Endpoints de Proventos do Usuário
+
+@app.get("/api/usuario/proventos/", response_model=List[ProventoRecebidoUsuario], tags=["Proventos Usuário"])
+async def listar_proventos_usuario_detalhado(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Lista todos os proventos que o usuário logado teria recebido,
+    detalhando a quantidade de ações na data ex e o valor total.
+    """
+    try:
+        # O serviço já retorna List[Dict[str, Any]], que o Pydantic validará contra ProventoRecebidoUsuario.
+        # Se ProventoRecebidoUsuario tiver Config.from_attributes = True e o serviço retornasse objetos ORM,
+        # a conversão seria automática. Como o serviço já constrói os dicionários, está ok.
+        proventos_data = services.listar_proventos_recebidos_pelo_usuario_service(usuario_id=usuario.id)
+        # Para garantir a validação e conversão correta para o response_model:
+        return [ProventoRecebidoUsuario(**p_data) for p_data in proventos_data]
+    except Exception as e:
+        logging.error(f"Error in GET /api/usuario/proventos/ for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao listar proventos do usuário: {str(e)}")
+
+@app.get("/api/usuario/proventos/resumo_anual/", response_model=List[ResumoProventoAnual], tags=["Proventos Usuário"])
+async def obter_resumo_proventos_anuais_usuario(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Gera um resumo anual dos proventos recebidos pelo usuário logado.
+    """
+    try:
+        return services.gerar_resumo_proventos_anuais_usuario_service(usuario_id=usuario.id)
+    except Exception as e:
+        logging.error(f"Error in GET /api/usuario/proventos/resumo_anual/ for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao gerar resumo anual de proventos: {str(e)}")
+
+@app.get("/api/usuario/proventos/resumo_mensal/{ano}/", response_model=List[ResumoProventoMensal], tags=["Proventos Usuário"])
+async def obter_resumo_proventos_mensais_usuario(
+    ano: int = Path(..., description="Ano para o resumo mensal", ge=2000, le=2100),
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Gera um resumo mensal dos proventos recebidos pelo usuário logado para um ano específico.
+    """
+    try:
+        return services.gerar_resumo_proventos_mensais_usuario_service(usuario_id=usuario.id, ano_filtro=ano)
+    except Exception as e:
+        logging.error(f"Error in GET /api/usuario/proventos/resumo_mensal/{ano}/ for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao gerar resumo mensal de proventos: {str(e)}")
+
+@app.get("/api/usuario/proventos/resumo_por_acao/", response_model=List[ResumoProventoPorAcao], tags=["Proventos Usuário"])
+async def obter_resumo_proventos_por_acao_usuario(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Gera um resumo dos proventos recebidos pelo usuário logado, agrupados por ação.
+    """
+    try:
+        return services.gerar_resumo_proventos_por_acao_usuario_service(usuario_id=usuario.id)
+    except Exception as e:
+        logging.error(f"Error in GET /api/usuario/proventos/resumo_por_acao/ for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao gerar resumo de proventos por ação: {str(e)}")
+
 
 # Configuração do OAuth2
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login") # MOVED to dependencies.py

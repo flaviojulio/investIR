@@ -11,6 +11,7 @@ import {
   Wallet,
   AlertTriangle,
   LogOut,
+  Landmark, // Added for Proventos
 } from "lucide-react"
 
 import {
@@ -59,6 +60,12 @@ const menuItems = [
     url: "/darf",
     icon: FileText,
     description: "Impostos a pagar",
+  },
+  {
+    title: "Proventos",
+    url: "/proventos",
+    icon: Landmark, // Using Landmark icon
+    description: "Dividendos e JCP recebidos",
   },
   {
     title: "Prejuízo Acumulado",

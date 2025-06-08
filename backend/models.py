@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
 from pydantic import ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict, Any # Added Dict, Any
 from datetime import date, datetime
 
 # Modelos para autenticação
@@ -292,6 +292,18 @@ class ProventoInfo(ProventoBase):
     # model_config json_encoders é uma forma de forçar, mas geralmente não é necessário para 'date'.
     model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat()})
 
+class ProventoRecebidoUsuario(ProventoInfo):
+    """
+    Representa um provento que foi efetivamente recebido por um usuário,
+    incluindo informações sobre a ação e a quantidade na data ex.
+    Herda de ProventoInfo e adiciona campos específicos do contexto do usuário.
+    """
+    ticker_acao: str
+    nome_acao: Optional[str] = None
+    quantidade_na_data_ex: int
+    valor_total_recebido: float
+    # model_config é herdado de ProventoInfo (que herda de ProventoBase)
+
 
 # Modelos para Eventos Corporativos
 class EventoCorporativoBase(BaseModel):
@@ -327,3 +339,33 @@ class EventoCorporativoCreate(BaseModel):
 class EventoCorporativoInfo(EventoCorporativoBase):
     id: int
     model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat() if d else None})
+
+
+# Modelos para Resumos de Proventos
+
+class DetalheTipoProvento(BaseModel):
+    tipo: str
+    valor_total_tipo: float
+
+class ResumoProventoAnual(BaseModel):
+    ano: int
+    total_dividendos: float = 0.0
+    total_jcp: float = 0.0
+    total_outros: float = 0.0 # Para tipos de proventos que não são 'DIVIDENDO' ou 'JCP'
+    total_geral: float = 0.0
+    acoes_detalhadas: List[Dict[str, Any]]
+    # Cada dict: {"ticker": str, "nome_acao": str, "total_recebido_na_acao": float, "detalhes_por_tipo": List[DetalheTipoProvento]}
+
+class ResumoProventoMensal(BaseModel):
+    mes: str # Formato "YYYY-MM"
+    total_dividendos: float = 0.0
+    total_jcp: float = 0.0
+    total_outros: float = 0.0
+    total_geral: float = 0.0
+    acoes_detalhadas: List[Dict[str, Any]] # Mesma estrutura de acoes_detalhadas do ResumoProventoAnual
+
+class ResumoProventoPorAcao(BaseModel):
+    ticker_acao: str
+    nome_acao: Optional[str] = None
+    total_recebido_geral_acao: float = 0.0
+    detalhes_por_tipo: List[DetalheTipoProvento]

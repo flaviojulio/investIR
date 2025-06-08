@@ -897,6 +897,27 @@ def obter_operacoes_por_ticker_db(usuario_id: int, ticker: str) -> List[Dict[str
             operacoes.append(operacao_dict)
         return operacoes
 
+def obter_operacoes_por_ticker_ate_data_db(usuario_id: int, ticker: str, data_ate: str) -> List[Dict[str, Any]]:
+    """
+    Obtém operações de um ticker específico para um usuário até uma data específica.
+    Retorna apenas os campos 'operation' e 'quantity'.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT date, operation, quantity, id
+            FROM operacoes
+            WHERE usuario_id = ? AND ticker = ? AND date <= ?
+            ORDER BY date, id
+        ''', (usuario_id, ticker, data_ate))
+        rows = cursor.fetchall()
+        # Embora a query selecione mais campos para ordenação e contexto,
+        # a descrição original do subtask pedia para retornar dicts com 'operation' e 'quantity'.
+        # Para flexibilidade, retornaremos o dict completo da linha.
+        # Se for estritamente 'operation' e 'quantity':
+        # return [{"operation": row["operation"], "quantity": row["quantity"]} for row in rows]
+        return [dict(row) for row in rows]
+
 def obter_acao_por_id(id_acao: int) -> Optional[Dict[str, Any]]:
     """
     Obtém uma ação específica pelo seu ID.
