@@ -71,6 +71,10 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
     - Design responsivo com ocultação de colunas menos críticas em telas menores.
     - Filtragem dos dados exibidos de acordo com o ano selecionado no filtro da página (ou todos os proventos se nenhum ano for selecionado).
 
+### Correções e Ajustes
+- **Correção**: Corrigido erro `ReferenceError: useMemo is not defined` na página "Meus Proventos" (`frontend/app/proventos/page.tsx`) pela adição da importação faltante do hook `useMemo` do React.
+- **Ajuste de UI**: O link de navegação "Proventos" na sidebar (`backend/components/app-sidebar.tsx`) foi reposicionado para aparecer imediatamente após "Visão Geral" (Dashboard) para melhor fluxo de usuário.
+
 ## Melhorias Recentes (Junho 2024)
 
 ### Tabela "Carteira Atual" e Cálculo de Posições
