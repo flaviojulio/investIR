@@ -19,6 +19,17 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - **Exibição do Nome da Ação na Carteira (Frontend)**: A tabela da carteira (`StockTable.tsx`) agora exibe uma coluna com o "Nome" da ação, além do ticker. Esta nova coluna também permite ordenação e foi incluída na funcionalidade de busca/filtro da tabela.
 - **Tipos Frontend Atualizados**: A interface `CarteiraItem` em `frontend/lib/types.ts` foi atualizada para incluir o campo opcional `nome?: string;`. Adicionalmente, uma nova interface `AcaoInfo` foi criada para tipar os dados das ações buscados da API `/api/acoes`, correspondendo ao modelo Pydantic do backend.
 
+### Gerenciamento de Proventos (Backend)
+- **Nova Tabela `proventos`**: Adicionada tabela `proventos` ao banco de dados para armazenar dividendos, JCP (Juros sobre Capital Próprio), rendimentos, etc. Campos: `id` (INTEGER PRIMARY KEY AUTOINCREMENT), `id_acao` (INTEGER, FOREIGN KEY REFERENCES `acoes(id)`), `tipo` (TEXT), `valor` (REAL), `data_registro` (TEXT YYYY-MM-DD), `data_ex` (TEXT YYYY-MM-DD), `dt_pagamento` (TEXT YYYY-MM-DD).
+- **Modelos Pydantic para Proventos**: Criados os modelos `ProventoBase`, `ProventoCreate`, e `ProventoInfo` em `backend/models.py`.
+    - `ProventoCreate` é usado para a entrada de dados e inclui validadores para converter `valor` (string com vírgula ou ponto) para `float` e datas (strings "DD/MM/YYYY") para objetos `date`.
+    - `ProventoInfo` é usado para respostas da API, com campos de data formatados como "YYYY-MM-DD".
+- **Lógica de Banco de Dados e Serviços**: Implementadas funções em `backend/database.py` (`inserir_provento`, `obter_proventos_por_acao_id`, `obter_provento_por_id`, `obter_todos_proventos`, `obter_acao_por_id`) e em `backend/services.py` (`registrar_provento_service`, `listar_proventos_por_acao_service`, `listar_todos_proventos_service`) para gerenciar a criação e listagem de proventos, incluindo validações de existência da `id_acao`.
+- **Novos Endpoints da API para Proventos**:
+    - `POST /api/acoes/{id_acao}/proventos`: Para registrar um novo provento associado a uma ação específica. Requer autenticação.
+    - `GET /api/acoes/{id_acao}/proventos`: Para listar todos os proventos de uma ação específica. Requer autenticação.
+    - `GET /api/proventos/`: Para listar todos os proventos de todas as ações cadastradas no sistema. Endpoint público.
+
 ## Melhorias Recentes (Junho 2024)
 
 ### Tabela "Carteira Atual" e Cálculo de Posições

@@ -10,6 +10,7 @@ from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, Token
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
     DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo, # Changed StockInfo to AcaoInfo
+    ProventoCreate, ProventoInfo, # Added Provento models
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
@@ -44,7 +45,11 @@ from services import (
     atualizar_status_darf_service, # Added for DARF status update
     remover_item_carteira_service, # Added for deleting single portfolio item
     listar_operacoes_por_ticker_service, # Added for fetching operations by ticker
-    calcular_resultados_por_ticker_service # Added for ticker results
+    calcular_resultados_por_ticker_service, # Added for ticker results
+    # Provento services
+    registrar_provento_service,
+    listar_proventos_por_acao_service,
+    listar_todos_proventos_service
 )
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -91,6 +96,54 @@ async def listar_acoes(): # Renamed function
         # Log a exceção 'e' aqui para depuração
         logging.error(f"Error in /api/acoes: {e}", exc_info=True) # Updated log message
         raise HTTPException(status_code=500, detail=f"Erro interno ao listar ações: {str(e)}")
+
+# Endpoints de Proventos
+
+@app.post("/api/acoes/{id_acao}/proventos", response_model=ProventoInfo, status_code=status.HTTP_201_CREATED, tags=["Proventos"])
+async def registrar_provento_para_acao(
+    id_acao: int = Path(..., description="ID da ação à qual o provento pertence"),
+    provento_in: ProventoCreate = Body(...),
+    usuario: UsuarioResponse = Depends(get_current_user) # Ensure user is logged in
+):
+    """
+    Registra um novo provento para uma ação específica.
+    """
+    try:
+        # usuario.id is available if needed by the service for ownership, though not used in current provento logic
+        return services.registrar_provento_service(id_acao_url=id_acao, provento_in=provento_in)
+    except HTTPException as e:
+        raise e # Re-raise HTTPExceptions directly from the service
+    except Exception as e:
+        logging.error(f"Error in POST /api/acoes/{id_acao}/proventos: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao registrar provento: {str(e)}")
+
+@app.get("/api/acoes/{id_acao}/proventos", response_model=List[ProventoInfo], tags=["Proventos"])
+async def listar_proventos_da_acao(
+    id_acao: int = Path(..., description="ID da ação para listar os proventos"),
+    usuario: UsuarioResponse = Depends(get_current_user) # Ensure user is logged in for consistency, though not strictly used by service for filtering
+):
+    """
+    Lista todos os proventos registrados para uma ação específica.
+    """
+    try:
+        return services.listar_proventos_por_acao_service(id_acao=id_acao)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error in GET /api/acoes/{id_acao}/proventos: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao listar proventos da ação: {str(e)}")
+
+@app.get("/api/proventos/", response_model=List[ProventoInfo], tags=["Proventos"])
+async def listar_todos_os_proventos():
+    """
+    Lista todos os proventos de todas as ações cadastradas no sistema.
+    Este endpoint é público.
+    """
+    try:
+        return services.listar_todos_proventos_service()
+    except Exception as e:
+        logging.error(f"Error in GET /api/proventos: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao listar todos os proventos: {str(e)}")
 
 # Configuração do OAuth2
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login") # MOVED to dependencies.py
