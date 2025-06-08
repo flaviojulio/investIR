@@ -123,3 +123,57 @@ export interface AcaoInfo {
   classificacao?: string;
   isin?: string;
 }
+
+// Interfaces para Proventos do Usuário e Resumos
+
+export interface ProventoRecebidoUsuario {
+  id: number;
+  id_acao: number;
+  tipo: string;
+  valor: number; // Valor unitário do provento
+  data_registro: string; // YYYY-MM-DD
+  data_ex: string;       // YYYY-MM-DD
+  dt_pagamento: string;  // YYYY-MM-DD
+  ticker_acao: string;
+  nome_acao?: string;
+  quantidade_na_data_ex: number;
+  valor_total_recebido: number;
+}
+
+export interface DetalheTipoProventoAPI {
+  tipo: string;
+  valor_total_tipo: number;
+}
+
+export interface AcaoDetalhadaResumoProventoAPI {
+  ticker: string;
+  nome_acao: string; // No backend é opcional, mas nos resumos anuais/mensais parece ser sempre preenchido. Confirmar se pode ser opcional.
+                      // Por ora, mantendo como string obrigatória conforme o uso em ResumoProventoAnual/Mensal.
+  total_recebido_na_acao: number;
+  detalhes_por_tipo: DetalheTipoProventoAPI[];
+}
+
+export interface ResumoProventoAnualAPI {
+  ano: number;
+  total_dividendos: number;
+  total_jcp: number;
+  total_outros: number;
+  total_geral: number;
+  acoes_detalhadas: AcaoDetalhadaResumoProventoAPI[];
+}
+
+export interface ResumoProventoMensalAPI {
+  mes: string; // "YYYY-MM"
+  total_dividendos: number;
+  total_jcp: number;
+  total_outros: number;
+  total_geral: number;
+  acoes_detalhadas: AcaoDetalhadaResumoProventoAPI[];
+}
+
+export interface ResumoProventoPorAcaoAPI {
+  ticker_acao: string;
+  nome_acao?: string;
+  total_recebido_geral_acao: number;
+  detalhes_por_tipo: DetalheTipoProventoAPI[];
+}
