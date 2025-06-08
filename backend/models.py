@@ -235,3 +235,59 @@ class AcaoInfo(BaseModel):
     isin: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# Modelos para Proventos
+class ProventoBase(BaseModel):
+    id_acao: int
+    tipo: str
+    valor: float  # Este será o tipo após a validação em ProventoCreate
+    data_registro: date
+    data_ex: date
+    dt_pagamento: date
+
+class ProventoCreate(BaseModel): # Não herda de ProventoBase diretamente para permitir tipos de entrada diferentes
+    id_acao: int
+    tipo: str
+    valor: str  # Entrada como string: "0,123" ou "0.123"
+    data_registro: str  # Entrada como string: "DD/MM/YYYY"
+    data_ex: str  # Entrada como string: "DD/MM/YYYY"
+    dt_pagamento: str  # Entrada como string: "DD/MM/YYYY"
+
+    @field_validator("valor", mode='before')
+    @classmethod
+    def validate_valor_format(cls, v: str) -> float:
+        if isinstance(v, str):
+            value_str = v.replace(",", ".")
+            try:
+                value_float = float(value_str)
+                if value_float <= 0:
+                    raise ValueError("O valor do provento deve ser positivo.")
+                return value_float
+            except ValueError:
+                raise ValueError("Formato de valor inválido. Use '0,123' ou '0.123'.")
+        # Se já for float (ou int), e positivo, permitir (embora o tipo seja str na anotação)
+        elif isinstance(v, (float, int)):
+            if v <=0:
+                 raise ValueError("O valor do provento deve ser positivo.")
+            return float(v)
+        raise ValueError("Valor deve ser uma string ou número.")
+
+    @field_validator("data_registro", "data_ex", "dt_pagamento", mode='before')
+    @classmethod
+    def validate_date_format(cls, v: str) -> date:
+        if isinstance(v, str):
+            try:
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except ValueError:
+                raise ValueError("Formato de data inválido. Use DD/MM/YYYY.")
+        # Se já for date object
+        elif isinstance(v, date):
+            return v
+        raise ValueError("Data deve ser uma string no formato DD/MM/YYYY ou um objeto date.")
+
+class ProventoInfo(ProventoBase):
+    id: int
+    # As datas já são 'date' de ProventoBase, FastAPI as serializará para "YYYY-MM-DD" (ISO 8601) por padrão.
+    # model_config json_encoders é uma forma de forçar, mas geralmente não é necessário para 'date'.
+    model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat()})

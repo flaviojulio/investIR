@@ -3,8 +3,9 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal # Kept for specific calculations in recalcular_resultados
 import calendar
 from collections import defaultdict
+from fastapi import HTTPException # Added HTTPException
 
-from models import OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker # Operacao added, ResultadoTicker added
+from models import OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker, ProventoCreate, ProventoInfo # Added Provento models
 from database import (
     inserir_operacao,
     obter_todas_operacoes, # Comment removed
@@ -24,7 +25,13 @@ from database import (
     limpar_resultados_mensais_usuario_db, # Added for clearing monthly results before recalc
     remover_item_carteira_db, # Added for deleting single portfolio item
     obter_operacoes_por_ticker_db, # Added for fetching operations by ticker
-    obter_todas_acoes # Renamed from obter_todos_stocks
+    obter_todas_acoes, # Renamed from obter_todos_stocks
+    # Provento related database functions
+    inserir_provento,
+    obter_proventos_por_acao_id,
+    obter_provento_por_id,
+    obter_todos_proventos,
+    obter_acao_por_id # For validating id_acao in proventos
 )
 
 def _calculate_darf_due_date(year_month_str: str) -> date:
@@ -1105,3 +1112,64 @@ def listar_todas_acoes_service() -> List[Dict[str, Any]]: # Renamed from listar_
     Serviço para listar todas as ações (stocks) cadastradas.
     """
     return obter_todas_acoes() # Renamed from obter_todos_stocks
+
+
+# --- Serviços de Proventos ---
+
+def registrar_provento_service(id_acao_url: int, provento_in: ProventoCreate) -> ProventoInfo:
+    """
+    Registra um novo provento para uma ação específica.
+    Valida se o id_acao na URL corresponde ao do corpo e se a ação existe.
+    Converte os dados de ProventoCreate para o formato esperado pelo banco de dados.
+    """
+    if id_acao_url != provento_in.id_acao:
+        raise HTTPException(status_code=400, detail="ID da ação na URL não corresponde ao ID no corpo da requisição.")
+
+    acao_existente = obter_acao_por_id(provento_in.id_acao)
+    if not acao_existente:
+        raise HTTPException(status_code=404, detail=f"Ação com ID {provento_in.id_acao} não encontrada.")
+
+    # Os validadores em ProventoCreate já converteram valor para float e datas para objetos date.
+    # Para o banco, as datas precisam ser strings no formato ISO.
+    provento_data_db = {
+        "id_acao": provento_in.id_acao,
+        "tipo": provento_in.tipo,
+        "valor": provento_in.valor, # Já é float
+        "data_registro": provento_in.data_registro.isoformat(), # Convertido para date pelo Pydantic, agora para str ISO
+        "data_ex": provento_in.data_ex.isoformat(),
+        "dt_pagamento": provento_in.dt_pagamento.isoformat()
+    }
+
+    new_provento_id = inserir_provento(provento_data_db)
+    provento_db = obter_provento_por_id(new_provento_id)
+
+    if not provento_db:
+        # Isso seria um erro inesperado se a inserção foi bem-sucedida
+        raise HTTPException(status_code=500, detail="Erro ao buscar provento recém-criado.")
+
+    # ProventoInfo espera objetos date, e obter_provento_por_id retorna strings ISO do DB.
+    # Pydantic model_validate irá analisar as strings ISO para objetos date automaticamente.
+    return ProventoInfo.model_validate(provento_db)
+
+
+def listar_proventos_por_acao_service(id_acao: int) -> List[ProventoInfo]:
+    """
+    Lista todos os proventos para uma ação específica.
+    Verifica se a ação existe antes de listar os proventos.
+    """
+    acao_existente = obter_acao_por_id(id_acao)
+    if not acao_existente:
+        raise HTTPException(status_code=404, detail=f"Ação com ID {id_acao} não encontrada.")
+
+    proventos_db = obter_proventos_por_acao_id(id_acao)
+    # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
+    return [ProventoInfo.model_validate(p) for p in proventos_db]
+
+
+def listar_todos_proventos_service() -> List[ProventoInfo]:
+    """
+    Lista todos os proventos de todas as ações.
+    """
+    proventos_db = obter_todos_proventos()
+    # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
+    return [ProventoInfo.model_validate(p) for p in proventos_db]

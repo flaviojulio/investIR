@@ -211,6 +211,23 @@ def criar_tabelas():
 
         # Criar índice para a coluna ticker na tabela acoes
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_acoes_ticker ON acoes(ticker);')
+
+        # Tabela de proventos
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS proventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_acao INTEGER,
+            tipo TEXT,
+            valor REAL,
+            data_registro TEXT,
+            data_ex TEXT,
+            dt_pagamento TEXT,
+            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+        )
+        ''')
+
+        # Criar índice para a coluna id_acao na tabela proventos
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_proventos_id_acao ON proventos(id_acao);')
         
         # Adiciona índices para as colunas usuario_id
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_id ON operacoes(usuario_id)')
@@ -863,6 +880,16 @@ def obter_operacoes_por_ticker_db(usuario_id: int, ticker: str) -> List[Dict[str
             operacoes.append(operacao_dict)
         return operacoes
 
+def obter_acao_por_id(id_acao: int) -> Optional[Dict[str, Any]]:
+    """
+    Obtém uma ação específica pelo seu ID.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, ticker, nome FROM acoes WHERE id = ?", (id_acao,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
 def obter_todas_acoes() -> List[Dict[str, Any]]: # Renamed from obter_todos_stocks
     """
     Obtém todas as ações (stocks) da tabela `acoes`. # Modificado para refletir a nova tabela 'acoes'
@@ -874,5 +901,58 @@ def obter_todas_acoes() -> List[Dict[str, Any]]: # Renamed from obter_todos_stoc
         cursor = conn.cursor()
         # Modificado para consultar a nova tabela 'acoes' e seus campos
         cursor.execute("SELECT id, ticker, nome, razao_social, cnpj, ri, classificacao, isin FROM acoes ORDER BY ticker")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+# Funções para Proventos
+
+def inserir_provento(provento_data: Dict[str, Any]) -> int:
+    """
+    Insere um novo provento no banco de dados.
+    Espera que as datas já estejam no formato YYYY-MM-DD e valor como float.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO proventos (id_acao, tipo, valor, data_registro, data_ex, dt_pagamento)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            provento_data['id_acao'],
+            provento_data['tipo'],
+            provento_data['valor'],
+            provento_data['data_registro'], # Espera YYYY-MM-DD
+            provento_data['data_ex'],       # Espera YYYY-MM-DD
+            provento_data['dt_pagamento']   # Espera YYYY-MM-DD
+        ))
+        conn.commit()
+        return cursor.lastrowid
+
+def obter_proventos_por_acao_id(id_acao: int) -> List[Dict[str, Any]]:
+    """
+    Obtém todos os proventos para uma ação específica, ordenados por data_ex e dt_pagamento descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM proventos WHERE id_acao = ? ORDER BY data_ex DESC, dt_pagamento DESC", (id_acao,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_provento_por_id(provento_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Obtém um provento específico pelo seu ID.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM proventos WHERE id = ?", (provento_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def obter_todos_proventos() -> List[Dict[str, Any]]:
+    """
+    Obtém todos os proventos cadastrados, ordenados por data_ex e dt_pagamento descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM proventos ORDER BY data_ex DESC, dt_pagamento DESC")
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
