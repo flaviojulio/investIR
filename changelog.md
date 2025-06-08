@@ -30,6 +30,17 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
     - `GET /api/acoes/{id_acao}/proventos`: Para listar todos os proventos de uma ação específica. Requer autenticação.
     - `GET /api/proventos/`: Para listar todos os proventos de todas as ações cadastradas no sistema. Endpoint público.
 
+### Gerenciamento de Eventos Corporativos (Backend)
+- **Nova Tabela `eventos_corporativos`**: Adicionada tabela `eventos_corporativos` ao banco de dados para armazenar desdobramentos, bonificações, grupamentos, etc. Campos: `id` (INTEGER PRIMARY KEY AUTOINCREMENT), `id_acao` (INTEGER NOT NULL, FOREIGN KEY REFERENCES `acoes(id)`), `evento` (TEXT NOT NULL), `data_aprovacao` (TEXT YYYY-MM-DD, opcional), `data_registro` (TEXT YYYY-MM-DD, opcional), `data_ex` (TEXT YYYY-MM-DD, opcional), `razao` (TEXT, opcional, e.g., "1:5", "10%").
+- **Modelos Pydantic para Eventos Corporativos**: Criados os modelos `EventoCorporativoBase`, `EventoCorporativoCreate`, e `EventoCorporativoInfo` em `backend/models.py`.
+    - `EventoCorporativoCreate` é usado para a entrada de dados e inclui validadores para converter datas opcionais (strings "DD/MM/YYYY" ou `None`) para objetos `date` ou `None`.
+    - `EventoCorporativoInfo` é usado para respostas da API, com campos de data formatados como "YYYY-MM-DD" ou `null`.
+- **Lógica de Banco de Dados e Serviços**: Implementadas funções em `backend/database.py` (`inserir_evento_corporativo`, `obter_eventos_corporativos_por_acao_id`, `obter_evento_corporativo_por_id`, `obter_todos_eventos_corporativos`) e em `backend/services.py` (`registrar_evento_corporativo_service`, `listar_eventos_corporativos_por_acao_service`, `listar_todos_eventos_corporativos_service`) para gerenciar a criação e listagem de eventos corporativos, incluindo validações de existência da `id_acao`.
+- **Novos Endpoints da API para Eventos Corporativos**:
+    - `POST /api/acoes/{id_acao}/eventos_corporativos`: Para registrar um novo evento corporativo associado a uma ação específica. Requer autenticação.
+    - `GET /api/acoes/{id_acao}/eventos_corporativos`: Para listar todos os eventos corporativos de uma ação específica. Requer autenticação.
+    - `GET /api/eventos_corporativos/`: Para listar todos os eventos corporativos de todas as ações cadastradas no sistema. Requer autenticação.
+
 ## Melhorias Recentes (Junho 2024)
 
 ### Tabela "Carteira Atual" e Cálculo de Posições

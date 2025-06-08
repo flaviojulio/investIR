@@ -1,11 +1,14 @@
 from typing import List, Dict, Any, Optional # Tuple replaced with tuple, Optional added
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta # date was already implicitly imported via from datetime import date, datetime
 from decimal import Decimal # Kept for specific calculations in recalcular_resultados
 import calendar
 from collections import defaultdict
 from fastapi import HTTPException # Added HTTPException
 
-from models import OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker, ProventoCreate, ProventoInfo # Added Provento models
+from models import (
+    OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
+    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo # Added EventoCorporativo models
+)
 from database import (
     inserir_operacao,
     obter_todas_operacoes, # Comment removed
@@ -31,7 +34,12 @@ from database import (
     obter_proventos_por_acao_id,
     obter_provento_por_id,
     obter_todos_proventos,
-    obter_acao_por_id # For validating id_acao in proventos
+    obter_acao_por_id, # For validating id_acao in proventos
+    # EventoCorporativo related database functions
+    inserir_evento_corporativo,
+    obter_eventos_corporativos_por_acao_id,
+    obter_evento_corporativo_por_id,
+    obter_todos_eventos_corporativos
 )
 
 def _calculate_darf_due_date(year_month_str: str) -> date:
@@ -1173,3 +1181,60 @@ def listar_todos_proventos_service() -> List[ProventoInfo]:
     proventos_db = obter_todos_proventos()
     # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
     return [ProventoInfo.model_validate(p) for p in proventos_db]
+
+
+# --- Serviços de Eventos Corporativos ---
+
+def registrar_evento_corporativo_service(id_acao_url: int, evento_in: EventoCorporativoCreate) -> EventoCorporativoInfo:
+    """
+    Registra um novo evento corporativo para uma ação específica.
+    """
+    if id_acao_url != evento_in.id_acao:
+        raise HTTPException(status_code=400, detail="ID da ação na URL não corresponde ao ID no corpo da requisição.")
+
+    acao_existente = obter_acao_por_id(evento_in.id_acao)
+    if not acao_existente:
+        raise HTTPException(status_code=404, detail=f"Ação com ID {evento_in.id_acao} não encontrada.")
+
+    # Os validadores em EventoCorporativoCreate já converteram as datas para objetos date ou None.
+    # Para o banco, as datas precisam ser strings no formato ISO ou None.
+    evento_data_db = {
+        "id_acao": evento_in.id_acao,
+        "evento": evento_in.evento,
+        "razao": evento_in.razao, # Pode ser None
+        "data_aprovacao": evento_in.data_aprovacao.isoformat() if evento_in.data_aprovacao else None,
+        "data_registro": evento_in.data_registro.isoformat() if evento_in.data_registro else None,
+        "data_ex": evento_in.data_ex.isoformat() if evento_in.data_ex else None,
+    }
+
+    new_evento_id = inserir_evento_corporativo(evento_data_db)
+    evento_db = obter_evento_corporativo_por_id(new_evento_id)
+
+    if not evento_db:
+        raise HTTPException(status_code=500, detail="Erro ao buscar evento corporativo recém-criado.")
+
+    # EventoCorporativoInfo espera objetos date, e obter_evento_corporativo_por_id retorna strings ISO do DB.
+    # Pydantic model_validate irá analisar as strings ISO para objetos date automaticamente.
+    return EventoCorporativoInfo.model_validate(evento_db)
+
+
+def listar_eventos_corporativos_por_acao_service(id_acao: int) -> List[EventoCorporativoInfo]:
+    """
+    Lista todos os eventos corporativos para uma ação específica.
+    """
+    acao_existente = obter_acao_por_id(id_acao)
+    if not acao_existente:
+        raise HTTPException(status_code=404, detail=f"Ação com ID {id_acao} não encontrada.")
+
+    eventos_db = obter_eventos_corporativos_por_acao_id(id_acao)
+    # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
+    return [EventoCorporativoInfo.model_validate(e) for e in eventos_db]
+
+
+def listar_todos_eventos_corporativos_service() -> List[EventoCorporativoInfo]:
+    """
+    Lista todos os eventos corporativos de todas as ações.
+    """
+    eventos_db = obter_todos_eventos_corporativos()
+    # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
+    return [EventoCorporativoInfo.model_validate(e) for e in eventos_db]

@@ -10,7 +10,7 @@ from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, Token
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
     DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo, # Changed StockInfo to AcaoInfo
-    ProventoCreate, ProventoInfo, # Added Provento models
+    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # Added EventoCorporativo models
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
@@ -49,7 +49,11 @@ from services import (
     # Provento services
     registrar_provento_service,
     listar_proventos_por_acao_service,
-    listar_todos_proventos_service
+    listar_todos_proventos_service,
+    # EventoCorporativo services
+    registrar_evento_corporativo_service,
+    listar_eventos_corporativos_por_acao_service,
+    listar_todos_eventos_corporativos_service
 )
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -144,6 +148,55 @@ async def listar_todos_os_proventos():
     except Exception as e:
         logging.error(f"Error in GET /api/proventos: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno ao listar todos os proventos: {str(e)}")
+
+
+# Endpoints de Eventos Corporativos
+
+@app.post("/api/acoes/{id_acao}/eventos_corporativos", response_model=EventoCorporativoInfo, status_code=status.HTTP_201_CREATED, tags=["Eventos Corporativos"])
+async def registrar_evento_para_acao(
+    id_acao: int = Path(..., description="ID da ação à qual o evento pertence"),
+    evento_in: EventoCorporativoCreate = Body(...),
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Registra um novo evento corporativo para uma ação específica.
+    """
+    try:
+        return services.registrar_evento_corporativo_service(id_acao_url=id_acao, evento_in=evento_in)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error in POST /api/acoes/{id_acao}/eventos_corporativos: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao registrar evento corporativo: {str(e)}")
+
+@app.get("/api/acoes/{id_acao}/eventos_corporativos", response_model=List[EventoCorporativoInfo], tags=["Eventos Corporativos"])
+async def listar_eventos_da_acao_corporativos(
+    id_acao: int = Path(..., description="ID da ação para listar os eventos corporativos"),
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Lista todos os eventos corporativos registrados para uma ação específica.
+    """
+    try:
+        return services.listar_eventos_corporativos_por_acao_service(id_acao=id_acao)
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error in GET /api/acoes/{id_acao}/eventos_corporativos: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao listar eventos corporativos da ação: {str(e)}")
+
+@app.get("/api/eventos_corporativos/", response_model=List[EventoCorporativoInfo], tags=["Eventos Corporativos"])
+async def listar_todos_os_eventos_corporativos_api( # Renamed to avoid conflict with service function
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Lista todos os eventos corporativos de todas as ações cadastradas no sistema.
+    """
+    try:
+        return services.listar_todos_eventos_corporativos_service()
+    except Exception as e:
+        logging.error(f"Error in GET /api/eventos_corporativos: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao listar todos os eventos corporativos: {str(e)}")
 
 # Configuração do OAuth2
 # oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login") # MOVED to dependencies.py

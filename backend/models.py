@@ -291,3 +291,39 @@ class ProventoInfo(ProventoBase):
     # As datas já são 'date' de ProventoBase, FastAPI as serializará para "YYYY-MM-DD" (ISO 8601) por padrão.
     # model_config json_encoders é uma forma de forçar, mas geralmente não é necessário para 'date'.
     model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat()})
+
+
+# Modelos para Eventos Corporativos
+class EventoCorporativoBase(BaseModel):
+    id_acao: int
+    evento: str
+    data_aprovacao: Optional[date] = None
+    data_registro: Optional[date] = None
+    data_ex: Optional[date] = None
+    razao: Optional[str] = None
+
+class EventoCorporativoCreate(BaseModel):
+    id_acao: int
+    evento: str
+    data_aprovacao: Optional[str] = None # Entrada como string: "DD/MM/YYYY"
+    data_registro: Optional[str] = None  # Entrada como string: "DD/MM/YYYY"
+    data_ex: Optional[str] = None        # Entrada como string: "DD/MM/YYYY"
+    razao: Optional[str] = None
+
+    @field_validator("data_aprovacao", "data_registro", "data_ex", mode='before')
+    @classmethod
+    def validate_event_date_format(cls, v: Optional[str]) -> Optional[date]:
+        if v is None or v == "":
+            return None
+        if isinstance(v, str):
+            try:
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except ValueError:
+                raise ValueError("Formato de data inválido. Use DD/MM/YYYY ou deixe em branco.")
+        elif isinstance(v, date): # Permitir que objetos date passem diretamente
+            return v
+        raise ValueError("Data deve ser uma string no formato DD/MM/YYYY ou um objeto date.")
+
+class EventoCorporativoInfo(EventoCorporativoBase):
+    id: int
+    model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat() if d else None})

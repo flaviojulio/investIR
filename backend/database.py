@@ -228,6 +228,23 @@ def criar_tabelas():
 
         # Criar índice para a coluna id_acao na tabela proventos
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_proventos_id_acao ON proventos(id_acao);')
+
+        # Tabela de eventos corporativos
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS eventos_corporativos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_acao INTEGER NOT NULL,
+            evento TEXT NOT NULL,
+            data_aprovacao TEXT,
+            data_registro TEXT,
+            data_ex TEXT,
+            razao TEXT,
+            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+        )
+        ''')
+
+        # Criar índice para a coluna id_acao na tabela eventos_corporativos
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_eventos_corporativos_id_acao ON eventos_corporativos(id_acao);')
         
         # Adiciona índices para as colunas usuario_id
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_id ON operacoes(usuario_id)')
@@ -954,5 +971,71 @@ def obter_todos_proventos() -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM proventos ORDER BY data_ex DESC, dt_pagamento DESC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+# Funções para Eventos Corporativos
+
+def inserir_evento_corporativo(evento_data: Dict[str, Any]) -> int:
+    """
+    Insere um novo evento corporativo no banco de dados.
+    Espera que as datas já estejam no formato YYYY-MM-DD ou None.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO eventos_corporativos (id_acao, evento, data_aprovacao, data_registro, data_ex, razao)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            evento_data['id_acao'],
+            evento_data['evento'],
+            evento_data.get('data_aprovacao'), # Pode ser None
+            evento_data.get('data_registro'),  # Pode ser None
+            evento_data.get('data_ex'),        # Pode ser None
+            evento_data.get('razao')           # Pode ser None
+        ))
+        conn.commit()
+        return cursor.lastrowid
+
+def obter_eventos_corporativos_por_acao_id(id_acao: int) -> List[Dict[str, Any]]:
+    """
+    Obtém todos os eventos corporativos para uma ação específica,
+    ordenados por data_ex e data_registro descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM eventos_corporativos
+            WHERE id_acao = ?
+            ORDER BY
+                CASE WHEN data_ex IS NULL THEN 1 ELSE 0 END, data_ex DESC,
+                CASE WHEN data_registro IS NULL THEN 1 ELSE 0 END, data_registro DESC
+        """, (id_acao,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_evento_corporativo_por_id(evento_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Obtém um evento corporativo específico pelo seu ID.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM eventos_corporativos WHERE id = ?", (evento_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def obter_todos_eventos_corporativos() -> List[Dict[str, Any]]:
+    """
+    Obtém todos os eventos corporativos cadastrados,
+    ordenados por data_ex e data_registro descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM eventos_corporativos
+            ORDER BY
+                CASE WHEN data_ex IS NULL THEN 1 ELSE 0 END, data_ex DESC,
+                CASE WHEN data_registro IS NULL THEN 1 ELSE 0 END, data_registro DESC
+        """)
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
