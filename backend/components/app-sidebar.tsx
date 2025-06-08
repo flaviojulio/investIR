@@ -38,6 +38,12 @@ const menuItems = [
     description: "Visão geral da carteira",
   },
   {
+    title: "Proventos",
+    url: "/proventos",
+    icon: Landmark, // Using Landmark icon
+    description: "Dividendos e JCP recebidos",
+  },
+  {
     title: "Minha Carteira",
     url: "/carteira",
     icon: Wallet,
@@ -60,12 +66,6 @@ const menuItems = [
     url: "/darf",
     icon: FileText,
     description: "Impostos a pagar",
-  },
-  {
-    title: "Proventos",
-    url: "/proventos",
-    icon: Landmark, // Using Landmark icon
-    description: "Dividendos e JCP recebidos",
   },
   {
     title: "Prejuízo Acumulado",
