@@ -41,6 +41,10 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
     - `GET /api/acoes/{id_acao}/eventos_corporativos`: Para listar todos os eventos corporativos de uma ação específica. Requer autenticação.
     - `GET /api/eventos_corporativos/`: Para listar todos os eventos corporativos de todas as ações cadastradas no sistema. Requer autenticação.
 
+### Tipagem de Datas no Banco de Dados
+- As colunas de data nas tabelas `proventos` (`data_registro`, `data_ex`, `dt_pagamento`) e `eventos_corporativos` (`data_aprovacao`, `data_registro`, `data_ex`) foram alteradas de `TEXT` para `DATE` nas declarações `CREATE TABLE` em `backend/database.py`.
+- Esta mudança visa melhorar a semântica do esquema. A aplicação continua a interagir com o banco de dados usando strings no formato ISO "YYYY-MM-DD" para esses campos, o que é compatível com a afinidade de tipo `DATE` no SQLite (que internamente pode armazená-los como TEXT, REAL ou INTEGER).
+
 ## Melhorias Recentes (Junho 2024)
 
 ### Tabela "Carteira Atual" e Cálculo de Posições
