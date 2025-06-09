@@ -4,13 +4,14 @@ from decimal import Decimal # Kept for specific calculations in recalcular_resul
 import calendar
 from collections import defaultdict
 from fastapi import HTTPException # Added HTTPException
+import logging # Added logging import
 
 from models import (
     OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
     OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
     ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo,
     UsuarioProventoRecebidoDB, # Modelo para a tabela do banco
-    ProventoRecebidoUsuario, # Modelo para API (pode ser o mesmo que DB ou diferente)
+    # ProventoRecebidoUsuario, # Comentado pois o serviço agora retorna UsuarioProventoRecebidoDB e os resumos são construídos a partir de queries diretas.
     ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, DetalheTipoProvento
 )
 # datetime is already imported from datetime import date, datetime, timedelta but ensure strptime is accessible
@@ -299,6 +300,15 @@ def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int) -> int:
     # Recalcula a carteira e os resultados
     recalcular_carteira(usuario_id=usuario_id)
     recalcular_resultados(usuario_id=usuario_id)
+
+    try:
+        logging.info(f"Recalculando proventos para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}.")
+        recalcular_proventos_recebidos_para_usuario_service(usuario_id=usuario_id)
+        logging.info(f"Recálculo de proventos para usuário {usuario_id} concluído com sucesso após inserção manual.")
+    except Exception as e_recalc:
+        logging.error(f"ALERTA: Falha ao recalcular proventos para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. A operação principal foi bem-sucedida. Erro no recálculo de proventos: {e_recalc}", exc_info=True)
+        # Não relançar o erro para não afetar o status da criação da operação.
+
     return new_operacao_id
 
 def obter_operacao_service(operacao_id: int, usuario_id: int) -> Optional[Operacao]:
@@ -1250,7 +1260,6 @@ def listar_proventos_por_acao_service(id_acao: int) -> List[ProventoInfo]:
         raise HTTPException(status_code=404, detail=f"Ação com ID {id_acao} não encontrada.")
 
     proventos_db = obter_proventos_por_acao_id(id_acao)
-    return [ProventoInfo.model_validate(_transformar_provento_db_para_modelo(p))
             for p in proventos_db if _transformar_provento_db_para_modelo(p) is not None]
 
 
@@ -1268,31 +1277,17 @@ def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Usu
     """
     Lista os proventos que um usuário recebeu, buscando da tabela persistida.
     """
-    proventos_db = obter_proventos_recebidos_por_usuario_db(usuario_id)
-
-    # Pydantic model_validate irá tentar converter strings ISO de data/datetime para objetos
-    # e valores numéricos para float/int conforme definido no modelo UsuarioProventoRecebidoDB.
-    # Se a conversão automática falhar, uma função _transformar_usuario_provento_recebido_db_para_modelo
-    # precisaria ser implementada e chamada aqui, similar à _transformar_provento_db_para_modelo.
-    # Por ora, confiamos na capacidade do Pydantic.
-
-    # Adicionando tratamento explícito para o campo data_calculo que é DATETIME
-    # e dt_pagamento que pode ser None
-    # Se UsuarioProventoRecebidoDB já tem ConfigDict com json_encoders, isso pode não ser necessário
-    # para a API, mas é bom para consistência interna se os objetos são usados em Python.
-    # No entanto, a conversão principal de string para objeto datetime/date é o foco aqui.
+    proventos_db_dicts = obter_proventos_recebidos_por_usuario_db(usuario_id)
 
     proventos_validados = []
-    for p_db_dict in proventos_db:
-        # SQLite retorna strings para colunas DATE e DATETIME.
-        # Pydantic V2 é bom em converter strings ISO para date/datetime.
-        # Não é necessário _transformar_usuario_provento_recebido_db_para_modelo
-        # se as strings do DB estiverem no formato ISO correto.
+    for p_db_dict in proventos_db_dicts:
         try:
+            # Pydantic V2 model_validate deve converter strings ISO para date/datetime
+            # e valores numéricos para float/int, conforme definido no modelo UsuarioProventoRecebidoDB.
             proventos_validados.append(UsuarioProventoRecebidoDB.model_validate(p_db_dict))
         except Exception as e:
             # import logging
-            # logging.error(f"Erro ao validar provento recebido do DB ID {p_db_dict.get('id')}: {e}")
+            # logging.error(f"Erro ao validar provento recebido do DB ID {p_db_dict.get('id')} para usuario {usuario_id}: {e}", exc_info=True)
             # Decide-se pular o registro problemático ou levantar o erro.
             # Por ora, pulamos para não quebrar toda a listagem.
             continue
@@ -1311,7 +1306,6 @@ def gerar_resumo_proventos_anuais_usuario_service(usuario_id: int) -> List[Resum
     if not raw_summary:
         return []
 
-    # Estrutura para agregar os dados por ano
     resumo_por_ano = defaultdict(lambda: {
         "total_dividendos": 0.0,
         "total_jcp": 0.0,
@@ -1325,23 +1319,25 @@ def gerar_resumo_proventos_anuais_usuario_service(usuario_id: int) -> List[Resum
     })
 
     for item in raw_summary:
-        ano = int(item['ano_pagamento']) # ano_pagamento é string do SUBSTR
+        ano = int(item['ano_pagamento'])
         ticker = item['ticker_acao']
-        nome_acao = item['nome_acao']
+        nome_acao = item['nome_acao'] if item['nome_acao'] else ticker
         tipo_provento = item['tipo_provento'].upper()
-        total_recebido = item['total_recebido_ticker_tipo_ano']
+        total_recebido_ticker_tipo_ano = item['total_recebido_ticker_tipo_ano']
 
-        resumo_por_ano[ano]['total_geral'] += total_recebido
+        resumo_por_ano[ano]['total_geral'] += total_recebido_ticker_tipo_ano
         if tipo_provento == "DIVIDENDO":
-            resumo_por_ano[ano]['total_dividendos'] += total_recebido
-        elif tipo_provento == "JCP" or tipo_provento == "JUROS SOBRE CAPITAL PRÓPRIO":
-            resumo_por_ano[ano]['total_jcp'] += total_recebido
+            resumo_por_ano[ano]['total_dividendos'] += total_recebido_ticker_tipo_ano
+        elif "JCP" in tipo_provento or "JUROS SOBRE CAPITAL" in tipo_provento: # Ajuste para JCP
+            resumo_por_ano[ano]['total_jcp'] += total_recebido_ticker_tipo_ano
         else:
-            resumo_por_ano[ano]['total_outros'] += total_recebido
+            resumo_por_ano[ano]['total_outros'] += total_recebido_ticker_tipo_ano
 
-        resumo_por_ano[ano]['acoes_dict'][ticker]['nome_acao'] = nome_acao
-        resumo_por_ano[ano]['acoes_dict'][ticker]['total_recebido_na_acao'] += total_recebido
-        resumo_por_ano[ano]['acoes_dict'][ticker]['tipos'][tipo_provento] += total_recebido
+        if not resumo_por_ano[ano]['acoes_dict'][ticker]['nome_acao']:
+             resumo_por_ano[ano]['acoes_dict'][ticker]['nome_acao'] = nome_acao
+
+        resumo_por_ano[ano]['acoes_dict'][ticker]['total_recebido_na_acao'] += total_recebido_ticker_tipo_ano
+        resumo_por_ano[ano]['acoes_dict'][ticker]['tipos'][tipo_provento] += total_recebido_ticker_tipo_ano
 
     lista_resumo_anual_final = []
     for ano, dados_ano in sorted(resumo_por_ano.items(), key=lambda item: item[0], reverse=True):
@@ -1351,7 +1347,7 @@ def gerar_resumo_proventos_anuais_usuario_service(usuario_id: int) -> List[Resum
                 DetalheTipoProvento(tipo=tipo, valor_total_tipo=valor_tipo)
                 for tipo, valor_tipo in dados_acao['tipos'].items()
             ]
-            acoes_detalhadas_list.append({ # Usando dict aqui como Pydantic espera para List[Dict[str,Any]]
+            acoes_detalhadas_list.append({
                 "ticker": ticker,
                 "nome_acao": dados_acao["nome_acao"],
                 "total_recebido_na_acao": dados_acao["total_recebido_na_acao"],
@@ -1393,21 +1389,23 @@ def gerar_resumo_proventos_mensais_usuario_service(usuario_id: int, ano_filtro: 
     })
 
     for item in raw_summary:
-        mes_str = item['mes_pagamento'] # YYYY-MM
+        mes_str = item['mes_pagamento']
         ticker = item['ticker_acao']
-        nome_acao = item['nome_acao']
+        nome_acao = item['nome_acao'] if item['nome_acao'] else ticker
         tipo_provento = item['tipo_provento'].upper()
         total_recebido = item['total_recebido_ticker_tipo_mes']
 
         resumo_por_mes[mes_str]['total_geral'] += total_recebido
         if tipo_provento == "DIVIDENDO":
             resumo_por_mes[mes_str]['total_dividendos'] += total_recebido
-        elif tipo_provento == "JCP" or tipo_provento == "JUROS SOBRE CAPITAL PRÓPRIO":
+        elif "JCP" in tipo_provento or "JUROS SOBRE CAPITAL" in tipo_provento:
             resumo_por_mes[mes_str]['total_jcp'] += total_recebido
         else:
             resumo_por_mes[mes_str]['total_outros'] += total_recebido
 
-        resumo_por_mes[mes_str]['acoes_dict'][ticker]['nome_acao'] = nome_acao
+        if not resumo_por_mes[mes_str]['acoes_dict'][ticker]['nome_acao']:
+            resumo_por_mes[mes_str]['acoes_dict'][ticker]['nome_acao'] = nome_acao
+
         resumo_por_mes[mes_str]['acoes_dict'][ticker]['total_recebido_na_acao'] += total_recebido
         resumo_por_mes[mes_str]['acoes_dict'][ticker]['tipos'][tipo_provento] += total_recebido
 
@@ -1456,11 +1454,11 @@ def gerar_resumo_proventos_por_acao_usuario_service(usuario_id: int) -> List[Res
 
     for item in raw_summary:
         ticker = item['ticker_acao']
-        nome_acao = item['nome_acao'] # Pode ser None se não houver nome_acao no DB
+        nome_acao = item['nome_acao']
         tipo_provento = item['tipo_provento'].upper()
         total_recebido_tipo = item['total_recebido_ticker_tipo']
 
-        if not resumo_agregado_por_acao[ticker]['nome_acao'] and nome_acao: # Pega o primeiro nome_acao não nulo
+        if not resumo_agregado_por_acao[ticker]['nome_acao'] and nome_acao:
              resumo_agregado_por_acao[ticker]['nome_acao'] = nome_acao
 
         resumo_agregado_por_acao[ticker]['total_recebido_geral_acao'] += total_recebido_tipo
@@ -1475,7 +1473,7 @@ def gerar_resumo_proventos_por_acao_usuario_service(usuario_id: int) -> List[Res
 
         resumo_acao_obj = ResumoProventoPorAcao(
             ticker_acao=ticker,
-            nome_acao=dados_acao["nome_acao"] or None, # Garante None se string vazia
+            nome_acao=dados_acao["nome_acao"] or None,
             total_recebido_geral_acao=dados_acao["total_recebido_geral_acao"],
             detalhes_por_tipo=detalhes_por_tipo_list
         )

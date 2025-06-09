@@ -91,6 +91,8 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - **Correção no Cálculo de Proventos do Usuário (Backend)**:
     - A função `listar_proventos_recebidos_pelo_usuario_service` foi ajustada para pular o cálculo de proventos para um usuário se a `data_ex` do provento global for nula.
     - Isso previne um `TypeError` que ocorria ao tentar subtrair `timedelta` de um valor `None`, garantindo que apenas proventos com `data_ex` válida sejam processados.
+- **Correção de Estrutura de Banco de Dados**:
+    - Removida definição residual da tabela `stocks` do arquivo `backend/database.py` para evitar conflitos e garantir que a tabela `acoes` seja a única fonte de informações de ações. Funções associadas à tabela `stocks` também foram removidas.
 
 ### Refatoração da Navegação Principal
 - A navegação principal da aplicação foi consolidada em um menu de abas horizontais localizado no componente `Dashboard.tsx` (`frontend/components/Dashboard.tsx`).
@@ -112,6 +114,8 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
     - Os endpoints da API que listam proventos do usuário e seus resumos (e.g., `GET /api/usuario/proventos/`, `GET /api/usuario/proventos/resumo_anual/`) foram refatorados para ler diretamente desta tabela pré-calculada e/ou de queries SQL agregadas sobre ela. Isso resulta em uma melhora significativa de performance ao evitar cálculos complexos em Python a cada requisição.
     - A lógica anterior de calcular o saldo de ações do usuário para cada provento global no momento da requisição (em `listar_proventos_recebidos_pelo_usuario_service`) foi movida para o serviço de recálculo.
     - Adicionado novo endpoint `POST /api/usuario/proventos/recalcular` para permitir que o usuário acione o processo de recálculo e persistência de seus proventos recebidos.
+- **Melhoria no Cálculo de Proventos do Usuário**:
+    - O recálculo dos proventos recebidos por um usuário (`usuario_proventos_recebidos`) agora é acionado automaticamente após o cadastro manual de uma nova operação financeira através do serviço `inserir_operacao_manual`. Isso garante que os proventos do usuário reflitam alterações no saldo de suas ações de forma mais imediata para este tipo de operação.
 
 ## Melhorias Recentes (Junho 2024)
 
