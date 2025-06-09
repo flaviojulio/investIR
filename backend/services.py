@@ -10,6 +10,9 @@ from models import (
     ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # Added EventoCorporativo models
     ProventoRecebidoUsuario, ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, DetalheTipoProvento # Novos modelos de resumo de proventos
 )
+# datetime is already imported from datetime import date, datetime, timedelta but ensure strptime is accessible
+from datetime import datetime as dt # Alias for strptime usage if needed, or just use datetime.strptime
+
 from database import (
     inserir_operacao,
     obter_todas_operacoes, # Comment removed
@@ -44,6 +47,64 @@ from database import (
     # For saldo_acao_em_data
     obter_operacoes_por_ticker_ate_data_db
 )
+
+# --- Função Auxiliar para Transformação de Proventos do DB ---
+def _transformar_provento_db_para_modelo(p_db: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if p_db is None:
+        return None
+
+    dados_transformados = {
+        'id': p_db.get('id'),
+        'id_acao': p_db.get('id_acao'),
+        'tipo': p_db.get('tipo'),
+        # Adicione outros campos que não precisam de conversão aqui
+        # 'nome_acao': p_db.get('nome_acao'), # Exemplo se existisse no dict p_db
+        # 'ticker_acao': p_db.get('ticker_acao') # Exemplo
+    }
+
+    # Converter valor
+    valor_db = p_db.get('valor')
+    if valor_db is not None:
+        try:
+            # Tenta converter para float, tratando vírgula como separador decimal
+            dados_transformados['valor'] = float(str(valor_db).replace(',', '.'))
+        except ValueError:
+            # Se a conversão falhar, define como None ou lança erro, dependendo da política de erro.
+            # Para ProventoInfo, valor é obrigatório, então um erro seria mais apropriado se não puder ser None.
+            # No entanto, ProventoCreate permite string e valida, ProventoInfo espera float.
+            # Se o DB puder ter lixo, aqui é um bom lugar para limpar ou logar.
+            # Por ora, vamos permitir que Pydantic trate se for None e o campo for obrigatório.
+            dados_transformados['valor'] = None
+            # Ou: raise ValueError(f"Valor inválido no banco de dados para provento ID {p_db.get('id')}: {valor_db}")
+    else:
+        dados_transformados['valor'] = None
+
+    # Converter datas de DD/MM/YYYY para objetos date
+    # Se o banco já armazena em ISO YYYY-MM-DD, Pydantic lida com isso.
+    # Esta conversão é se o banco estivesse armazenando no formato DD/MM/YYYY.
+    # Baseado no código de inserção, o banco DEVE ter ISO YYYY-MM-DD.
+    # Mas, seguindo a premissa do prompt de que a transformação é necessária:
+    for campo_data in ['data_registro', 'data_ex', 'dt_pagamento']:
+        data_str = p_db.get(campo_data)
+        if data_str and isinstance(data_str, str): # Apenas tenta converter se for string
+            try:
+                # Tenta primeiro o formato DD/MM/YYYY
+                dados_transformados[campo_data] = dt.strptime(data_str, '%d/%m/%Y').date()
+            except ValueError:
+                try:
+                    # Se falhar, tenta o formato ISO YYYY-MM-DD (que Pydantic também tentaria)
+                    dados_transformados[campo_data] = dt.fromisoformat(data_str).date()
+                except ValueError:
+                    # Se ambos falharem, define como None ou lança erro
+                    dados_transformados[campo_data] = None
+                    # Ou: raise ValueError(f"Formato de data inválido para {campo_data} no provento ID {p_db.get('id')}: {data_str}")
+        elif isinstance(data_str, date): # Se já for um objeto date
+             dados_transformados[campo_data] = data_str
+        else:
+            dados_transformados[campo_data] = None
+
+    return dados_transformados
+
 
 def _calculate_darf_due_date(year_month_str: str) -> date:
     """
@@ -1158,9 +1219,13 @@ def registrar_provento_service(id_acao_url: int, provento_in: ProventoCreate) ->
         # Isso seria um erro inesperado se a inserção foi bem-sucedida
         raise HTTPException(status_code=500, detail="Erro ao buscar provento recém-criado.")
 
-    # ProventoInfo espera objetos date, e obter_provento_por_id retorna strings ISO do DB.
-    # Pydantic model_validate irá analisar as strings ISO para objetos date automaticamente.
-    return ProventoInfo.model_validate(provento_db)
+    # ProventoInfo espera objetos date. A transformação garante que as datas sejam objetos date.
+    dados_transformados = _transformar_provento_db_para_modelo(provento_db)
+    if not dados_transformados:
+        # Isso aconteceria se provento_db fosse None e _transformar_provento_db_para_modelo retornasse None.
+        raise HTTPException(status_code=500, detail="Erro ao buscar ou transformar provento recém-criado.")
+
+    return ProventoInfo.model_validate(dados_transformados)
 
 
 def listar_proventos_por_acao_service(id_acao: int) -> List[ProventoInfo]:
@@ -1173,8 +1238,8 @@ def listar_proventos_por_acao_service(id_acao: int) -> List[ProventoInfo]:
         raise HTTPException(status_code=404, detail=f"Ação com ID {id_acao} não encontrada.")
 
     proventos_db = obter_proventos_por_acao_id(id_acao)
-    # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
-    return [ProventoInfo.model_validate(p) for p in proventos_db]
+    return [ProventoInfo.model_validate(_transformar_provento_db_para_modelo(p))
+            for p in proventos_db if _transformar_provento_db_para_modelo(p) is not None]
 
 
 def listar_todos_proventos_service() -> List[ProventoInfo]:
@@ -1182,8 +1247,8 @@ def listar_todos_proventos_service() -> List[ProventoInfo]:
     Lista todos os proventos de todas as ações.
     """
     proventos_db = obter_todos_proventos()
-    # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
-    return [ProventoInfo.model_validate(p) for p in proventos_db]
+    return [ProventoInfo.model_validate(_transformar_provento_db_para_modelo(p))
+            for p in proventos_db if _transformar_provento_db_para_modelo(p) is not None]
 
 
 def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Dict[str, Any]]: # Retorna List[ProventoRecebidoUsuarioDict] na prática
