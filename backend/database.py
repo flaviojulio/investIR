@@ -251,6 +251,34 @@ def criar_tabelas():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_usuario_id ON resultados_mensais(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_carteira_atual_usuario_id ON carteira_atual(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_usuario_id ON operacoes_fechadas(usuario_id)')
+
+        # Tabela usuario_proventos_recebidos
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuario_proventos_recebidos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            provento_global_id INTEGER NOT NULL,
+            id_acao INTEGER NOT NULL,
+            ticker_acao TEXT NOT NULL,
+            nome_acao TEXT,
+            tipo_provento TEXT NOT NULL,
+            data_ex DATE NOT NULL,
+            dt_pagamento DATE,
+            valor_unitario_provento REAL NOT NULL,
+            quantidade_possuida_na_data_ex INTEGER NOT NULL,
+            valor_total_recebido REAL NOT NULL,
+            data_calculo DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(usuario_id) REFERENCES usuarios(id),
+            FOREIGN KEY(provento_global_id) REFERENCES proventos(id),
+            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+        )
+        ''')
+
+        # Índices para usuario_proventos_recebidos
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_usuario_id ON usuario_proventos_recebidos(usuario_id);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_acao_id ON usuario_proventos_recebidos(id_acao);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_dt_pagamento ON usuario_proventos_recebidos(dt_pagamento);')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_usr_prov_rec_usr_prov_glob ON usuario_proventos_recebidos(usuario_id, provento_global_id);')
         
         conn.commit()
     
@@ -939,6 +967,143 @@ def obter_todas_acoes() -> List[Dict[str, Any]]: # Renamed from obter_todos_stoc
         cursor = conn.cursor()
         # Modificado para consultar a nova tabela 'acoes' e seus campos
         cursor.execute("SELECT id, ticker, nome, razao_social, cnpj, ri, classificacao, isin FROM acoes ORDER BY ticker")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+# --- Funções para usuario_proventos_recebidos ---
+
+def limpar_usuario_proventos_recebidos_db(usuario_id: int) -> None:
+    """
+    Remove todos os proventos recebidos calculados para um usuário específico.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM usuario_proventos_recebidos WHERE usuario_id = ?', (usuario_id,))
+            conn.commit()
+        except sqlite3.Error as e:
+            # Logar o erro e.g., print(f"Database error clearing user received proventos for user {usuario_id}: {e}")
+            # Decidir se deve propagar o erro ou não.
+            # Para esta operação, pode ser aceitável não levantar uma exceção.
+            pass # Silenciosamente continua, mas idealmente logaria.
+
+def inserir_usuario_provento_recebido_db(dados: Dict[str, Any]) -> int:
+    """
+    Insere um registro de provento recebido por um usuário no banco de dados.
+    Espera que 'dados' contenha todas as chaves necessárias e que as datas/datetimes
+    já estejam formatadas como strings ISO.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Certifique-se de que a ordem dos campos corresponde à ordem dos placeholders
+        campos = [
+            'usuario_id', 'provento_global_id', 'id_acao', 'ticker_acao',
+            'nome_acao', 'tipo_provento', 'data_ex', 'dt_pagamento',
+            'valor_unitario_provento', 'quantidade_possuida_na_data_ex',
+            'valor_total_recebido', 'data_calculo'
+        ]
+
+        placeholders = ', '.join(['?'] * len(campos))
+        valores = [dados.get(campo) for campo in campos]
+
+        # Assegura que dt_pagamento seja None se não fornecido, e não uma string vazia.
+        # A tabela permite NULL para dt_pagamento.
+        if 'dt_pagamento' in dados and dados['dt_pagamento'] == '':
+            valores[campos.index('dt_pagamento')] = None
+
+        # data_calculo é esperado como string YYYY-MM-DD HH:MM:SS
+        # data_ex e dt_pagamento como YYYY-MM-DD
+
+        try:
+            cursor.execute(f'''
+                INSERT INTO usuario_proventos_recebidos ({', '.join(campos)})
+                VALUES ({placeholders})
+            ''', tuple(valores))
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError as e:
+            # Isso pode acontecer devido à restrição UNIQUE (usuario_id, provento_global_id)
+            # Logar o erro ou tratar conforme necessário.
+            # print(f"Erro de integridade ao inserir provento recebido: {e}. Dados: {dados}")
+            raise # Re-lança a exceção para ser tratada pela camada de serviço
+        except Exception as e:
+            # print(f"Erro inesperado ao inserir provento recebido: {e}. Dados: {dados}")
+            raise
+
+def obter_proventos_recebidos_por_usuario_db(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    Obtém todos os proventos recebidos por um usuário, ordenados por data de pagamento e data ex.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM usuario_proventos_recebidos
+            WHERE usuario_id = ?
+            ORDER BY dt_pagamento DESC, data_ex DESC
+        ''', (usuario_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_resumo_anual_proventos_recebidos_db(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    Obtém um resumo anual dos proventos recebidos por um usuário, agrupados.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                SUBSTR(dt_pagamento, 1, 4) as ano_pagamento,
+                ticker_acao,
+                nome_acao,
+                tipo_provento,
+                SUM(valor_total_recebido) as total_recebido_ticker_tipo_ano
+            FROM usuario_proventos_recebidos
+            WHERE usuario_id = ? AND dt_pagamento IS NOT NULL
+            GROUP BY ano_pagamento, ticker_acao, nome_acao, tipo_provento
+            ORDER BY ano_pagamento DESC, ticker_acao ASC;
+        ''', (usuario_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_resumo_mensal_proventos_recebidos_db(usuario_id: int, ano: int) -> List[Dict[str, Any]]:
+    """
+    Obtém um resumo mensal dos proventos recebidos por um usuário para um ano específico, agrupados.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                SUBSTR(dt_pagamento, 1, 7) as mes_pagamento, -- YYYY-MM
+                ticker_acao,
+                nome_acao,
+                tipo_provento,
+                SUM(valor_total_recebido) as total_recebido_ticker_tipo_mes
+            FROM usuario_proventos_recebidos
+            WHERE usuario_id = ? AND SUBSTR(dt_pagamento, 1, 4) = ? AND dt_pagamento IS NOT NULL
+            GROUP BY mes_pagamento, ticker_acao, nome_acao, tipo_provento
+            ORDER BY mes_pagamento DESC, ticker_acao ASC;
+        ''', (usuario_id, str(ano)))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_resumo_por_acao_proventos_recebidos_db(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    Obtém um resumo dos proventos recebidos por um usuário, agrupados por ação e tipo de provento.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                ticker_acao,
+                nome_acao,
+                tipo_provento,
+                SUM(valor_total_recebido) as total_recebido_ticker_tipo
+            FROM usuario_proventos_recebidos
+            WHERE usuario_id = ?
+            GROUP BY ticker_acao, nome_acao, tipo_provento
+            ORDER BY ticker_acao ASC, tipo_provento ASC;
+        ''', (usuario_id,))
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
