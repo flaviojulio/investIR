@@ -12,6 +12,7 @@
 ### Fixed
 - Corrected date parsing in `recalcular_proventos_recebidos_rapido` to handle "DD/MM/YYYY" format for `data_ex` field originating from the database.
 - Ensured accurate error counting in the summary returned by `recalcular_proventos_recebidos_rapido` when date parsing fails or other exceptions occur during individual provento processing.
+- Fixed an issue in the frontend Proventos page where proventos (especially those with null payment dates) were not being displayed due to incorrect date handling in the filtering logic.
 
 # Changelog
 
