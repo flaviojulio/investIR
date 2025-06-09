@@ -84,6 +84,10 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - **Melhoria na Validação de Datas de Proventos (Backend)**:
     - Os campos de data (`data_registro`, `data_ex`, `dt_pagamento`) no modelo Pydantic `ProventoBase` (e, por herança, em `ProventoInfo` e `ProventoRecebidoUsuario`) foram alterados para `Optional[date] = None`.
     - Esta alteração permite que esses campos de data sejam nulos, tornando a validação mais robusta caso os dados correspondentes estejam ausentes ou não possam ser convertidos a partir do banco de dados. Resolve um `ValidationError` que ocorria quando um campo de data esperado continha `None`.
+- **Melhoria na Validação e Cálculo de 'Valor' de Proventos (Backend)**:
+    - O campo `valor` no modelo Pydantic `ProventoBase` (e modelos herdados) foi alterado para `Optional[float] = None`.
+    - A lógica de cálculo de `valor_total_recebido` em `listar_proventos_recebidos_pelo_usuario_service` foi ajustada para tratar o `valor` unitário do provento como `0.0` caso seja `None`.
+    - Essas alterações aumentam a robustez do sistema contra dados de 'valor' ausentes ou inválidos na tabela `proventos`, resolvendo um `ValidationError` e prevenindo potenciais `TypeError` nos cálculos.
 
 ### Refatoração da Navegação Principal
 - A navegação principal da aplicação foi consolidada em um menu de abas horizontais localizado no componente `Dashboard.tsx` (`frontend/components/Dashboard.tsx`).

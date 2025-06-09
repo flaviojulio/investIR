@@ -1279,7 +1279,8 @@ def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Dic
         )
 
         if quantidade_na_data_ex > 0:
-            valor_total_recebido = quantidade_na_data_ex * provento_info_item.valor
+            # Trata o caso de provento_info_item.valor ser None
+            valor_total_recebido = quantidade_na_data_ex * (provento_info_item.valor or 0.0)
 
             # Começa com o dicionário do ProventoInfo
             provento_usuario_data = provento_info_item.model_dump()

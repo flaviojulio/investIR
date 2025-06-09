@@ -241,7 +241,7 @@ class AcaoInfo(BaseModel):
 class ProventoBase(BaseModel):
     id_acao: int
     tipo: str
-    valor: float  # Este será o tipo após a validação em ProventoCreate
+    valor: Optional[float] = None  # Este será o tipo após a validação em ProventoCreate
     data_registro: Optional[date] = None
     data_ex: Optional[date] = None
     dt_pagamento: Optional[date] = None
