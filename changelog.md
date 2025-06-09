@@ -76,6 +76,11 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - **Ajuste de UI**: O link de navegação "Proventos" na sidebar (`backend/components/app-sidebar.tsx`) foi reposicionado para aparecer imediatamente após "Visão Geral" (Dashboard) para melhor fluxo de usuário.
 - **Correção de Autenticação (Frontend)**: Resolvido problema que causava erros `401 Unauthorized` em chamadas à API para rotas protegidas. Adicionado um interceptor de requisição `axios` em `frontend/lib/api.ts` para incluir automaticamente o token JWT no header `Authorization`.
 - **Ajuste na Navegação (Sidebar)**: O código do componente da sidebar (`backend/components/app-sidebar.tsx`) foi verificado e o link "Proventos" está corretamente posicionado após "Visão Geral" (Dashboard). Instruções foram fornecidas ao usuário para limpar cache do navegador e reiniciar o servidor de desenvolvimento, caso o link não esteja visível devido a cache.
+- **Correção de Validação de Proventos (Backend)**:
+    - Implementada transformação de dados na camada de serviço (`backend/services.py`) ao ler proventos do banco de dados.
+    - Valores numéricos (campo `valor`) são convertidos de strings com vírgula para `float`.
+    - Strings de data (campos `data_registro`, `data_ex`, `dt_pagamento`) são convertidas do formato "DD/MM/YYYY" (ou "YYYY-MM-DD") para objetos `date` Python antes da validação pelo modelo Pydantic `ProventoInfo`.
+    - Isso resolve erros de validação que ocorriam ao buscar e processar dados de proventos para exibição na API (e.g., na página de proventos do frontend).
 
 ### Refatoração da Navegação Principal
 - A navegação principal da aplicação foi consolidada em um menu de abas horizontais localizado no componente `Dashboard.tsx` (`frontend/components/Dashboard.tsx`).
