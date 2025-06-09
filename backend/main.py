@@ -57,7 +57,8 @@ from services import (
     gerar_resumo_proventos_anuais_usuario_service, # Service para resumo anual de proventos
     gerar_resumo_proventos_mensais_usuario_service, # Service para resumo mensal de proventos
     gerar_resumo_proventos_por_acao_usuario_service, # Service para resumo por ação de proventos
-    recalcular_proventos_recebidos_para_usuario_service, # Novo serviço de recálculo
+    recalcular_proventos_recebidos_para_usuario_service, # Antigo serviço de recálculo
+    recalcular_proventos_recebidos_rapido, # Novo serviço de recálculo RÁPIDO
     # EventoCorporativo services
     registrar_evento_corporativo_service,
     listar_eventos_corporativos_por_acao_service,
@@ -276,8 +277,12 @@ async def recalcular_proventos_usuario_endpoint(
     Esta operação limpará os registros existentes e os recriará com base nos proventos globais e no histórico de operações do usuário.
     """
     try:
-        resultado_recalculo = services.recalcular_proventos_recebidos_para_usuario_service(usuario_id=usuario.id)
-        return resultado_recalculo
+        # Replace with the new "rapido" service
+        stats = services.recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
+        return {
+            "message": "Recálculo rápido de proventos concluído.",
+            "stats": stats
+        }
     except Exception as e:
         logging.error(f"Error in POST /api/usuario/proventos/recalcular for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro durante o recálculo de proventos: {str(e)}")

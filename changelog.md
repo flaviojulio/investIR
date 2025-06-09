@@ -1,3 +1,14 @@
+## [Unreleased] - 2024-07-15
+### Changed
+- Optimized dividend calculation (`proventos`) by introducing a new function `recalcular_proventos_recebidos_rapido`. This function only considers stocks the user has operated, significantly improving performance when adding new operations.
+- Replaced all calls to the old `recalcular_proventos_recebidos_para_usuario_service` with the new optimized function.
+- Enhanced logging and API responses for the dividend recalculation process to include detailed statistics.
+
+### Added
+- New database function `obter_tickers_operados_por_usuario(usuario_id)` to fetch tickers specifically operated by a user.
+- New database function `obter_proventos_por_ticker(ticker)` to fetch proventos for a specific stock ticker.
+- Unit tests for the new database and service functions to ensure correctness and cover various scenarios.
+
 # Changelog
 
 Este arquivo documenta as principais mudanças e correções implementadas no sistema.

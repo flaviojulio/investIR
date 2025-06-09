@@ -411,6 +411,21 @@ def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
         
         return operacoes
 
+def obter_tickers_operados_por_usuario(usuario_id: int) -> List[str]:
+    """
+    Obtém uma lista de tickers distintos operados por um usuário.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT ticker
+            FROM operacoes
+            WHERE usuario_id = ?
+            ORDER BY ticker
+        ''', (usuario_id,))
+        rows = cursor.fetchall()
+        return [row['ticker'] for row in rows]
+
 def atualizar_operacao(operacao_id: int, operacao: Dict[str, Any], usuario_id: Optional[int] = None) -> bool:
     """
     Atualiza uma operação.
@@ -1157,6 +1172,32 @@ def obter_todos_proventos() -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT * FROM proventos ORDER BY data_ex DESC, dt_pagamento DESC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_proventos_por_ticker(ticker: str) -> List[Dict[str, Any]]:
+    """
+    Obtém todos os proventos para um ticker específico, incluindo nome e ticker da ação,
+    ordenados por data_ex e dt_pagamento descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                p.id,
+                p.id_acao,
+                a.ticker as ticker_acao,
+                a.nome as nome_acao,
+                p.tipo,
+                p.valor,
+                p.data_registro,
+                p.data_ex,
+                p.dt_pagamento
+            FROM proventos p
+            JOIN acoes a ON p.id_acao = a.id
+            WHERE a.ticker = ?
+            ORDER BY p.data_ex DESC, p.dt_pagamento DESC
+        ''', (ticker,))
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
