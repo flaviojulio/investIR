@@ -297,7 +297,7 @@ def date_converter(obj):
 def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None) -> int:
     """
     Insere uma operação no banco de dados.
-    Verifica se o ticker da operação existe na tabela `stocks`.
+    Verifica se o ticker da operação existe na tabela `acoes`.
     
     Args:
         operacao: Dicionário com os dados da operação.
@@ -307,12 +307,12 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
         int: ID da operação inserida.
 
     Raises:
-        ValueError: Se o ticker não for encontrado na tabela `stocks`.
+        ValueError: Se o ticker não for encontrado na tabela `acoes`.
     """
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Verifica se o ticker existe na tabela stocks
+        # Verifica se o ticker existe na tabela acoes
         ticker_value = operacao["ticker"]
         # Modificado para consultar a nova tabela 'acoes'
         cursor.execute("SELECT 1 FROM acoes WHERE ticker = ?", (ticker_value,))
