@@ -4,7 +4,7 @@ import { ProventoRecebidoUsuario } from '@/lib/types';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { ArrowUpDown } from 'lucide-react';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, formatNumber } from '@/lib/utils';
 
 interface TabelaProventosProps {
   data: ProventoRecebidoUsuario[];
@@ -106,7 +106,7 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
               <TableCell className="font-medium text-xs sm:text-sm">{provento.ticker_acao}</TableCell>
               <TableCell className="hidden lg:table-cell text-xs sm:text-sm">{provento.nome_acao || '-'}</TableCell>
               <TableCell className="text-xs sm:text-sm">{provento.tipo}</TableCell>
-              <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{provento.quantidade_na_data_ex.toLocaleString('pt-BR')}</TableCell>
+              <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{formatNumber(provento.quantidade_na_data_ex)}</TableCell>
               <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor)}</TableCell>
               <TableCell className="text-right font-semibold text-xs sm:text-sm">{formatCurrency(provento.valor_total_recebido)}</TableCell>
             </TableRow>

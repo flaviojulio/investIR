@@ -102,6 +102,13 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - **Verificação de Estrutura e Indentação (Backend Services)**:
     - Realizada verificação nas funções `listar_todos_proventos_service` e `listar_proventos_por_acao_service` em `services.py`.
     - Confirmado que a refatoração para loops explícitos (em vez de list comprehensions) e o tratamento de erro para validação de `ProventoInfo` estão corretamente implementados, resolvendo potenciais `IndentationError` e melhorando a robustez.
+- **Correção de `TypeError` na Tabela de Proventos (Frontend)**:
+    - Resolvido um `TypeError` (Cannot read properties of undefined (reading 'toLocaleString')) em `frontend/components/TabelaProventos.tsx`.
+    - A correção envolveu o uso da função utilitária `formatNumber` para formatar o campo `quantidade_na_data_ex`, garantindo tratamento robusto para valores potencialmente nulos ou indefinidos.
+- **Investigação de Erro de Hidratação (Frontend)**:
+    - Investigado um erro de hidratação do React (`whitespace text nodes cannot appear as a child of <tr>`) reportado em `StockTable.tsx`.
+    - A revisão dos arquivos `StockTable.tsx` e `TabelaProventos.tsx` não revelou espaços em branco literais óbvios que pudessem causar este problema diretamente nesses componentes.
+    - A causa raiz pode ser mais sutil, possivelmente relacionada aos componentes base de UI de tabela ou à interação específica com o Next.js. A funcionalidade da página de proventos deve ser testada para verificar se o `TypeError` anterior (mais crítico) foi resolvido.
 
 ### Refatoração da Navegação Principal
 - A navegação principal da aplicação foi consolidada em um menu de abas horizontais localizado no componente `Dashboard.tsx` (`frontend/components/Dashboard.tsx`).
