@@ -1602,29 +1602,27 @@ def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
 
         for prov in proventos_do_ticker:
             total_proventos_verificados += 1
-            try:
-                data_ex_str = prov.get("data_ex")
-                if not data_ex_str:
-                    logging.warning(f"[Proventos Rápido] Provento ID {prov.get('id')} para ticker {ticker} não possui 'data_ex'. Pulando.")
-                    # Não contamos como erro fatal, mas como um dado faltante.
-                    continue
 
-                # data_ex_str pode ser string ou já um objeto date/datetime se o DB layer converter.
-                # Assumindo que pode ser string ISO YYYY-MM-DD ou DD/MM/YYYY.
-                # obter_proventos_por_ticker já retorna dict, não sqlite3.Row.
-                # E as datas no DB estão em ISO YYYY-MM-DD.
-                if isinstance(data_ex_str, date):
-                    data_ex_obj = data_ex_str
-                elif isinstance(data_ex_str, datetime):
-                    data_ex_obj = data_ex_str.date()
-                elif isinstance(data_ex_str, str):
+            data_ex_str = prov.get("data_ex")
+            data_ex_obj = None
+
+            if isinstance(data_ex_str, str) and data_ex_str:
+                try:
+                    data_ex_obj = dt.strptime(data_ex_str, '%d/%m/%Y').date()
+                except ValueError:
                     try:
                         data_ex_obj = dt.fromisoformat(data_ex_str.split("T")[0]).date()
                     except ValueError:
-                        logging.warning(f"[Proventos Rápido] Formato de data_ex inválido ('{data_ex_str}') para provento ID {prov.get('id')}, ticker {ticker}. Pulando.")
-                        continue # Pula este provento
-                else:
-                    logging.warning(f"[Proventos Rápido] Tipo de data_ex desconhecido ({type(data_ex_str)}) para provento ID {prov.get('id')}, ticker {ticker}. Pulando.")
+                        data_ex_obj = None # Explicitly set to None if both parsing attempts fail
+            elif isinstance(data_ex_str, date): # dt_date is datetime.date, which is imported as 'date'
+                data_ex_obj = data_ex_str
+            elif isinstance(data_ex_str, datetime): # Handle if it's already a datetime object
+                data_ex_obj = data_ex_str.date()
+
+            try:
+                if data_ex_obj is None:
+                    logging.warning(f"[Proventos Rápido] Formato de data_ex inválido ou ausente ('{data_ex_str}') para provento ID {prov.get('id')}, ticker {ticker}. Pulando.")
+                    erros_calculo_ou_db += 1
                     continue
 
                 data_para_saldo = data_ex_obj - timedelta(days=1)
@@ -1682,7 +1680,7 @@ def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
 
             except Exception as e_inner:
                 logging.warning(f"[Proventos Rápido] Falha no cálculo do provento ID {prov.get('id')} para o ticker {ticker} (usuário {usuario_id}): {e_inner}", exc_info=True)
-                erros_calculo_ou_db += 1
+                erros_calculo_ou_db += 1 # Ensure error is counted in the general exception block
 
     logging.info(f"[Proventos Rápido] Recálculo concluído para usuário {usuario_id}. Verificados: {total_proventos_verificados}, Calculados: {total_calculados}, Erros: {erros_calculo_ou_db}")
     return {
