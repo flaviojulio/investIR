@@ -96,6 +96,10 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - **Correção de Erro de Inicialização e Validação de Proventos (Backend)**:
     - Resolvido um `IndentationError` em `backend/services.py` que impedia a inicialização da aplicação. O erro foi corrigido refatorando list comprehensions nas funções `listar_todos_proventos_service` e `listar_proventos_por_acao_service` para loops explícitos.
     - Adicionado tratamento de erro (try-except com logging) dentro desses loops ao validar os dados de proventos com `ProventoInfo.model_validate()`. Isso torna o sistema mais robusto, permitindo que continue o processamento mesmo que um item de provento individual falhe na validação (o erro será logado).
+- **Correção de `TypeError` no Endpoint de Proventos Detalhados (Backend)**:
+    - Resolvido um `TypeError` no endpoint `GET /api/usuario/proventos/` (função `listar_proventos_usuario_detalhado` em `main.py`).
+    - O erro ocorria ao tentar desempacotar um objeto Pydantic (`UsuarioProventoRecebidoDB`) diretamente como um dicionário para criar instâncias de `ProventoRecebidoUsuario`.
+    - A correção envolveu o uso do método `.model_dump()` (Pydantic V2) para converter o objeto Pydantic em um dicionário antes do desempacotamento, e.g., `ProventoRecebidoUsuario(**p_data.model_dump())`.
 
 ### Refatoração da Navegação Principal
 - A navegação principal da aplicação foi consolidada em um menu de abas horizontais localizado no componente `Dashboard.tsx` (`frontend/components/Dashboard.tsx`).

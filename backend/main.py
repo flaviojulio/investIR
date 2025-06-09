@@ -220,7 +220,7 @@ async def listar_proventos_usuario_detalhado(
         # a conversão seria automática. Como o serviço já constrói os dicionários, está ok.
         proventos_data = services.listar_proventos_recebidos_pelo_usuario_service(usuario_id=usuario.id)
         # Para garantir a validação e conversão correta para o response_model:
-        return [ProventoRecebidoUsuario(**p_data) for p_data in proventos_data]
+        return [ProventoRecebidoUsuario(**p_data.model_dump()) for p_data in proventos_data]
     except Exception as e:
         logging.error(f"Error in GET /api/usuario/proventos/ for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno ao listar proventos do usuário: {str(e)}")
