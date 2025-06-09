@@ -161,11 +161,40 @@ export default function ProventosPage() {
     .sort((a,b) => b.value - a.value) ?? [];
 
   const proventosFiltradosParaTabela = useMemo(() => {
-    if (!anoSelecionado) {
-      return proventosDetalhados; // Mostra todos se nenhum ano selecionado
+    // If no year is selected, the original logic was to return proventosDetalhados.
+    // This might mean anoSelecionado is always expected to be set.
+    // If anoSelecionado can truly be undefined and means "show all",
+    // then the original `if (!anoSelecionado) return proventosDetalhados;` is fine.
+    // The main fix is for when anoSelecionado *is* defined.
+
+    if (!proventosDetalhados) return []; // Handle case where proventosDetalhados might not be loaded yet
+
+    if (anoSelecionado === undefined) { // Explicitly handle if no year is selected (e.g. show all with valid dates, or none)
+      // Option 1: Show all proventos regardless of payment date if no year filter
+      // return proventosDetalhados;
+      // Option 2: Show only proventos that have a valid payment date if no year filter (more consistent with year filtering)
+      return proventosDetalhados.filter(p => {
+        if (!p.dt_pagamento) return false;
+        const dateObj = new Date(p.dt_pagamento + 'T00:00:00Z'); // Use 'Z' for UTC consistency
+        return !isNaN(dateObj.getTime()); // Check if date is valid by checking getTime()
+      });
     }
+
     return proventosDetalhados.filter(p => {
-      const anoPagamento = new Date(p.dt_pagamento + 'T00:00:00').getFullYear(); // Considera dt_pagamento
+      if (!p.dt_pagamento) { // If payment date is null, undefined, or empty string
+        return false; // Do not include if a specific year is selected
+      }
+      // Adding 'Z' assumes dt_pagamento from backend is a date without timezone, treated as UTC.
+      // If it has timezone info or should be local, adjust accordingly.
+      const dateObj = new Date(p.dt_pagamento + 'T00:00:00Z');
+
+      // Check if dateObj is a valid date
+      if (isNaN(dateObj.getTime())) {
+        console.warn(`Invalid date encountered for dt_pagamento: ${p.dt_pagamento} for provento ID: ${p.id}`);
+        return false; // Do not include if date is invalid
+      }
+
+      const anoPagamento = dateObj.getFullYear();
       return anoPagamento === anoSelecionado;
     });
   }, [proventosDetalhados, anoSelecionado]);
