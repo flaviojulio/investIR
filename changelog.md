@@ -77,6 +77,20 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - **Correção de Autenticação (Frontend)**: Resolvido problema que causava erros `401 Unauthorized` em chamadas à API para rotas protegidas. Adicionado um interceptor de requisição `axios` em `frontend/lib/api.ts` para incluir automaticamente o token JWT no header `Authorization`.
 - **Ajuste na Navegação (Sidebar)**: O código do componente da sidebar (`backend/components/app-sidebar.tsx`) foi verificado e o link "Proventos" está corretamente posicionado após "Visão Geral" (Dashboard). Instruções foram fornecidas ao usuário para limpar cache do navegador e reiniciar o servidor de desenvolvimento, caso o link não esteja visível devido a cache.
 
+### Refatoração da Navegação Principal
+- A navegação principal da aplicação foi consolidada em um menu de abas horizontais localizado no componente `Dashboard.tsx` (`frontend/components/Dashboard.tsx`).
+- Itens de menu que anteriormente estavam em uma sidebar vertical (e.g., `Minha Carteira`, `Operações`, `Resultados`, `DARF`, `Relatórios`, `Configurações`) foram movidos para este novo menu de abas horizontais.
+- Para a maioria desses itens, foram criadas novas rotas e páginas placeholder dedicadas no frontend, permitindo que cada seção tenha sua própria URL:
+    - `/carteira` (`frontend/app/carteira/page.tsx`)
+    - `/operacoes` (`frontend/app/operacoes/page.tsx`)
+    - `/proventos` (`frontend/app/proventos/page.tsx`) - já existia, mas agora integrada ao novo sistema de abas.
+    - `/resultados` (`frontend/app/resultados/page.tsx`)
+    - `/darf` (`frontend/app/darf/page.tsx`)
+    - `/relatorios` (`frontend/app/relatorios/page.tsx`)
+    - `/configuracoes` (`frontend/app/configuracoes/page.tsx`)
+- O item "Prejuízo Acumulado" foi adicionado como uma nova aba de conteúdo local dentro do `Dashboard.tsx`, assim como "Impostos" e "Histórico" que permanecem como conteúdo local.
+- O componente de sidebar vertical anterior (`backend/components/app-sidebar.tsx`) foi modificado para remover os links de navegação que agora estão nas abas do Dashboard, simplificando seu propósito ou indicando sua eventual substituição completa pelo novo sistema de navegação por abas.
+
 ## Melhorias Recentes (Junho 2024)
 
 ### Tabela "Carteira Atual" e Cálculo de Posições
