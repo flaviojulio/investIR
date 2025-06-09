@@ -9,6 +9,10 @@
 - New database function `obter_proventos_por_ticker(ticker)` to fetch proventos for a specific stock ticker.
 - Unit tests for the new database and service functions to ensure correctness and cover various scenarios.
 
+### Fixed
+- Corrected date parsing in `recalcular_proventos_recebidos_rapido` to handle "DD/MM/YYYY" format for `data_ex` field originating from the database.
+- Ensured accurate error counting in the summary returned by `recalcular_proventos_recebidos_rapido` when date parsing fails or other exceptions occur during individual provento processing.
+
 # Changelog
 
 Este arquivo documenta as principais mudanças e correções implementadas no sistema.
