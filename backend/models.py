@@ -242,9 +242,9 @@ class ProventoBase(BaseModel):
     id_acao: int
     tipo: str
     valor: float  # Este será o tipo após a validação em ProventoCreate
-    data_registro: date
-    data_ex: date
-    dt_pagamento: date
+    data_registro: Optional[date] = None
+    data_ex: Optional[date] = None
+    dt_pagamento: Optional[date] = None
 
 class ProventoCreate(BaseModel): # Não herda de ProventoBase diretamente para permitir tipos de entrada diferentes
     id_acao: int
