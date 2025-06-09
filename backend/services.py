@@ -1269,7 +1269,13 @@ def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Dic
 
         ticker_da_acao = acao_info_dict['ticker']
 
-        # data_ex no ProventoInfo é um objeto date
+        # data_ex no ProventoInfo é um objeto date, mas pode ser None
+        if provento_info_item.data_ex is None:
+            # Optional: Add a log message here if logging is set up
+            # import logging
+            # logging.warning(f"Provento ID {provento_info_item.id} (ticker: {ticker_da_acao}) pulado por não ter data_ex.")
+            continue
+
         data_para_saldo = provento_info_item.data_ex - timedelta(days=1)
 
         quantidade_na_data_ex = obter_saldo_acao_em_data(

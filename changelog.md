@@ -88,6 +88,9 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
     - O campo `valor` no modelo Pydantic `ProventoBase` (e modelos herdados) foi alterado para `Optional[float] = None`.
     - A lógica de cálculo de `valor_total_recebido` em `listar_proventos_recebidos_pelo_usuario_service` foi ajustada para tratar o `valor` unitário do provento como `0.0` caso seja `None`.
     - Essas alterações aumentam a robustez do sistema contra dados de 'valor' ausentes ou inválidos na tabela `proventos`, resolvendo um `ValidationError` e prevenindo potenciais `TypeError` nos cálculos.
+- **Correção no Cálculo de Proventos do Usuário (Backend)**:
+    - A função `listar_proventos_recebidos_pelo_usuario_service` foi ajustada para pular o cálculo de proventos para um usuário se a `data_ex` do provento global for nula.
+    - Isso previne um `TypeError` que ocorria ao tentar subtrair `timedelta` de um valor `None`, garantindo que apenas proventos com `data_ex` válida sejam processados.
 
 ### Refatoração da Navegação Principal
 - A navegação principal da aplicação foi consolidada em um menu de abas horizontais localizado no componente `Dashboard.tsx` (`frontend/components/Dashboard.tsx`).
