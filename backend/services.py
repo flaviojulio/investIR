@@ -1261,9 +1261,10 @@ def listar_proventos_por_acao_service(id_acao: int) -> List[ProventoInfo]:
 
     proventos_db = obter_proventos_por_acao_id(id_acao)
     proventos_validados = []
-    for p_db_item in proventos_db:
-        dados_transformados = _transformar_provento_db_para_modelo(p_db_item)
-        if dados_transformados is not None:
+    if proventos_db: # Add check if proventos_db can be None or empty
+        for p_db_item in proventos_db:
+            dados_transformados = _transformar_provento_db_para_modelo(p_db_item)
+            if dados_transformados is not None:
             try:
                 proventos_validados.append(ProventoInfo.model_validate(dados_transformados))
             except Exception as e: # Idealmente, capturar pydantic.ValidationError
@@ -1278,9 +1279,10 @@ def listar_todos_proventos_service() -> List[ProventoInfo]:
     """
     proventos_db = obter_todos_proventos()
     proventos_validados = []
-    for p_db_item in proventos_db:
-        dados_transformados = _transformar_provento_db_para_modelo(p_db_item)
-        if dados_transformados is not None:
+    if proventos_db: # Add check if proventos_db can be None or empty
+        for p_db_item in proventos_db:
+            dados_transformados = _transformar_provento_db_para_modelo(p_db_item)
+            if dados_transformados is not None:
             try:
                 proventos_validados.append(ProventoInfo.model_validate(dados_transformados))
             except Exception as e: # Idealmente, capturar pydantic.ValidationError
