@@ -106,6 +106,13 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
 - O item "Prejuízo Acumulado" foi adicionado como uma nova aba de conteúdo local dentro do `Dashboard.tsx`, assim como "Impostos" e "Histórico" que permanecem como conteúdo local.
 - O componente de sidebar vertical anterior (`backend/components/app-sidebar.tsx`) foi modificado para remover os links de navegação que agora estão nas abas do Dashboard, simplificando seu propósito ou indicando sua eventual substituição completa pelo novo sistema de navegação por abas.
 
+### Otimizações e Melhorias
+- **Otimização de Performance no Carregamento de Proventos do Usuário (Backend)**:
+    - Introduzida a nova tabela `usuario_proventos_recebidos` para armazenar proventos pré-calculados para cada usuário. Esta tabela é populada através de um novo serviço de recálculo (`recalcular_proventos_recebidos_para_usuario_service`).
+    - Os endpoints da API que listam proventos do usuário e seus resumos (e.g., `GET /api/usuario/proventos/`, `GET /api/usuario/proventos/resumo_anual/`) foram refatorados para ler diretamente desta tabela pré-calculada e/ou de queries SQL agregadas sobre ela. Isso resulta em uma melhora significativa de performance ao evitar cálculos complexos em Python a cada requisição.
+    - A lógica anterior de calcular o saldo de ações do usuário para cada provento global no momento da requisição (em `listar_proventos_recebidos_pelo_usuario_service`) foi movida para o serviço de recálculo.
+    - Adicionado novo endpoint `POST /api/usuario/proventos/recalcular` para permitir que o usuário acione o processo de recálculo e persistência de seus proventos recebidos.
+
 ## Melhorias Recentes (Junho 2024)
 
 ### Tabela "Carteira Atual" e Cálculo de Posições

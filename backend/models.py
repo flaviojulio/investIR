@@ -369,3 +369,28 @@ class ResumoProventoPorAcao(BaseModel):
     nome_acao: Optional[str] = None
     total_recebido_geral_acao: float = 0.0
     detalhes_por_tipo: List[DetalheTipoProvento]
+
+
+# Modelo para a tabela usuario_proventos_recebidos
+class UsuarioProventoRecebidoDB(BaseModel):
+    id: int
+    usuario_id: int
+    provento_global_id: int
+    id_acao: int
+    ticker_acao: str
+    nome_acao: Optional[str] = None
+    tipo_provento: str
+    data_ex: date # data_ex é obrigatória no provento global e, portanto, aqui também
+    dt_pagamento: Optional[date] = None # dt_pagamento pode ser nulo
+    valor_unitario_provento: float
+    quantidade_possuida_na_data_ex: int
+    valor_total_recebido: float
+    data_calculo: datetime
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            date: lambda d: d.isoformat() if d else None,
+            datetime: lambda dt: dt.isoformat() if dt else None
+        }
+    )

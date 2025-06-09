@@ -55,6 +55,7 @@ from services import (
     gerar_resumo_proventos_anuais_usuario_service, # Service para resumo anual de proventos
     gerar_resumo_proventos_mensais_usuario_service, # Service para resumo mensal de proventos
     gerar_resumo_proventos_por_acao_usuario_service, # Service para resumo por ação de proventos
+    recalcular_proventos_recebidos_para_usuario_service, # Novo serviço de recálculo
     # EventoCorporativo services
     registrar_evento_corporativo_service,
     listar_eventos_corporativos_por_acao_service,
@@ -263,6 +264,21 @@ async def obter_resumo_proventos_por_acao_usuario(
     except Exception as e:
         logging.error(f"Error in GET /api/usuario/proventos/resumo_por_acao/ for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno ao gerar resumo de proventos por ação: {str(e)}")
+
+@app.post("/api/usuario/proventos/recalcular", response_model=Dict[str, Any], tags=["Proventos Usuário"])
+async def recalcular_proventos_usuario_endpoint(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Dispara o recálculo de todos os proventos recebidos para o usuário logado.
+    Esta operação limpará os registros existentes e os recriará com base nos proventos globais e no histórico de operações do usuário.
+    """
+    try:
+        resultado_recalculo = services.recalcular_proventos_recebidos_para_usuario_service(usuario_id=usuario.id)
+        return resultado_recalculo
+    except Exception as e:
+        logging.error(f"Error in POST /api/usuario/proventos/recalcular for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro durante o recálculo de proventos: {str(e)}")
 
 
 # Configuração do OAuth2
