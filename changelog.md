@@ -93,6 +93,9 @@ Este arquivo documenta as principais mudanças e correções implementadas no si
     - Isso previne um `TypeError` que ocorria ao tentar subtrair `timedelta` de um valor `None`, garantindo que apenas proventos com `data_ex` válida sejam processados.
 - **Correção de Estrutura de Banco de Dados**:
     - Removida definição residual da tabela `stocks` do arquivo `backend/database.py` para evitar conflitos e garantir que a tabela `acoes` seja a única fonte de informações de ações. Funções associadas à tabela `stocks` também foram removidas.
+- **Correção de Erro de Inicialização e Validação de Proventos (Backend)**:
+    - Resolvido um `IndentationError` em `backend/services.py` que impedia a inicialização da aplicação. O erro foi corrigido refatorando list comprehensions nas funções `listar_todos_proventos_service` e `listar_proventos_por_acao_service` para loops explícitos.
+    - Adicionado tratamento de erro (try-except com logging) dentro desses loops ao validar os dados de proventos com `ProventoInfo.model_validate()`. Isso torna o sistema mais robusto, permitindo que continue o processamento mesmo que um item de provento individual falhe na validação (o erro será logado).
 
 ### Refatoração da Navegação Principal
 - A navegação principal da aplicação foi consolidada em um menu de abas horizontais localizado no componente `Dashboard.tsx` (`frontend/components/Dashboard.tsx`).

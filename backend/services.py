@@ -1260,7 +1260,16 @@ def listar_proventos_por_acao_service(id_acao: int) -> List[ProventoInfo]:
         raise HTTPException(status_code=404, detail=f"Ação com ID {id_acao} não encontrada.")
 
     proventos_db = obter_proventos_por_acao_id(id_acao)
-            for p in proventos_db if _transformar_provento_db_para_modelo(p) is not None]
+    proventos_validados = []
+    for p_db_item in proventos_db:
+        dados_transformados = _transformar_provento_db_para_modelo(p_db_item)
+        if dados_transformados is not None:
+            try:
+                proventos_validados.append(ProventoInfo.model_validate(dados_transformados))
+            except Exception as e: # Idealmente, capturar pydantic.ValidationError
+                logging.error(f"Erro de validação para ProventoInfo (ação ID: {id_acao}) com dados do DB {p_db_item}: {e}", exc_info=True)
+                # Continuar processando outros proventos
+    return proventos_validados
 
 
 def listar_todos_proventos_service() -> List[ProventoInfo]:
@@ -1268,8 +1277,16 @@ def listar_todos_proventos_service() -> List[ProventoInfo]:
     Lista todos os proventos de todas as ações.
     """
     proventos_db = obter_todos_proventos()
-    return [ProventoInfo.model_validate(_transformar_provento_db_para_modelo(p))
-            for p in proventos_db if _transformar_provento_db_para_modelo(p) is not None]
+    proventos_validados = []
+    for p_db_item in proventos_db:
+        dados_transformados = _transformar_provento_db_para_modelo(p_db_item)
+        if dados_transformados is not None:
+            try:
+                proventos_validados.append(ProventoInfo.model_validate(dados_transformados))
+            except Exception as e: # Idealmente, capturar pydantic.ValidationError
+                logging.error(f"Erro de validação para ProventoInfo com dados do DB {p_db_item}: {e}", exc_info=True)
+                # Continuar processando outros proventos
+    return proventos_validados
 
 
 # Refatorado para usar dados da tabela usuario_proventos_recebidos
