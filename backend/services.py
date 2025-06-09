@@ -1265,11 +1265,11 @@ def listar_proventos_por_acao_service(id_acao: int) -> List[ProventoInfo]:
         for p_db_item in proventos_db:
             dados_transformados = _transformar_provento_db_para_modelo(p_db_item)
             if dados_transformados is not None:
-            try:
-                proventos_validados.append(ProventoInfo.model_validate(dados_transformados))
-            except Exception as e: # Idealmente, capturar pydantic.ValidationError
-                logging.error(f"Erro de validação para ProventoInfo (ação ID: {id_acao}) com dados do DB {p_db_item}: {e}", exc_info=True)
-                # Continuar processando outros proventos
+                try:
+                    proventos_validados.append(ProventoInfo.model_validate(dados_transformados))
+                except Exception as e: # Idealmente, capturar pydantic.ValidationError
+                    logging.error(f"Erro de validação para ProventoInfo (ação ID: {id_acao}) com dados do DB {p_db_item}: {e}", exc_info=True)
+                    # Continuar processando outros proventos
     return proventos_validados
 
 
@@ -1283,11 +1283,11 @@ def listar_todos_proventos_service() -> List[ProventoInfo]:
         for p_db_item in proventos_db:
             dados_transformados = _transformar_provento_db_para_modelo(p_db_item)
             if dados_transformados is not None:
-            try:
-                proventos_validados.append(ProventoInfo.model_validate(dados_transformados))
-            except Exception as e: # Idealmente, capturar pydantic.ValidationError
-                logging.error(f"Erro de validação para ProventoInfo com dados do DB {p_db_item}: {e}", exc_info=True)
-                # Continuar processando outros proventos
+                try:
+                    proventos_validados.append(ProventoInfo.model_validate(dados_transformados))
+                except Exception as e: # Idealmente, capturar pydantic.ValidationError
+                    logging.error(f"Erro de validação para ProventoInfo com dados do DB {p_db_item}: {e}", exc_info=True)
+                    # Continuar processando outros proventos
     return proventos_validados
 
 
