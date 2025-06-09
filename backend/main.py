@@ -7,11 +7,13 @@ import logging # Added logging import
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
 
+import models # Import the entire models module to use models.UsuarioProventoRecebidoDB
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
     DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo, # Changed StockInfo to AcaoInfo
     ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # Added EventoCorporativo models
-    ProventoRecebidoUsuario, ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, # Novos modelos de resumo de proventos
+    ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, # ProventoRecebidoUsuario removed as it's no longer the response_model here
+    UsuarioProventoRecebidoDB, # Explicitly import UsuarioProventoRecebidoDB
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
@@ -206,7 +208,7 @@ async def listar_todos_os_eventos_corporativos_api( # Renamed to avoid conflict 
 
 # Endpoints de Proventos do Usuário
 
-@app.get("/api/usuario/proventos/", response_model=List[ProventoRecebidoUsuario], tags=["Proventos Usuário"])
+@app.get("/api/usuario/proventos/", response_model=List[models.UsuarioProventoRecebidoDB], tags=["Proventos Usuário"])
 async def listar_proventos_usuario_detalhado(
     usuario: UsuarioResponse = Depends(get_current_user)
 ):
@@ -220,7 +222,7 @@ async def listar_proventos_usuario_detalhado(
         # a conversão seria automática. Como o serviço já constrói os dicionários, está ok.
         proventos_data = services.listar_proventos_recebidos_pelo_usuario_service(usuario_id=usuario.id)
         # Para garantir a validação e conversão correta para o response_model:
-        return [ProventoRecebidoUsuario(**p_data.model_dump()) for p_data in proventos_data]
+        return proventos_data
     except Exception as e:
         logging.error(f"Error in GET /api/usuario/proventos/ for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno ao listar proventos do usuário: {str(e)}")
