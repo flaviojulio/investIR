@@ -341,6 +341,7 @@ def criar_tabelas():
         
         # Adiciona índices para as colunas usuario_id
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_id ON operacoes(usuario_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_ticker_date ON operacoes(usuario_id, ticker, date);') # New composite index
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_usuario_id ON resultados_mensais(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_carteira_atual_usuario_id ON carteira_atual(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_usuario_id ON operacoes_fechadas(usuario_id)')
@@ -372,6 +373,7 @@ def criar_tabelas():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_acao_id ON usuario_proventos_recebidos(id_acao);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_dt_pagamento ON usuario_proventos_recebidos(dt_pagamento);')
         cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_usr_prov_rec_usr_prov_glob ON usuario_proventos_recebidos(usuario_id, provento_global_id);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_uid_dtpag_dataex ON usuario_proventos_recebidos(usuario_id, dt_pagamento DESC, data_ex DESC);') # New composite index
         
         conn.commit()
     
