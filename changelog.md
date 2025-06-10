@@ -7,6 +7,9 @@
     - Implemented data migration logic in `database.py` to transform existing date strings (YYYY-MM-DD or DD/MM/YYYY) to the new `DATE` format.
 - Adjusted date handling in the service layer (`services.py`) to work with `datetime.date` objects returned from the database for `proventos` date fields, removing redundant string parsing.
 - Updated unit tests to reflect the new date handling, ensuring mocks provide `datetime.date` objects where appropriate.
+- Improved database query performance for dividend calculations and display by:
+    - Adding a composite index `idx_operacoes_usuario_ticker_date` on the `operacoes` table (`usuario_id`, `ticker`, `date`).
+    - Adding a composite index `idx_usr_prov_rec_uid_dtpag_dataex` on the `usuario_proventos_recebidos` table (`usuario_id`, `dt_pagamento DESC`, `data_ex DESC`).
 
 ### Added
 - New database function `obter_tickers_operados_por_usuario(usuario_id)` to fetch tickers specifically operated by a user.
