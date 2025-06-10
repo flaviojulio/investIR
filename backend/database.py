@@ -7,12 +7,36 @@ from typing import Dict, List, Any, Optional
 # Caminho para o banco de dados SQLite
 DATABASE_FILE = "acoes_ir.db"
 
+# Convert datetime.date objects to ISO format string (YYYY-MM-DD) when writing to DB
+sqlite3.register_adapter(date, lambda val: val.isoformat())
+
+# Convert DATE column string (YYYY-MM-DD) from DB to datetime.date objects when reading
+sqlite3.register_converter("date", lambda val: datetime.strptime(val.decode(), "%Y-%m-%d").date())
+
+def _transform_date_string_to_iso(date_str: Optional[str]) -> Optional[str]:
+    if not date_str or date_str.strip() == '--' or date_str.strip() == '':
+        return None
+
+    cleaned_date_str = date_str.strip()
+
+    try:
+        # Try ISO format first (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+        return datetime.strptime(cleaned_date_str.split("T")[0], '%Y-%m-%d').date().isoformat()
+    except ValueError:
+        try:
+            # Try DD/MM/YYYY format
+            return datetime.strptime(cleaned_date_str, '%d/%m/%Y').date().isoformat()
+        except ValueError:
+            # If both fail, return None
+            print(f"WARNING: Could not parse date string '{date_str}' during proventos migration. Storing as NULL.")
+            return None
+
 @contextmanager
 def get_db():
     """
     Contexto para conexão com o banco de dados.
     """
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, detect_types=sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -225,6 +249,75 @@ def criar_tabelas():
             FOREIGN KEY(id_acao) REFERENCES acoes(id)
         )
         ''')
+
+        # Criar índice para a coluna id_acao na tabela proventos
+        # Tabela de proventos - MIGRATION LOGIC
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proventos';")
+        proventos_table_exists = cursor.fetchone()
+        needs_migration = False
+
+        if proventos_table_exists:
+            cursor.execute("PRAGMA table_info(proventos);")
+            columns_info = {row['name']: str(row['type']).upper() for row in cursor.fetchall()}
+            if not (columns_info.get('data_ex') == 'DATE' and \
+                    columns_info.get('dt_pagamento') == 'DATE' and \
+                    columns_info.get('data_registro') == 'DATE'):
+                needs_migration = True
+
+        final_proventos_schema = """
+        CREATE TABLE proventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_acao INTEGER,
+            tipo TEXT,
+            valor REAL,
+            data_registro DATE,
+            data_ex DATE,
+            dt_pagamento DATE,
+            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+        )
+        """
+
+        if needs_migration:
+            print("INFO: Migrating 'proventos' table to new schema with DATE types...")
+            try:
+                cursor.execute("CREATE TABLE proventos_old AS SELECT * FROM proventos;") # Backup old data safely
+                cursor.execute("DROP TABLE proventos;") # Drop the old table
+
+                # Create the new table with the final schema
+                cursor.execute(final_proventos_schema)
+
+                cursor.execute("SELECT id, id_acao, tipo, valor, data_registro, data_ex, dt_pagamento FROM proventos_old;")
+                old_proventos_rows = cursor.fetchall()
+
+                migrated_count = 0
+                for row_dict in old_proventos_rows: # Assumes conn.row_factory = sqlite3.Row
+                    transformed_data_registro = _transform_date_string_to_iso(row_dict['data_registro'])
+                    transformed_data_ex = _transform_date_string_to_iso(row_dict['data_ex'])
+                    transformed_dt_pagamento = _transform_date_string_to_iso(row_dict['dt_pagamento'])
+
+                    cursor.execute("""
+                        INSERT INTO proventos (id_acao, tipo, valor, data_registro, data_ex, dt_pagamento)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (row_dict['id_acao'], row_dict['tipo'], row_dict['valor'],
+                          transformed_data_registro, transformed_data_ex, transformed_dt_pagamento))
+                    migrated_count +=1
+
+                cursor.execute("DROP TABLE proventos_old;")
+                print(f"INFO: 'proventos' table migration complete. {migrated_count} rows migrated.")
+            except Exception as e:
+                print(f"ERROR: Failed to migrate 'proventos' table: {e}")
+                try:
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proventos_old';")
+                    if cursor.fetchone():
+                        cursor.execute("DROP TABLE IF EXISTS proventos;")
+                        cursor.execute("ALTER TABLE proventos_old RENAME TO proventos;")
+                        print("INFO: Attempted to restore 'proventos' table from backup.")
+                except Exception as restore_e:
+                    print(f"ERROR: Failed to restore 'proventos' table from backup: {restore_e}")
+                raise
+        else:
+            # If no migration needed, just ensure table exists with the correct schema
+            cursor.execute(final_proventos_schema.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
 
         # Criar índice para a coluna id_acao na tabela proventos
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_proventos_id_acao ON proventos(id_acao);')

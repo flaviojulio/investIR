@@ -272,7 +272,9 @@ class TestRecalcularProventosRapido(unittest.TestCase):
         mock_obter_tickers.return_value = ["TICKER1"]
         mock_provento = {
             "id": 1, "id_acao": 10, "ticker_acao": "TICKER1", "nome_acao": "Empresa 1",
-            "tipo": "JCP", "valor": 1.0, "data_ex": "2023-01-15", "dt_pagamento": "2023-02-28"
+            "tipo": "JCP", "valor": 1.0,
+            "data_ex": date(2023, 1, 15), # Changed to date object
+            "dt_pagamento": date(2023, 2, 28) # Changed to date object
         }
         mock_obter_proventos.return_value = [mock_provento]
         mock_obter_saldo.return_value = 100 # 100 shares
@@ -317,39 +319,28 @@ class TestRecalcularProventosRapido(unittest.TestCase):
     ):
         from services import recalcular_proventos_recebidos_rapido
         mock_obter_tickers.return_value = ["TICKER1"]
-        # Test with various unparseable date strings
-        unparseable_dates = ["--", "invalid-date", "", None, "2023/01/15", "15-01-2023"]
+        # Test with data_ex: None
+        mock_provento_bad_date = {
+            "id": 100, "id_acao": 11, "ticker_acao": "TICKER1", "nome_acao": "Empresa B",
+            "tipo": "DIVIDENDO", "valor": 0.5,
+            "data_ex": None, # data_ex is None
+            "dt_pagamento": date(2023, 3, 10)
+        }
+        mock_obter_proventos.return_value = [mock_provento_bad_date]
+        mock_obter_tickers.return_value = ["TICKER1"] # Ensure this is set for this specific iteration
 
-        for i, invalid_date_str in enumerate(unparseable_dates):
-            mock_limpar.reset_mock()
-            mock_obter_tickers.reset_mock()
-            mock_obter_proventos.reset_mock()
-            mock_obter_saldo.reset_mock()
-            mock_inserir.reset_mock()
-            mock_logging.reset_mock()
+        result = recalcular_proventos_recebidos_rapido(self.usuario_id)
 
-            provento_id = 100 + i
-            mock_provento_bad_date = {
-                "id": provento_id, "id_acao": 11, "ticker_acao": "TICKER1", "nome_acao": "Empresa B",
-                "tipo": "DIVIDENDO", "valor": 0.5, "data_ex": invalid_date_str, "dt_pagamento": "2023-03-10"
-            }
-            mock_obter_proventos.return_value = [mock_provento_bad_date]
-            mock_obter_tickers.return_value = ["TICKER1"]
+        mock_limpar.assert_called_once_with(self.usuario_id) # Called once for the test method
+        mock_obter_tickers.assert_called_once_with(self.usuario_id) # Called once for the test method
+        mock_obter_proventos.assert_called_once_with("TICKER1")
+        mock_obter_saldo.assert_not_called()
+        mock_inserir.assert_not_called()
 
-
-            result = recalcular_proventos_recebidos_rapido(self.usuario_id)
-
-            mock_limpar.assert_called_once_with(self.usuario_id)
-            mock_obter_tickers.assert_called_once_with(self.usuario_id)
-            mock_obter_proventos.assert_called_once_with("TICKER1")
-            mock_obter_saldo.assert_not_called()
-            mock_inserir.assert_not_called()
-
-            self.assertEqual(result, {"proventos_verificados": 1, "proventos_calculados": 0, "erros": 1, "mensagem": "Recálculo rápido de proventos concluído."},
-                             msg=f"Failed for data_ex: '{invalid_date_str}'")
-            mock_logging.warning.assert_any_call(
-                f"[Proventos Rápido] Formato de data_ex inválido ou ausente ('{invalid_date_str}') para provento ID {provento_id}, ticker TICKER1. Pulando."
-            )
+        self.assertEqual(result, {"proventos_verificados": 1, "proventos_calculados": 0, "erros": 1, "mensagem": "Recálculo rápido de proventos concluído."})
+        mock_logging.warning.assert_any_call(
+             f"[Proventos Rápido] data_ex inválida ou ausente (tipo: {type(None)}, valor: 'None') para provento ID {mock_provento_bad_date.get('id')}, ticker TICKER1. Pulando."
+        )
 
     @patch('services.inserir_usuario_provento_recebido_db')
     @patch('services.obter_saldo_acao_em_data')
@@ -364,7 +355,9 @@ class TestRecalcularProventosRapido(unittest.TestCase):
         mock_obter_tickers.return_value = ["TICKER1"]
         mock_provento_valido = {
             "id": 3, "id_acao": 12, "ticker_acao": "TICKER1", "nome_acao": "Empresa C",
-            "tipo": "RENDIMENTO", "valor": 1.2, "data_ex": "2023-04-05", "dt_pagamento": "2023-05-10"
+            "tipo": "RENDIMENTO", "valor": 1.2,
+            "data_ex": date(2023, 4, 5), # Changed to date object
+            "dt_pagamento": date(2023, 5, 10) # Changed to date object
         }
         mock_obter_proventos.return_value = [mock_provento_valido]
         mock_obter_saldo.return_value = 0 # Saldo zero
@@ -398,7 +391,9 @@ class TestRecalcularProventosRapido(unittest.TestCase):
         mock_obter_tickers.return_value = ["TICKER1"]
         mock_provento_valor_none = {
             "id": 4, "id_acao": 13, "ticker_acao": "TICKER1", "nome_acao": "Empresa D",
-            "tipo": "JCP", "valor": None, "data_ex": "2023-06-10", "dt_pagamento": "2023-07-15"
+            "tipo": "JCP", "valor": None,
+            "data_ex": date(2023, 6, 10), # Changed to date object
+            "dt_pagamento": date(2023, 7, 15) # Changed to date object
         }
         mock_obter_proventos.return_value = [mock_provento_valor_none]
         mock_obter_saldo.return_value = 100
@@ -428,121 +423,10 @@ class TestRecalcularProventosRapido(unittest.TestCase):
         self.assertEqual(result, {"proventos_verificados": 1, "proventos_calculados": 1, "erros": 0, "mensagem": "Recálculo rápido de proventos concluído."})
         mock_logging.warning.assert_any_call(f"[Proventos Rápido] Provento ID {mock_provento_valor_none.get('id')} para ticker TICKER1 não possui 'valor'. Assumindo 0.0.")
 
-
-    @patch('services.inserir_usuario_provento_recebido_db')
-    @patch('services.obter_saldo_acao_em_data')
-    @patch('services.obter_proventos_por_ticker')
-    @patch('services.obter_tickers_operados_por_usuario')
-    @patch('services.limpar_usuario_proventos_recebidos_db')
-    @patch('services.dt') # Mocking datetime.datetime
-    def test_recalcular_proventos_rapido_date_conversion_if_string(
-        self, mock_datetime, mock_limpar, mock_obter_tickers, mock_obter_proventos,
-        mock_obter_saldo, mock_inserir
-    ):
-        from services import recalcular_proventos_recebidos_rapido
-        from datetime import datetime as dt_real, date # Ensure date is imported for constructing expected_data_para_saldo
-
-        mock_now = dt_real(2023, 1, 1, 12, 0, 0)
-        mock_datetime.now.return_value = mock_now
-
-        mock_obter_tickers.return_value = ["TICKER1"]
-        # Test with data_ex as "YYYY-MM-DDTHH:MM:SS"
-        mock_provento_datetime_str = {
-            "id": 5, "id_acao": 14, "ticker_acao": "TICKER1", "nome_acao": "Empresa E",
-            "tipo": "DIVIDENDO", "valor": 2.5, "data_ex": "2023-08-20T00:00:00", "dt_pagamento": "2023-09-25"
-        }
-        # Test with data_ex as "YYYY-MM-DD"
-        mock_provento_date_str = {
-            "id": 6, "id_acao": 15, "ticker_acao": "TICKER1", "nome_acao": "Empresa F",
-            "tipo": "JCP", "valor": 1.5, "data_ex": "2023-10-10", "dt_pagamento": "2023-11-15"
-        }
-        mock_obter_proventos.return_value = [mock_provento_datetime_str, mock_provento_date_str]
-        mock_obter_saldo.return_value = 50
-
-        result = recalcular_proventos_recebidos_rapido(self.usuario_id)
-
-        mock_limpar.assert_called_once_with(self.usuario_id)
-        mock_obter_tickers.assert_called_once_with(self.usuario_id)
-        mock_obter_proventos.assert_called_once_with("TICKER1")
-
-        self.assertEqual(mock_obter_saldo.call_count, 2)
-        # Check saldo call for first provento
-        mock_obter_saldo.assert_any_call(self.usuario_id, "TICKER1", date(2023, 8, 19))
-        # Check saldo call for second provento
-        mock_obter_saldo.assert_any_call(self.usuario_id, "TICKER1", date(2023, 10, 9))
-
-        self.assertEqual(mock_inserir.call_count, 2)
-        expected_call_1_args = {
-            'usuario_id': self.usuario_id, 'provento_global_id': 5, 'id_acao': 14, 'ticker_acao': 'TICKER1',
-            'nome_acao': 'Empresa E', 'tipo_provento': 'DIVIDENDO', 'data_ex': '2023-08-20',
-            'dt_pagamento': '2023-09-25', 'valor_unitario_provento': 2.5,
-            'quantidade_possuida_na_data_ex': 50, 'valor_total_recebido': 125.0,
-            'data_calculo': mock_now.isoformat()
-        }
-        expected_call_2_args = {
-            'usuario_id': self.usuario_id, 'provento_global_id': 6, 'id_acao': 15, 'ticker_acao': 'TICKER1',
-            'nome_acao': 'Empresa F', 'tipo_provento': 'JCP', 'data_ex': '2023-10-10',
-            'dt_pagamento': '2023-11-15', 'valor_unitario_provento': 1.5,
-            'quantidade_possuida_na_data_ex': 50, 'valor_total_recebido': 75.0,
-            'data_calculo': mock_now.isoformat()
-        }
-        # Check that mock_inserir was called with these arguments, order doesn't matter for assert_any_call
-        mock_inserir.assert_any_call(expected_call_1_args)
-        mock_inserir.assert_any_call(expected_call_2_args)
-
-        self.assertEqual(result, {"proventos_verificados": 2, "proventos_calculados": 2, "erros": 0, "mensagem": "Recálculo rápido de proventos concluído."})
-
-    @patch('services.inserir_usuario_provento_recebido_db')
-    @patch('services.obter_saldo_acao_em_data')
-    @patch('services.obter_proventos_por_ticker')
-    @patch('services.obter_tickers_operados_por_usuario')
-    @patch('services.limpar_usuario_proventos_recebidos_db')
-    @patch('services.dt') # Mocking datetime.datetime
-    @patch('services.logging') # Mock logging for this specific test
-    def test_recalcular_proventos_rapido_data_ex_ddmmyyyy_format(
-        self, mock_logging, mock_datetime, mock_limpar, mock_obter_tickers, mock_obter_proventos,
-        mock_obter_saldo, mock_inserir
-    ):
-        from services import recalcular_proventos_recebidos_rapido
-        from datetime import datetime as dt_real, date
-
-        mock_now = dt_real(2023, 1, 1, 12, 0, 0)
-        mock_datetime.now.return_value = mock_now
-
-        mock_obter_tickers.return_value = ["TICKER1"]
-        mock_provento_ddmmyyyy = {
-            "id": 8, "id_acao": 17, "ticker_acao": "TICKER1", "nome_acao": "Empresa H",
-            "tipo": "DIVIDENDO", "valor": 3.0, "data_ex": "15/01/2023", "dt_pagamento": "28/02/2023"
-        }
-        mock_obter_proventos.return_value = [mock_provento_ddmmyyyy]
-        mock_obter_saldo.return_value = 100
-
-        result = recalcular_proventos_recebidos_rapido(self.usuario_id)
-
-        mock_limpar.assert_called_once_with(self.usuario_id)
-        mock_obter_tickers.assert_called_once_with(self.usuario_id)
-        mock_obter_proventos.assert_called_once_with("TICKER1")
-
-        expected_data_para_saldo = date(2023, 1, 14) # 15/01/2023 - 1 day
-        mock_obter_saldo.assert_called_once_with(self.usuario_id, "TICKER1", expected_data_para_saldo)
-
-        expected_dados_insercao = {
-            'usuario_id': self.usuario_id,
-            'provento_global_id': 8,
-            'id_acao': 17,
-            'ticker_acao': "TICKER1",
-            'nome_acao': "Empresa H",
-            'tipo_provento': "DIVIDENDO",
-            'data_ex': "2023-01-15", # Assert ISO format
-            'dt_pagamento': "2023-02-28", # Assuming dt_pagamento is also handled correctly
-            'valor_unitario_provento': 3.0,
-            'quantidade_possuida_na_data_ex': 100,
-            'valor_total_recebido': 300.0,
-            'data_calculo': mock_now.isoformat()
-        }
-        mock_inserir.assert_called_once_with(expected_dados_insercao)
-        self.assertEqual(result, {"proventos_verificados": 1, "proventos_calculados": 1, "erros": 0, "mensagem": "Recálculo rápido de proventos concluído."})
-
+    # Removed test_recalcular_proventos_rapido_date_conversion_if_string and
+    # test_recalcular_proventos_rapido_data_ex_ddmmyyyy_format as the service
+    # now expects date objects from the layer below (obter_proventos_por_ticker)
+    # due to SQLite date converters. The remaining tests cover None and valid date objects.
 
     @patch('services.inserir_usuario_provento_recebido_db')
     @patch('services.obter_saldo_acao_em_data')
@@ -558,7 +442,9 @@ class TestRecalcularProventosRapido(unittest.TestCase):
         mock_obter_tickers.return_value = ["TICKER1"]
         mock_provento_valido = {
             "id": 7, "id_acao": 16, "ticker_acao": "TICKER1", "nome_acao": "Empresa G",
-            "tipo": "DIVIDENDO", "valor": 1.0, "data_ex": "2023-11-01", "dt_pagamento": "2023-12-01"
+            "tipo": "DIVIDENDO", "valor": 1.0,
+            "data_ex": date(2023, 11, 1), # Changed to date object
+            "dt_pagamento": date(2023, 12, 1) # Changed to date object
         }
         mock_obter_proventos.return_value = [mock_provento_valido]
         # Simulate an error during obter_saldo_acao_em_data

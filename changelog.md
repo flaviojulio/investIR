@@ -3,11 +3,16 @@
 - Optimized dividend calculation (`proventos`) by introducing a new function `recalcular_proventos_recebidos_rapido`. This function only considers stocks the user has operated, significantly improving performance when adding new operations.
 - Replaced all calls to the old `recalcular_proventos_recebidos_para_usuario_service` with the new optimized function.
 - Enhanced logging and API responses for the dividend recalculation process to include detailed statistics.
+- Modified the schema of the `proventos` table in the database: `data_registro`, `data_ex`, and `dt_pagamento` columns are now `DATE` type instead of `TEXT`.
+    - Implemented data migration logic in `database.py` to transform existing date strings (YYYY-MM-DD or DD/MM/YYYY) to the new `DATE` format.
+- Adjusted date handling in the service layer (`services.py`) to work with `datetime.date` objects returned from the database for `proventos` date fields, removing redundant string parsing.
+- Updated unit tests to reflect the new date handling, ensuring mocks provide `datetime.date` objects where appropriate.
 
 ### Added
 - New database function `obter_tickers_operados_por_usuario(usuario_id)` to fetch tickers specifically operated by a user.
 - New database function `obter_proventos_por_ticker(ticker)` to fetch proventos for a specific stock ticker.
 - Unit tests for the new database and service functions to ensure correctness and cover various scenarios.
+- Configured SQLite date adapters and converters in `database.py` to automatically handle `datetime.date` objects for database columns declared with the `DATE` type.
 
 ### Fixed
 - Corrected date parsing in `recalcular_proventos_recebidos_rapido` to handle "DD/MM/YYYY" format for `data_ex` field originating from the database.
