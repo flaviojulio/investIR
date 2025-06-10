@@ -97,26 +97,19 @@ def _transformar_provento_db_para_modelo(p_db: Dict[str, Any]) -> Optional[Dict[
     # Converter datas de DD/MM/YYYY para objetos date
     # Se o banco já armazena em ISO YYYY-MM-DD, Pydantic lida com isso.
     # Esta conversão é se o banco estivesse armazenando no formato DD/MM/YYYY.
-    # Baseado no código de inserção, o banco DEVE ter ISO YYYY-MM-DD.
-    # Mas, seguindo a premissa do prompt de que a transformação é necessária:
+    # Com os conversores de data do SQLite, os campos de data já devem ser objetos `date` ou None.
     for campo_data in ['data_registro', 'data_ex', 'dt_pagamento']:
-        data_str = p_db.get(campo_data)
-        if data_str and isinstance(data_str, str): # Apenas tenta converter se for string
-            try:
-                # Tenta primeiro o formato DD/MM/YYYY
-                dados_transformados[campo_data] = dt.strptime(data_str, '%d/%m/%Y').date()
-            except ValueError:
-                try:
-                    # Se falhar, tenta o formato ISO YYYY-MM-DD (que Pydantic também tentaria)
-                    dados_transformados[campo_data] = dt.fromisoformat(data_str).date()
-                except ValueError:
-                    # Se ambos falharem, define como None ou lança erro
-                    dados_transformados[campo_data] = None
-                    # Ou: raise ValueError(f"Formato de data inválido para {campo_data} no provento ID {p_db.get('id')}: {data_str}")
-        elif isinstance(data_str, date): # Se já for um objeto date
-             dados_transformados[campo_data] = data_str
-        else:
+        valor_data = p_db.get(campo_data)
+        if isinstance(valor_data, date): # datetime.date
+            dados_transformados[campo_data] = valor_data
+        else: # Deveria ser None se não for um objeto date, ou se era NULL no DB.
+              # Se por algum motivo ainda for uma string (ex: erro na config do converter),
+              # Pydantic tentará converter de ISO string para date.
+              # Se for uma string em formato inesperado, Pydantic levantará erro.
             dados_transformados[campo_data] = None
+            if valor_data is not None: # Log se não for date nem None
+                 logging.warning(f"Campo {campo_data} para provento ID {p_db.get('id')} era esperado como date ou None, mas foi {type(valor_data)}: {valor_data}. Será tratado como None.")
+
 
     return dados_transformados
 
@@ -1604,24 +1597,15 @@ def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
             total_proventos_verificados += 1
 
             data_ex_str = prov.get("data_ex")
-            data_ex_obj = None
-
-            if isinstance(data_ex_str, str) and data_ex_str:
-                try:
-                    data_ex_obj = dt.strptime(data_ex_str, '%d/%m/%Y').date()
-                except ValueError:
-                    try:
-                        data_ex_obj = dt.fromisoformat(data_ex_str.split("T")[0]).date()
-                    except ValueError:
-                        data_ex_obj = None # Explicitly set to None if both parsing attempts fail
-            elif isinstance(data_ex_str, date): # dt_date is datetime.date, which is imported as 'date'
-                data_ex_obj = data_ex_str
-            elif isinstance(data_ex_str, datetime): # Handle if it's already a datetime object
-                data_ex_obj = data_ex_str.date()
+            # Com os conversores de data do SQLite, prov.get("data_ex") deve retornar um objeto date ou None.
+            data_ex_obj = prov.get("data_ex")
 
             try:
-                if data_ex_obj is None:
-                    logging.warning(f"[Proventos Rápido] Formato de data_ex inválido ou ausente ('{data_ex_str}') para provento ID {prov.get('id')}, ticker {ticker}. Pulando.")
+                if not isinstance(data_ex_obj, date): # Verifica se é um objeto date
+                    # Se não for date (pode ser None ou outro tipo inesperado), trata como inválido/ausente.
+                    # Se data_ex_obj for None, a mensagem de log refletirá isso.
+                    original_data_ex_val = prov.get("data_ex") # Para logar o valor original
+                    logging.warning(f"[Proventos Rápido] data_ex inválida ou ausente (tipo: {type(original_data_ex_val)}, valor: '{original_data_ex_val}') para provento ID {prov.get('id')}, ticker {ticker}. Pulando.")
                     erros_calculo_ou_db += 1
                     continue
 
@@ -1646,28 +1630,17 @@ def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
 
                     valor_total = qtd * valor_unitario
 
-                    dt_pagamento_val = prov.get("dt_pagamento")
-                    dt_pagamento_iso = None
-                    if isinstance(dt_pagamento_val, date):
-                        dt_pagamento_iso = dt_pagamento_val.isoformat()
-                    elif isinstance(dt_pagamento_val, datetime):
-                        dt_pagamento_iso = dt_pagamento_val.date().isoformat()
-                    elif isinstance(dt_pagamento_val, str):
-                        try: # Tenta parsear para garantir que é uma data válida antes de re-formatar
-                            dt_pagamento_iso = dt.fromisoformat(dt_pagamento_val.split("T")[0]).date().isoformat()
-                        except ValueError:
-                            logging.warning(f"[Proventos Rápido] dt_pagamento ('{dt_pagamento_val}') inválido para provento ID {prov.get('id')}. Será salvo como NULL.")
-                            dt_pagamento_iso = None # Salva como None se inválido
+                    dt_pagamento_obj = prov.get("dt_pagamento") # Deve ser date object ou None
 
                     dados = {
                         'usuario_id': usuario_id,
                         'provento_global_id': prov["id"],
                         'id_acao': prov["id_acao"],
-                        'ticker_acao': ticker, # ticker da iteração atual
-                        'nome_acao': prov.get("nome_acao") or ticker, # nome_acao vem do join em obter_proventos_por_ticker
+                        'ticker_acao': ticker,
+                        'nome_acao': prov.get("nome_acao") or ticker,
                         'tipo_provento': prov["tipo"],
-                        'data_ex': data_ex_obj.isoformat(),
-                        'dt_pagamento': dt_pagamento_iso,
+                        'data_ex': data_ex_obj.isoformat(), # data_ex_obj é garantido ser um date object aqui
+                        'dt_pagamento': dt_pagamento_obj.isoformat() if isinstance(dt_pagamento_obj, date) else None,
                         'valor_unitario_provento': valor_unitario,
                         'quantidade_possuida_na_data_ex': qtd,
                         'valor_total_recebido': valor_total,
