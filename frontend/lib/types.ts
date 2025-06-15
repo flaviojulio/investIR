@@ -130,7 +130,7 @@ export interface ProventoRecebidoUsuario {
   id: number;
   id_acao: number;
   tipo: string;
-  valor: number; // Valor unitário do provento
+  valor_unitario_provento: number; // Valor unitário do provento
   data_registro: string; // YYYY-MM-DD
   data_ex: string;       // YYYY-MM-DD
   dt_pagamento: string | null;  // YYYY-MM-DD or null
