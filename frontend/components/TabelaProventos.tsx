@@ -106,8 +106,15 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
               <TableCell className="font-medium text-xs sm:text-sm">{provento.ticker_acao}</TableCell>
               <TableCell className="hidden lg:table-cell text-xs sm:text-sm">{provento.nome_acao || '-'}</TableCell>
               <TableCell className="text-xs sm:text-sm">{provento.tipo}</TableCell>
-              <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{formatNumber(provento.quantidade_na_data_ex)}</TableCell>
-              <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor)}</TableCell>
+              <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">
+                {(() => {
+                  console.log(
+                    `TabelaProventos - Rendering Qtd.: ID=${provento.id}, ticker=${provento.ticker_acao}, quantidade_possuida_na_data_ex=${provento.quantidade_possuida_na_data_ex}, type=${typeof provento.quantidade_possuida_na_data_ex}`
+                  );
+                  return formatNumber(provento.quantidade_possuida_na_data_ex);
+                })()}
+              </TableCell>
+              <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor_unitario_provento)}</TableCell>
               <TableCell className="text-right font-semibold text-xs sm:text-sm">{formatCurrency(provento.valor_total_recebido)}</TableCell>
             </TableRow>
           ))}
