@@ -54,16 +54,6 @@ export function Dashboard() {
       setActiveTab("proventos");
     } else if (pathname === "/carteira") {
       setActiveTab("carteira");
-    } else if (pathname === "/operacoes") {
-      setActiveTab("operacoes");
-    } else if (pathname === "/resultados") {
-      setActiveTab("resultados");
-    } else if (pathname === "/darf") {
-      setActiveTab("darf");
-    } else if (pathname === "/relatorios") {
-      setActiveTab("relatorios");
-    } else if (pathname === "/configuracoes") {
-      setActiveTab("configuracoes");
     }
     // "taxes", "history", "prejuizo_acumulado" are local tabs
   }, [pathname]);
@@ -166,15 +156,12 @@ export function Dashboard() {
         <Tabs
           value={activeTab}
           onValueChange={(value) => {
-            if (value === "proventos") { router.push("/proventos"); }
-            else if (value === "overview") { router.push("/"); }
+            if (value === "overview") { router.push("/"); }
             else if (value === "carteira") { router.push("/carteira"); }
-            else if (value === "operacoes") { router.push("/operacoes"); }
-            else if (value === "resultados") { router.push("/resultados"); }
-            else if (value === "darf") { router.push("/darf"); }
-            else if (value === "relatorios") { router.push("/relatorios"); }
-            else if (value === "configuracoes") { router.push("/configuracoes"); }
-            // For local tabs like "taxes", "history", "prejuizo_acumulado", just setActiveTab is enough.
+            else if (value === "proventos") { router.push("/proventos"); }
+            else if (value === "taxes") { router.push("/impostos"); }
+            else if (value === "prejuizo_acumulado") { router.push("/prejuizo-acumulado"); }
+            // For local tabs like "history", just setActiveTab is enough.
             setActiveTab(value);
           }}
           className="space-y-6"
@@ -182,15 +169,10 @@ export function Dashboard() {
           <TabsList className="grid w-full grid-cols-5 md:grid-cols-8 lg:grid-cols-11 xl:grid-cols-11">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
             <TabsTrigger value="carteira">Minha Carteira</TabsTrigger>
-            <TabsTrigger value="operacoes">Operações</TabsTrigger>
             <TabsTrigger value="proventos">Proventos</TabsTrigger>
-            <TabsTrigger value="resultados">Resultados</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
-            <TabsTrigger value="darf">DARF</TabsTrigger>
             <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
-            <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
-            <TabsTrigger value="configuracoes">Configurações</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
