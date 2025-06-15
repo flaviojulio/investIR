@@ -22,42 +22,34 @@ export function AppShell({ children }: AppShellProps) {
 
   useEffect(() => {
     // Determine active tab based on pathname
-    // This logic might need to be more robust depending on your route structure
-    if (pathname === "/") {
-      setActiveTab("overview");
-    } else if (pathname.startsWith("/proventos")) { // Use startsWith for potential sub-routes
-      setActiveTab("proventos");
-    } else if (pathname.startsWith("/carteira")) {
-      setActiveTab("carteira");
-    } else if (pathname.startsWith("/operacoes")) {
-      setActiveTab("operacoes");
-    } else if (pathname.startsWith("/resultados")) {
-      setActiveTab("resultados");
-    } else if (pathname.startsWith("/darf")) {
-      setActiveTab("darf");
-    } else if (pathname.startsWith("/relatorios")) {
-      setActiveTab("relatorios");
-    } else if (pathname.startsWith("/configuracoes")) {
-      setActiveTab("configuracoes");
-    } else {
-        // Fallback or default if no match, e.g. if on a sub-page not directly in tabs
+    // Determine active tab based on pathname
+    if (pathname === "/") setActiveTab("overview");
+    else if (pathname === "/carteira") setActiveTab("carteira");
+    else if (pathname === "/proventos") setActiveTab("proventos");
+    else if (pathname === "/impostos") setActiveTab("impostos");
+    else if (pathname === "/prejuizo") setActiveTab("prejuizo");
+    else if (pathname === "/historico") setActiveTab("historico");
+    else {
+        // Fallback: if the path is not one of the main tabs,
+        // try to set based on the first segment or default to "overview".
+        // This helps if navigating directly to sub-pages or unhandled routes.
         const firstSegment = pathname.substring(1).split("/")[0];
-        setActiveTab(firstSegment || "overview");
+        if (["overview", "carteira", "proventos", "impostos", "prejuizo", "historico"].includes(firstSegment)) {
+            setActiveTab(firstSegment);
+        } else {
+            setActiveTab("overview");
+        }
     }
   }, [pathname]);
 
   const handleTabChange = (value: string) => {
-    // This function now solely handles navigation based on tab clicks.
-    // The activeTab state will be updated by the useEffect hook listening to pathname changes.
     if (value === "overview") router.push("/");
-    else if (value === "proventos") router.push("/proventos");
     else if (value === "carteira") router.push("/carteira");
-    else if (value === "operacoes") router.push("/operacoes");
-    else if (value === "resultados") router.push("/resultados");
-    else if (value === "darf") router.push("/darf");
-    else if (value === "relatorios") router.push("/relatorios");
-    else if (value === "configuracoes") router.push("/configuracoes");
-    // Note: setActiveTab(value) is removed from here; useEffect handles it.
+    else if (value === "proventos") router.push("/proventos");
+    else if (value === "impostos") router.push("/impostos");
+    else if (value === "prejuizo") router.push("/prejuizo");
+    else if (value === "historico") router.push("/historico");
+    // setActiveTab will be updated by the useEffect listening to pathname changes.
   };
 
   // Placeholder for handleDataUpdate if needed by AddOperation/UploadOperations directly in AppShell
@@ -131,16 +123,13 @@ export function AppShell({ children }: AppShellProps) {
         </div>
 
         <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-8">
-            {/* Main application page routes */}
+          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6"> {/* Adjusted grid-cols for 6 tabs */}
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-            <TabsTrigger value="carteira">Carteira</TabsTrigger>
-            <TabsTrigger value="operacoes">Operações</TabsTrigger>
+            <TabsTrigger value="carteira">Minha Carteira</TabsTrigger>
             <TabsTrigger value="proventos">Proventos</TabsTrigger>
-            <TabsTrigger value="resultados">Resultados</TabsTrigger>
-            <TabsTrigger value="darf">DARF</TabsTrigger>
-            <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
-            <TabsTrigger value="configuracoes">Config.</TabsTrigger>
+            <TabsTrigger value="impostos">Impostos</TabsTrigger>
+            <TabsTrigger value="prejuizo">Prejuízo Acumulado</TabsTrigger>
+            <TabsTrigger value="historico">Histórico</TabsTrigger>
           </TabsList>
 
           {/* Content area for child pages */}

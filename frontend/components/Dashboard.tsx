@@ -37,7 +37,7 @@ export function Dashboard() {
     operacoes_fechadas: [],
   })
   const [loading, setLoading] = useState(true)
-  const [activeLocalTab, setActiveLocalTab] = useState("overview_main"); // For local tabs within overview
+  // const [activeLocalTab, setActiveLocalTab] = useState("overview_main"); // Removed local tab state
 
   // router and pathname are not needed here anymore if navigation is handled by AppShell
   // and this component is only for "/" (overview)
@@ -85,48 +85,30 @@ export function Dashboard() {
     )
   }
 
-  // This component now renders the content for the "Visão Geral" tab/page.
+  // This component now renders the content for the "Visão Geral" page directly.
   // The main page Tabs (Visão Geral, Carteira, etc.) are in AppShell.
-  // We can have local tabs here if needed for "Impostos", "Histórico", "Prejuízo Acumulado".
+  // Local tabs for "Impostos", "Histórico", "Prejuízo Acumulado" have been removed.
+  // Their content will be moved to separate pages: /impostos, /historico, /prejuizo.
   return (
-    <Tabs value={activeLocalTab} onValueChange={setActiveLocalTab} className="space-y-6">
-      <TabsList className="grid w-full grid-cols-2 md:grid-cols-4">
-        {/* These are now local sub-tabs for the "Visão Geral" page */}
-        <TabsTrigger value="overview_main">Resumo</TabsTrigger>
-        <TabsTrigger value="taxes">Impostos</TabsTrigger>
-        <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
-        <TabsTrigger value="history">Histórico</TabsTrigger>
-      </TabsList>
-
-      <TabsContent value="overview_main" className="space-y-6">
-        <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} />
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <PortfolioEquityChart />
-          <TaxMeter resultados={data.resultados} />
-        </div>
-        <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
-        <OperacoesEncerradasTable
-          operacoesFechadas={data.operacoes_fechadas}
-          resultadosMensais={data.resultados}
-          onUpdateDashboard={handleDataUpdate}
-        />
-      </TabsContent>
-
-      <TabsContent value="taxes">
-        <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />
-      </TabsContent>
-
-      <TabsContent value="history">
-        <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />
-      </TabsContent>
-
-      <TabsContent value="prejuizo_acumulado" className="space-y-6">
-        <div className="container mx-auto py-8">
-          <h2 className="text-2xl font-bold mb-4">Prejuízo Acumulado</h2>
-          <p>Conteúdo da seção de Prejuízo Acumulado será implementado aqui.</p>
-          {/* TODO: Implementar visualização de prejuízos acumulados (swing e daytrade) */}
-        </div>
-      </TabsContent>
-    </Tabs>
+    <div className="space-y-6"> {/* Top-level wrapper for "Visão Geral" content */}
+      <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <PortfolioEquityChart />
+        <TaxMeter resultados={data.resultados} />
+      </div>
+      <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
+      <OperacoesEncerradasTable
+        operacoesFechadas={data.operacoes_fechadas}
+        resultadosMensais={data.resultados}
+        onUpdateDashboard={handleDataUpdate}
+      />
+      {/*
+        Content for "Impostos", "Histórico", "Prejuízo Acumulado" is removed from here.
+        It will be placed in new page files:
+        - frontend/app/(main)/impostos/page.tsx (using TaxResults)
+        - frontend/app/(main)/historico/page.tsx (using OperationsHistory)
+        - frontend/app/(main)/prejuizo/page.tsx (for Prejuizo Acumulado content)
+      */}
+    </div>
   )
 }
