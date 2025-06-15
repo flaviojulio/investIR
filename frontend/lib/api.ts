@@ -1,9 +1,32 @@
 import axios from "axios"
-import type { PortfolioHistoryResponse } from "./types" // Import the new types
+import type {
+  PortfolioHistoryResponse,
+  ProventoRecebidoUsuario,
+  ResumoProventoAnualAPI,
+  ResumoProventoMensalAPI,
+  ResumoProventoPorAcaoAPI,
+} from "./types" // Import the new types
 
 export const api = axios.create({
   baseURL: "http://localhost:8000/api", // Ensure this matches your backend API prefix
 })
+
+// Interceptor para adicionar o token JWT ao header Authorization de todas as requisições
+api.interceptors.request.use(
+  (config) => {
+    // Verifica se o código está sendo executado no lado do cliente
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem("token"); // Chave do token no localStorage
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
 
 // Interceptor para tratar erros de autenticação
 api.interceptors.response.use(
@@ -45,5 +68,55 @@ export const getPortfolioEquityHistory = async (
       throw new Error(error.response.data.detail || "Failed to fetch portfolio history");
     }
     throw new Error("An unexpected error occurred while fetching portfolio history");
+  }
+};
+
+// Funções para buscar dados de proventos do usuário
+
+export const getProventosUsuarioDetalhado = async (): Promise<ProventoRecebidoUsuario[]> => {
+  try {
+    const response = await api.get<ProventoRecebidoUsuario[]>("/usuario/proventos/");
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      throw new Error(error.response.data.detail || "Falha ao buscar proventos detalhados do usuário.");
+    }
+    throw new Error("Erro inesperado ao buscar proventos detalhados do usuário.");
+  }
+};
+
+export const getResumoProventosAnuaisUsuario = async (): Promise<ResumoProventoAnualAPI[]> => {
+  try {
+    const response = await api.get<ResumoProventoAnualAPI[]>("/usuario/proventos/resumo_anual/");
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      throw new Error(error.response.data.detail || "Falha ao buscar resumo anual de proventos.");
+    }
+    throw new Error("Erro inesperado ao buscar resumo anual de proventos.");
+  }
+};
+
+export const getResumoProventosMensaisUsuario = async (ano: number): Promise<ResumoProventoMensalAPI[]> => {
+  try {
+    const response = await api.get<ResumoProventoMensalAPI[]>(`/usuario/proventos/resumo_mensal/${ano}/`);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      throw new Error(error.response.data.detail || "Falha ao buscar resumo mensal de proventos.");
+    }
+    throw new Error("Erro inesperado ao buscar resumo mensal de proventos.");
+  }
+};
+
+export const getResumoProventosPorAcaoUsuario = async (): Promise<ResumoProventoPorAcaoAPI[]> => {
+  try {
+    const response = await api.get<ResumoProventoPorAcaoAPI[]>("/usuario/proventos/resumo_por_acao/");
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      throw new Error(error.response.data.detail || "Falha ao buscar resumo de proventos por ação.");
+    }
+    throw new Error("Erro inesperado ao buscar resumo de proventos por ação.");
   }
 };

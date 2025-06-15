@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, EmailStr, field_validator
 from pydantic import ConfigDict
-from typing import List, Optional
+from typing import List, Optional, Dict, Any # Added Dict, Any
 from datetime import date, datetime
 
 # Modelos para autenticação
@@ -110,6 +110,7 @@ class CarteiraAtual(BaseModel):
     Modelo para a carteira atual de ações.
     """
     ticker: str
+    nome: Optional[str] = None # Nome da ação, para exibição
     quantidade: int
     custo_total: float
     preco_medio: float
@@ -220,3 +221,176 @@ class ResultadoTicker(BaseModel):
     operacoes_venda_total_quantidade: int = 0  # Sum of quantity for sell operations
     
     model_config = ConfigDict(from_attributes=True)
+
+class AcaoInfo(BaseModel):
+    """
+    Modelo para informações de uma ação (ticker) da tabela 'acoes'.
+    """
+    ticker: str
+    nome: Optional[str] = None
+    razao_social: Optional[str] = None
+    cnpj: Optional[str] = None
+    ri: Optional[str] = None
+    classificacao: Optional[str] = None
+    isin: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Modelos para Proventos
+class ProventoBase(BaseModel):
+    id_acao: int
+    tipo: str
+    valor: Optional[float] = None  # Este será o tipo após a validação em ProventoCreate
+    data_registro: Optional[date] = None
+    data_ex: Optional[date] = None
+    dt_pagamento: Optional[date] = None
+
+class ProventoCreate(BaseModel): # Não herda de ProventoBase diretamente para permitir tipos de entrada diferentes
+    id_acao: int
+    tipo: str
+    valor: str  # Entrada como string: "0,123" ou "0.123"
+    data_registro: str  # Entrada como string: "DD/MM/YYYY"
+    data_ex: str  # Entrada como string: "DD/MM/YYYY"
+    dt_pagamento: str  # Entrada como string: "DD/MM/YYYY"
+
+    @field_validator("valor", mode='before')
+    @classmethod
+    def validate_valor_format(cls, v: str) -> float:
+        if isinstance(v, str):
+            value_str = v.replace(",", ".")
+            try:
+                value_float = float(value_str)
+                if value_float <= 0:
+                    raise ValueError("O valor do provento deve ser positivo.")
+                return value_float
+            except ValueError:
+                raise ValueError("Formato de valor inválido. Use '0,123' ou '0.123'.")
+        # Se já for float (ou int), e positivo, permitir (embora o tipo seja str na anotação)
+        elif isinstance(v, (float, int)):
+            if v <=0:
+                 raise ValueError("O valor do provento deve ser positivo.")
+            return float(v)
+        raise ValueError("Valor deve ser uma string ou número.")
+
+    @field_validator("data_registro", "data_ex", "dt_pagamento", mode='before')
+    @classmethod
+    def validate_date_format(cls, v: str) -> date:
+        if isinstance(v, str):
+            try:
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except ValueError:
+                raise ValueError("Formato de data inválido. Use DD/MM/YYYY.")
+        # Se já for date object
+        elif isinstance(v, date):
+            return v
+        raise ValueError("Data deve ser uma string no formato DD/MM/YYYY ou um objeto date.")
+
+class ProventoInfo(ProventoBase):
+    id: int
+    # As datas já são 'date' de ProventoBase, FastAPI as serializará para "YYYY-MM-DD" (ISO 8601) por padrão.
+    # model_config json_encoders é uma forma de forçar, mas geralmente não é necessário para 'date'.
+    model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat()})
+
+class ProventoRecebidoUsuario(ProventoInfo):
+    """
+    Representa um provento que foi efetivamente recebido por um usuário,
+    incluindo informações sobre a ação e a quantidade na data ex.
+    Herda de ProventoInfo e adiciona campos específicos do contexto do usuário.
+    """
+    ticker_acao: str
+    nome_acao: Optional[str] = None
+    quantidade_na_data_ex: int
+    valor_total_recebido: float
+    # model_config é herdado de ProventoInfo (que herda de ProventoBase)
+
+
+# Modelos para Eventos Corporativos
+class EventoCorporativoBase(BaseModel):
+    id_acao: int
+    evento: str
+    data_aprovacao: Optional[date] = None
+    data_registro: Optional[date] = None
+    data_ex: Optional[date] = None
+    razao: Optional[str] = None
+
+class EventoCorporativoCreate(BaseModel):
+    id_acao: int
+    evento: str
+    data_aprovacao: Optional[str] = None # Entrada como string: "DD/MM/YYYY"
+    data_registro: Optional[str] = None  # Entrada como string: "DD/MM/YYYY"
+    data_ex: Optional[str] = None        # Entrada como string: "DD/MM/YYYY"
+    razao: Optional[str] = None
+
+    @field_validator("data_aprovacao", "data_registro", "data_ex", mode='before')
+    @classmethod
+    def validate_event_date_format(cls, v: Optional[str]) -> Optional[date]:
+        if v is None or v == "":
+            return None
+        if isinstance(v, str):
+            try:
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except ValueError:
+                raise ValueError("Formato de data inválido. Use DD/MM/YYYY ou deixe em branco.")
+        elif isinstance(v, date): # Permitir que objetos date passem diretamente
+            return v
+        raise ValueError("Data deve ser uma string no formato DD/MM/YYYY ou um objeto date.")
+
+class EventoCorporativoInfo(EventoCorporativoBase):
+    id: int
+    model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat() if d else None})
+
+
+# Modelos para Resumos de Proventos
+
+class DetalheTipoProvento(BaseModel):
+    tipo: str
+    valor_total_tipo: float
+
+class ResumoProventoAnual(BaseModel):
+    ano: int
+    total_dividendos: float = 0.0
+    total_jcp: float = 0.0
+    total_outros: float = 0.0 # Para tipos de proventos que não são 'DIVIDENDO' ou 'JCP'
+    total_geral: float = 0.0
+    acoes_detalhadas: List[Dict[str, Any]]
+    # Cada dict: {"ticker": str, "nome_acao": str, "total_recebido_na_acao": float, "detalhes_por_tipo": List[DetalheTipoProvento]}
+
+class ResumoProventoMensal(BaseModel):
+    mes: str # Formato "YYYY-MM"
+    total_dividendos: float = 0.0
+    total_jcp: float = 0.0
+    total_outros: float = 0.0
+    total_geral: float = 0.0
+    acoes_detalhadas: List[Dict[str, Any]] # Mesma estrutura de acoes_detalhadas do ResumoProventoAnual
+
+class ResumoProventoPorAcao(BaseModel):
+    ticker_acao: str
+    nome_acao: Optional[str] = None
+    total_recebido_geral_acao: float = 0.0
+    detalhes_por_tipo: List[DetalheTipoProvento]
+
+
+# Modelo para a tabela usuario_proventos_recebidos
+class UsuarioProventoRecebidoDB(BaseModel):
+    id: int
+    usuario_id: int
+    provento_global_id: int
+    id_acao: int
+    ticker_acao: str
+    nome_acao: Optional[str] = None
+    tipo_provento: str
+    data_ex: date # data_ex é obrigatória no provento global e, portanto, aqui também
+    dt_pagamento: Optional[date] = None # dt_pagamento pode ser nulo
+    valor_unitario_provento: float
+    quantidade_possuida_na_data_ex: int
+    valor_total_recebido: float
+    data_calculo: datetime
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_encoders={
+            date: lambda d: d.isoformat() if d else None,
+            datetime: lambda dt: dt.isoformat() if dt else None
+        }
+    )

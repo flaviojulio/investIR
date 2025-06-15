@@ -7,12 +7,36 @@ from typing import Dict, List, Any, Optional
 # Caminho para o banco de dados SQLite
 DATABASE_FILE = "acoes_ir.db"
 
+# Convert datetime.date objects to ISO format string (YYYY-MM-DD) when writing to DB
+sqlite3.register_adapter(date, lambda val: val.isoformat())
+
+# Convert DATE column string (YYYY-MM-DD) from DB to datetime.date objects when reading
+sqlite3.register_converter("date", lambda val: datetime.strptime(val.decode(), "%Y-%m-%d").date())
+
+def _transform_date_string_to_iso(date_str: Optional[str]) -> Optional[str]:
+    if not date_str or date_str.strip() == '--' or date_str.strip() == '':
+        return None
+
+    cleaned_date_str = date_str.strip()
+
+    try:
+        # Try ISO format first (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
+        return datetime.strptime(cleaned_date_str.split("T")[0], '%Y-%m-%d').date().isoformat()
+    except ValueError:
+        try:
+            # Try DD/MM/YYYY format
+            return datetime.strptime(cleaned_date_str, '%d/%m/%Y').date().isoformat()
+        except ValueError:
+            # If both fail, return None
+            print(f"WARNING: Could not parse date string '{date_str}' during proventos migration. Storing as NULL.")
+            return None
+
 @contextmanager
 def get_db():
     """
     Contexto para conexão com o banco de dados.
     """
-    conn = sqlite3.connect(DATABASE_FILE)
+    conn = sqlite3.connect(DATABASE_FILE, detect_types=sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
     conn.row_factory = sqlite3.Row
     try:
         yield conn
@@ -191,17 +215,170 @@ def criar_tabelas():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_mes ON resultados_mensais(mes)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_ticker ON operacoes_fechadas(ticker)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_data_fechamento ON operacoes_fechadas(data_fechamento)')
+
+        # Remover a tabela 'stocks' antiga se existir
+        cursor.execute('DROP TABLE IF EXISTS stocks;')
+
+        # Nova tabela 'acoes'
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS acoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL UNIQUE,
+            nome TEXT,
+            razao_social TEXT,
+            cnpj TEXT,
+            ri TEXT,
+            classificacao TEXT,
+            isin TEXT
+        )
+        ''')
+
+        # Criar índice para a coluna ticker na tabela acoes
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_acoes_ticker ON acoes(ticker);')
+
+        # Tabela de proventos
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS proventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_acao INTEGER,
+            tipo TEXT,
+            valor REAL,
+            data_registro TEXT,
+            data_ex TEXT,
+            dt_pagamento TEXT,
+            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+        )
+        ''')
+
+        # Criar índice para a coluna id_acao na tabela proventos
+        # Tabela de proventos - MIGRATION LOGIC
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proventos';")
+        proventos_table_exists = cursor.fetchone()
+        needs_migration = False
+
+        if proventos_table_exists:
+            cursor.execute("PRAGMA table_info(proventos);")
+            columns_info = {row['name']: str(row['type']).upper() for row in cursor.fetchall()}
+            if not (columns_info.get('data_ex') == 'DATE' and \
+                    columns_info.get('dt_pagamento') == 'DATE' and \
+                    columns_info.get('data_registro') == 'DATE'):
+                needs_migration = True
+
+        final_proventos_schema = """
+        CREATE TABLE proventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_acao INTEGER,
+            tipo TEXT,
+            valor REAL,
+            data_registro DATE,
+            data_ex DATE,
+            dt_pagamento DATE,
+            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+        )
+        """
+
+        if needs_migration:
+            print("INFO: Migrating 'proventos' table to new schema with DATE types...")
+            try:
+                cursor.execute("CREATE TABLE proventos_old AS SELECT * FROM proventos;") # Backup old data safely
+                cursor.execute("DROP TABLE proventos;") # Drop the old table
+
+                # Create the new table with the final schema
+                cursor.execute(final_proventos_schema)
+
+                cursor.execute("SELECT id, id_acao, tipo, valor, data_registro, data_ex, dt_pagamento FROM proventos_old;")
+                old_proventos_rows = cursor.fetchall()
+
+                migrated_count = 0
+                for row_dict in old_proventos_rows: # Assumes conn.row_factory = sqlite3.Row
+                    transformed_data_registro = _transform_date_string_to_iso(row_dict['data_registro'])
+                    transformed_data_ex = _transform_date_string_to_iso(row_dict['data_ex'])
+                    transformed_dt_pagamento = _transform_date_string_to_iso(row_dict['dt_pagamento'])
+
+                    cursor.execute("""
+                        INSERT INTO proventos (id_acao, tipo, valor, data_registro, data_ex, dt_pagamento)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (row_dict['id_acao'], row_dict['tipo'], row_dict['valor'],
+                          transformed_data_registro, transformed_data_ex, transformed_dt_pagamento))
+                    migrated_count +=1
+
+                cursor.execute("DROP TABLE proventos_old;")
+                print(f"INFO: 'proventos' table migration complete. {migrated_count} rows migrated.")
+            except Exception as e:
+                print(f"ERROR: Failed to migrate 'proventos' table: {e}")
+                try:
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proventos_old';")
+                    if cursor.fetchone():
+                        cursor.execute("DROP TABLE IF EXISTS proventos;")
+                        cursor.execute("ALTER TABLE proventos_old RENAME TO proventos;")
+                        print("INFO: Attempted to restore 'proventos' table from backup.")
+                except Exception as restore_e:
+                    print(f"ERROR: Failed to restore 'proventos' table from backup: {restore_e}")
+                raise
+        else:
+            # If no migration needed, just ensure table exists with the correct schema
+            cursor.execute(final_proventos_schema.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
+
+        # Criar índice para a coluna id_acao na tabela proventos
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_proventos_id_acao ON proventos(id_acao);')
+
+        # Tabela de eventos corporativos
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS eventos_corporativos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_acao INTEGER NOT NULL,
+            evento TEXT NOT NULL,
+            data_aprovacao TEXT,
+            data_registro TEXT,
+            data_ex TEXT,
+            razao TEXT,
+            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+        )
+        ''')
+
+        # Criar índice para a coluna id_acao na tabela eventos_corporativos
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_eventos_corporativos_id_acao ON eventos_corporativos(id_acao);')
         
         # Adiciona índices para as colunas usuario_id
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_id ON operacoes(usuario_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_ticker_date ON operacoes(usuario_id, ticker, date);') # New composite index
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_usuario_id ON resultados_mensais(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_carteira_atual_usuario_id ON carteira_atual(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_usuario_id ON operacoes_fechadas(usuario_id)')
+
+        # Tabela usuario_proventos_recebidos
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usuario_proventos_recebidos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            provento_global_id INTEGER NOT NULL,
+            id_acao INTEGER NOT NULL,
+            ticker_acao TEXT NOT NULL,
+            nome_acao TEXT,
+            tipo_provento TEXT NOT NULL,
+            data_ex DATE NOT NULL,
+            dt_pagamento DATE,
+            valor_unitario_provento REAL NOT NULL,
+            quantidade_possuida_na_data_ex INTEGER NOT NULL,
+            valor_total_recebido REAL NOT NULL,
+            data_calculo DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(usuario_id) REFERENCES usuarios(id),
+            FOREIGN KEY(provento_global_id) REFERENCES proventos(id),
+            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+        )
+        ''')
+
+        # Índices para usuario_proventos_recebidos
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_usuario_id ON usuario_proventos_recebidos(usuario_id);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_acao_id ON usuario_proventos_recebidos(id_acao);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_dt_pagamento ON usuario_proventos_recebidos(dt_pagamento);')
+        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_usr_prov_rec_usr_prov_glob ON usuario_proventos_recebidos(usuario_id, provento_global_id);')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_uid_dtpag_dataex ON usuario_proventos_recebidos(usuario_id, dt_pagamento DESC, data_ex DESC);') # New composite index
         
         conn.commit()
     
     # Inicializa o sistema de autenticação
-    from auth import inicializar_autenticacao
+    from auth import inicializar_autenticacao # Relative import
     inicializar_autenticacao()
     
 def date_converter(obj):
@@ -215,6 +392,7 @@ def date_converter(obj):
 def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None) -> int:
     """
     Insere uma operação no banco de dados.
+    Verifica se o ticker da operação existe na tabela `acoes`.
     
     Args:
         operacao: Dicionário com os dados da operação.
@@ -222,10 +400,21 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
         
     Returns:
         int: ID da operação inserida.
+
+    Raises:
+        ValueError: Se o ticker não for encontrado na tabela `acoes`.
     """
     with get_db() as conn:
         cursor = conn.cursor()
         
+        # Verifica se o ticker existe na tabela acoes
+        ticker_value = operacao["ticker"]
+        # Modificado para consultar a nova tabela 'acoes'
+        cursor.execute("SELECT 1 FROM acoes WHERE ticker = ?", (ticker_value,))
+        if cursor.fetchone() is None:
+            # Mensagem de erro atualizada para refletir o nome da nova tabela
+            raise ValueError(f"Ticker {ticker_value} não encontrado na tabela de ações (acoes).")
+
         # Adiciona usuario_id ao INSERT
         cursor.execute('''
         INSERT INTO operacoes (date, ticker, operation, quantity, price, fees, usuario_id)
@@ -316,6 +505,21 @@ def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
             })
         
         return operacoes
+
+def obter_tickers_operados_por_usuario(usuario_id: int) -> List[str]:
+    """
+    Obtém uma lista de tickers distintos operados por um usuário.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT DISTINCT ticker
+            FROM operacoes
+            WHERE usuario_id = ?
+            ORDER BY ticker
+        ''', (usuario_id,))
+        rows = cursor.fetchall()
+        return [row['ticker'] for row in rows]
 
 def atualizar_operacao(operacao_id: int, operacao: Dict[str, Any], usuario_id: Optional[int] = None) -> bool:
     """
@@ -426,7 +630,20 @@ def obter_carteira_atual(usuario_id: int) -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         
-        cursor.execute('SELECT * FROM carteira_atual WHERE usuario_id = ? AND quantidade <> 0 ORDER BY ticker', (usuario_id,))
+        # Modificado para incluir o nome da ação da tabela 'acoes'
+        query = """
+        SELECT
+            ca.ticker,
+            ca.quantidade,
+            ca.custo_total,
+            ca.preco_medio,
+            a.nome
+        FROM carteira_atual ca
+        LEFT JOIN acoes a ON ca.ticker = a.ticker
+        WHERE ca.usuario_id = ? AND ca.quantidade <> 0
+        ORDER BY ca.ticker
+        """
+        cursor.execute(query, (usuario_id,))
         
         # Converte os resultados para dicionários
         carteira = [dict(row) for row in cursor.fetchall()]
@@ -817,3 +1034,330 @@ def obter_operacoes_por_ticker_db(usuario_id: int, ticker: str) -> List[Dict[str
                  operacao_dict["date"] = operacao_dict["date"].date()
             operacoes.append(operacao_dict)
         return operacoes
+
+def obter_operacoes_por_ticker_ate_data_db(usuario_id: int, ticker: str, data_ate: str) -> List[Dict[str, Any]]:
+    """
+    Obtém operações de um ticker específico para um usuário até uma data específica.
+    Retorna apenas os campos 'operation' e 'quantity'.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT date, operation, quantity, id
+            FROM operacoes
+            WHERE usuario_id = ? AND ticker = ? AND date <= ?
+            ORDER BY date, id
+        ''', (usuario_id, ticker, data_ate))
+        rows = cursor.fetchall()
+        # Embora a query selecione mais campos para ordenação e contexto,
+        # a descrição original do subtask pedia para retornar dicts com 'operation' e 'quantity'.
+        # Para flexibilidade, retornaremos o dict completo da linha.
+        # Se for estritamente 'operation' e 'quantity':
+        # return [{"operation": row["operation"], "quantity": row["quantity"]} for row in rows]
+        return [dict(row) for row in rows]
+
+def obter_acao_por_id(id_acao: int) -> Optional[Dict[str, Any]]:
+    """
+    Obtém uma ação específica pelo seu ID.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, ticker, nome FROM acoes WHERE id = ?", (id_acao,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def obter_todas_acoes() -> List[Dict[str, Any]]: # Renamed from obter_todos_stocks
+    """
+    Obtém todas as ações (stocks) da tabela `acoes`. # Modificado para refletir a nova tabela 'acoes'
+
+    Returns:
+        List[Dict[str, Any]]: Lista de dicionários, onde cada dicionário representa uma ação.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Modificado para consultar a nova tabela 'acoes' e seus campos
+        cursor.execute("SELECT id, ticker, nome, razao_social, cnpj, ri, classificacao, isin FROM acoes ORDER BY ticker")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+# --- Funções para usuario_proventos_recebidos ---
+
+def limpar_usuario_proventos_recebidos_db(usuario_id: int) -> None:
+    """
+    Remove todos os proventos recebidos calculados para um usuário específico.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute('DELETE FROM usuario_proventos_recebidos WHERE usuario_id = ?', (usuario_id,))
+            conn.commit()
+        except sqlite3.Error as e:
+            # Logar o erro e.g., print(f"Database error clearing user received proventos for user {usuario_id}: {e}")
+            # Decidir se deve propagar o erro ou não.
+            # Para esta operação, pode ser aceitável não levantar uma exceção.
+            pass # Silenciosamente continua, mas idealmente logaria.
+
+def inserir_usuario_provento_recebido_db(dados: Dict[str, Any]) -> int:
+    """
+    Insere um registro de provento recebido por um usuário no banco de dados.
+    Espera que 'dados' contenha todas as chaves necessárias e que as datas/datetimes
+    já estejam formatadas como strings ISO.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Certifique-se de que a ordem dos campos corresponde à ordem dos placeholders
+        campos = [
+            'usuario_id', 'provento_global_id', 'id_acao', 'ticker_acao',
+            'nome_acao', 'tipo_provento', 'data_ex', 'dt_pagamento',
+            'valor_unitario_provento', 'quantidade_possuida_na_data_ex',
+            'valor_total_recebido', 'data_calculo'
+        ]
+
+        placeholders = ', '.join(['?'] * len(campos))
+        valores = [dados.get(campo) for campo in campos]
+
+        # Assegura que dt_pagamento seja None se não fornecido, e não uma string vazia.
+        # A tabela permite NULL para dt_pagamento.
+        if 'dt_pagamento' in dados and dados['dt_pagamento'] == '':
+            valores[campos.index('dt_pagamento')] = None
+
+        # data_calculo é esperado como string YYYY-MM-DD HH:MM:SS
+        # data_ex e dt_pagamento como YYYY-MM-DD
+
+        try:
+            cursor.execute(f'''
+                INSERT INTO usuario_proventos_recebidos ({', '.join(campos)})
+                VALUES ({placeholders})
+            ''', tuple(valores))
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError as e:
+            # Isso pode acontecer devido à restrição UNIQUE (usuario_id, provento_global_id)
+            # Logar o erro ou tratar conforme necessário.
+            # print(f"Erro de integridade ao inserir provento recebido: {e}. Dados: {dados}")
+            raise # Re-lança a exceção para ser tratada pela camada de serviço
+        except Exception as e:
+            # print(f"Erro inesperado ao inserir provento recebido: {e}. Dados: {dados}")
+            raise
+
+def obter_proventos_recebidos_por_usuario_db(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    Obtém todos os proventos recebidos por um usuário, ordenados por data de pagamento e data ex.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM usuario_proventos_recebidos
+            WHERE usuario_id = ?
+            ORDER BY dt_pagamento DESC, data_ex DESC
+        ''', (usuario_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_resumo_anual_proventos_recebidos_db(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    Obtém um resumo anual dos proventos recebidos por um usuário, agrupados.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                SUBSTR(dt_pagamento, 1, 4) as ano_pagamento,
+                ticker_acao,
+                nome_acao,
+                tipo_provento,
+                SUM(valor_total_recebido) as total_recebido_ticker_tipo_ano
+            FROM usuario_proventos_recebidos
+            WHERE usuario_id = ? AND dt_pagamento IS NOT NULL
+            GROUP BY ano_pagamento, ticker_acao, nome_acao, tipo_provento
+            ORDER BY ano_pagamento DESC, ticker_acao ASC;
+        ''', (usuario_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_resumo_mensal_proventos_recebidos_db(usuario_id: int, ano: int) -> List[Dict[str, Any]]:
+    """
+    Obtém um resumo mensal dos proventos recebidos por um usuário para um ano específico, agrupados.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                SUBSTR(dt_pagamento, 1, 7) as mes_pagamento, -- YYYY-MM
+                ticker_acao,
+                nome_acao,
+                tipo_provento,
+                SUM(valor_total_recebido) as total_recebido_ticker_tipo_mes
+            FROM usuario_proventos_recebidos
+            WHERE usuario_id = ? AND SUBSTR(dt_pagamento, 1, 4) = ? AND dt_pagamento IS NOT NULL
+            GROUP BY mes_pagamento, ticker_acao, nome_acao, tipo_provento
+            ORDER BY mes_pagamento DESC, ticker_acao ASC;
+        ''', (usuario_id, str(ano)))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_resumo_por_acao_proventos_recebidos_db(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    Obtém um resumo dos proventos recebidos por um usuário, agrupados por ação e tipo de provento.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                ticker_acao,
+                nome_acao,
+                tipo_provento,
+                SUM(valor_total_recebido) as total_recebido_ticker_tipo
+            FROM usuario_proventos_recebidos
+            WHERE usuario_id = ?
+            GROUP BY ticker_acao, nome_acao, tipo_provento
+            ORDER BY ticker_acao ASC, tipo_provento ASC;
+        ''', (usuario_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+# Funções para Proventos
+
+def inserir_provento(provento_data: Dict[str, Any]) -> int:
+    """
+    Insere um novo provento no banco de dados.
+    Espera que as datas já estejam no formato YYYY-MM-DD e valor como float.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO proventos (id_acao, tipo, valor, data_registro, data_ex, dt_pagamento)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            provento_data['id_acao'],
+            provento_data['tipo'],
+            provento_data['valor'],
+            provento_data['data_registro'], # Espera YYYY-MM-DD
+            provento_data['data_ex'],       # Espera YYYY-MM-DD
+            provento_data['dt_pagamento']   # Espera YYYY-MM-DD
+        ))
+        conn.commit()
+        return cursor.lastrowid
+
+def obter_proventos_por_acao_id(id_acao: int) -> List[Dict[str, Any]]:
+    """
+    Obtém todos os proventos para uma ação específica, ordenados por data_ex e dt_pagamento descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM proventos WHERE id_acao = ? ORDER BY data_ex DESC, dt_pagamento DESC", (id_acao,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_provento_por_id(provento_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Obtém um provento específico pelo seu ID.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM proventos WHERE id = ?", (provento_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def obter_todos_proventos() -> List[Dict[str, Any]]:
+    """
+    Obtém todos os proventos cadastrados, ordenados por data_ex e dt_pagamento descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM proventos ORDER BY data_ex DESC, dt_pagamento DESC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_proventos_por_ticker(ticker: str) -> List[Dict[str, Any]]:
+    """
+    Obtém todos os proventos para um ticker específico, incluindo nome e ticker da ação,
+    ordenados por data_ex e dt_pagamento descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT
+                p.id,
+                p.id_acao,
+                a.ticker as ticker_acao,
+                a.nome as nome_acao,
+                p.tipo,
+                p.valor,
+                p.data_registro,
+                p.data_ex,
+                p.dt_pagamento
+            FROM proventos p
+            JOIN acoes a ON p.id_acao = a.id
+            WHERE a.ticker = ?
+            ORDER BY p.data_ex DESC, p.dt_pagamento DESC
+        ''', (ticker,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+# Funções para Eventos Corporativos
+
+def inserir_evento_corporativo(evento_data: Dict[str, Any]) -> int:
+    """
+    Insere um novo evento corporativo no banco de dados.
+    Espera que as datas já estejam no formato YYYY-MM-DD ou None.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO eventos_corporativos (id_acao, evento, data_aprovacao, data_registro, data_ex, razao)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            evento_data['id_acao'],
+            evento_data['evento'],
+            evento_data.get('data_aprovacao'), # Pode ser None
+            evento_data.get('data_registro'),  # Pode ser None
+            evento_data.get('data_ex'),        # Pode ser None
+            evento_data.get('razao')           # Pode ser None
+        ))
+        conn.commit()
+        return cursor.lastrowid
+
+def obter_eventos_corporativos_por_acao_id(id_acao: int) -> List[Dict[str, Any]]:
+    """
+    Obtém todos os eventos corporativos para uma ação específica,
+    ordenados por data_ex e data_registro descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM eventos_corporativos
+            WHERE id_acao = ?
+            ORDER BY
+                CASE WHEN data_ex IS NULL THEN 1 ELSE 0 END, data_ex DESC,
+                CASE WHEN data_registro IS NULL THEN 1 ELSE 0 END, data_registro DESC
+        """, (id_acao,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_evento_corporativo_por_id(evento_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Obtém um evento corporativo específico pelo seu ID.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM eventos_corporativos WHERE id = ?", (evento_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def obter_todos_eventos_corporativos() -> List[Dict[str, Any]]:
+    """
+    Obtém todos os eventos corporativos cadastrados,
+    ordenados por data_ex e data_registro descendente.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM eventos_corporativos
+            ORDER BY
+                CASE WHEN data_ex IS NULL THEN 1 ELSE 0 END, data_ex DESC,
+                CASE WHEN data_registro IS NULL THEN 1 ELSE 0 END, data_registro DESC
+        """)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]

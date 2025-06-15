@@ -11,6 +11,7 @@ import {
   Wallet,
   AlertTriangle,
   LogOut,
+  Landmark, // Added for Proventos
 } from "lucide-react"
 
 import {

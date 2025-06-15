@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter, usePathname } from "next/navigation" // Import useRouter and usePathname
 import { useAuth } from "@/contexts/AuthContext"
 import { api } from "@/lib/api"
 import { Button } from "@/components/ui/button"
@@ -38,9 +39,34 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("overview")
 
+  const router = useRouter() // Initialize useRouter
+  const pathname = usePathname() // Initialize usePathname
+
   useEffect(() => {
     fetchDashboardData()
   }, [])
+
+  // Sync activeTab with pathname
+  useEffect(() => {
+    if (pathname === "/") {
+      setActiveTab("overview");
+    } else if (pathname === "/proventos") {
+      setActiveTab("proventos");
+    } else if (pathname === "/carteira") {
+      setActiveTab("carteira");
+    } else if (pathname === "/operacoes") {
+      setActiveTab("operacoes");
+    } else if (pathname === "/resultados") {
+      setActiveTab("resultados");
+    } else if (pathname === "/darf") {
+      setActiveTab("darf");
+    } else if (pathname === "/relatorios") {
+      setActiveTab("relatorios");
+    } else if (pathname === "/configuracoes") {
+      setActiveTab("configuracoes");
+    }
+    // "taxes", "history", "prejuizo_acumulado" are local tabs
+  }, [pathname]);
 
   const fetchDashboardData = async () => {
     try {
@@ -137,11 +163,34 @@ export function Dashboard() {
           </Dialog>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            if (value === "proventos") { router.push("/proventos"); }
+            else if (value === "overview") { router.push("/"); }
+            else if (value === "carteira") { router.push("/carteira"); }
+            else if (value === "operacoes") { router.push("/operacoes"); }
+            else if (value === "resultados") { router.push("/resultados"); }
+            else if (value === "darf") { router.push("/darf"); }
+            else if (value === "relatorios") { router.push("/relatorios"); }
+            else if (value === "configuracoes") { router.push("/configuracoes"); }
+            // For local tabs like "taxes", "history", "prejuizo_acumulado", just setActiveTab is enough.
+            setActiveTab(value);
+          }}
+          className="space-y-6"
+        >
+          <TabsList className="grid w-full grid-cols-5 md:grid-cols-8 lg:grid-cols-11 xl:grid-cols-11">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
+            <TabsTrigger value="carteira">Minha Carteira</TabsTrigger>
+            <TabsTrigger value="operacoes">Operações</TabsTrigger>
+            <TabsTrigger value="proventos">Proventos</TabsTrigger>
+            <TabsTrigger value="resultados">Resultados</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
+            <TabsTrigger value="darf">DARF</TabsTrigger>
+            <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
+            <TabsTrigger value="relatorios">Relatórios</TabsTrigger>
+            <TabsTrigger value="configuracoes">Configurações</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
@@ -164,6 +213,18 @@ export function Dashboard() {
 
           <TabsContent value="history">
             <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />
+          </TabsContent>
+
+          <TabsContent value="prejuizo_acumulado" className="space-y-6">
+            <div className="container mx-auto py-8">
+              <h2 className="text-2xl font-bold mb-4">Prejuízo Acumulado</h2>
+              <p>Conteúdo da seção de Prejuízo Acumulado será implementado aqui.</p>
+              {/* TODO: Implementar visualização de prejuízos acumulados (swing e daytrade) */}
+              {/* Exemplo: um card ou uma pequena tabela com os valores de prejuízo acumulado swing e daytrade */}
+              {/* Pode-se buscar de data.resultados, o último mês com dados, e exibir os campos: */}
+              {/* data.resultados[data.resultados.length - 1]?.prejuizo_acumulado_swing */}
+              {/* data.resultados[data.resultados.length - 1]?.prejuizo_acumulado_day */}
+            </div>
           </TabsContent>
         </Tabs>
       </main>
