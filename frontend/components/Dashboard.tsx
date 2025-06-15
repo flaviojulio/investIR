@@ -159,10 +159,9 @@ export function Dashboard() {
             if (value === "overview") { router.push("/"); }
             else if (value === "carteira") { router.push("/carteira"); }
             else if (value === "proventos") { router.push("/proventos"); }
-            else if (value === "taxes") { router.push("/impostos"); }
-            else if (value === "prejuizo_acumulado") { router.push("/prejuizo-acumulado"); }
-            // For local tabs like "history", just setActiveTab is enough.
-            setActiveTab(value);
+            else if (value === "taxes") { setActiveTab("taxes"); }
+            else if (value === "prejuizo_acumulado") { setActiveTab("prejuizo_acumulado"); }
+            else { setActiveTab(value); } // For "history" and any other local tabs
           }}
           className="space-y-6"
         >
