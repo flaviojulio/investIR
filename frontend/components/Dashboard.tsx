@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input"; // Added Input import
 import { InfoCard } from "@/components/InfoCard";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { TabelaProventos } from "@/components/TabelaProventos";
@@ -79,6 +80,7 @@ const PIE_CHART_COLORS = [
 function ProventosTabContent() {
   const [anoSelecionado, setAnoSelecionado] = useState<number | undefined>();
   const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const [resumoAnualData, setResumoAnualData] = useState<ResumoProventoAnualAPI[]>([]);
   const [loadingData, setLoadingData] = useState(true); // Cobre carregamento inicial de resumos e detalhados
@@ -253,10 +255,35 @@ function ProventosTabContent() {
         });
     })(); // End of IIFE
 
-    console.log("proventosFiltradosParaTabela after filter:", JSON.stringify(filteredResult, null, 2));
-    return filteredResult;
+    console.log("proventosFiltradosParaTabela after year filter:", JSON.stringify(filteredResult, null, 2));
 
-  }, [proventosDetalhados, anoSelecionado]);
+    if (!searchTerm) {
+      return filteredResult;
+    }
+
+    const lowerSearchTerm = searchTerm.toLowerCase();
+    const searchedResult = filteredResult.filter(p => {
+      const fieldsToSearch = [
+        p.ticker,
+        p.tipo_provento,
+        p.dt_pagamento,
+        p.data_ex,
+        String(p.valor_bruto_por_acao),
+        String(p.qtd_acoes),
+        String(p.valor_total_bruto_recebido),
+        String(p.valor_ir_retido),
+        String(p.valor_total_liquido_recebido),
+        p.nome_acao // Assuming nome_acao might be part of ProventoRecebidoUsuario, add if available
+      ];
+
+      return fieldsToSearch.some(field =>
+        field && field.toString().toLowerCase().includes(lowerSearchTerm)
+      );
+    });
+    console.log("proventosFiltradosParaTabela after search filter:", JSON.stringify(searchedResult, null, 2));
+    return searchedResult;
+
+  }, [proventosDetalhados, anoSelecionado, searchTerm]);
 
   return (
     <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8">
@@ -404,7 +431,20 @@ function ProventosTabContent() {
         {loadingData ? (
           <Card className="h-[200px] flex items-center justify-center"><CardContent><p>Carregando tabela de proventos...</p></CardContent></Card>
         ) : (
-          <TabelaProventos data={proventosFiltradosParaTabela} />
+          <>
+            <div className="mb-4">
+              <Label htmlFor="proventosSearch" className="text-gray-700 dark:text-gray-300">Pesquisar Proventos:</Label>
+              <Input
+                id="proventosSearch"
+                type="text"
+                placeholder="Digite para pesquisar em todos os campos..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="max-w-sm mt-1 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+              />
+            </div>
+            <TabelaProventos data={proventosFiltradosParaTabela} />
+          </>
         )}
       </div>
 
@@ -442,8 +482,6 @@ export function Dashboard() {
       setActiveTab("overview");
     } else if (pathname === "/proventos") {
       setActiveTab("proventos");
-    } else if (pathname === "/carteira") {
-      setActiveTab("carteira");
     }
     // "taxes", "history", "prejuizo_acumulado" are local tabs
   }, [pathname]);
@@ -547,7 +585,6 @@ export function Dashboard() {
           value={activeTab}
           onValueChange={(value) => {
             if (value === "overview") { router.push("/"); }
-            else if (value === "carteira") { router.push("/carteira"); }
             else if (value === "proventos") { setActiveTab("proventos"); }
             else if (value === "taxes") { setActiveTab("taxes"); }
             else if (value === "prejuizo_acumulado") { setActiveTab("prejuizo_acumulado"); }
@@ -557,7 +594,6 @@ export function Dashboard() {
         >
           <TabsList className="grid w-full grid-cols-5 md:grid-cols-8 lg:grid-cols-11 xl:grid-cols-11">
             <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-            <TabsTrigger value="carteira">Minha Carteira</TabsTrigger>
             <TabsTrigger value="proventos">Proventos</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
             <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
