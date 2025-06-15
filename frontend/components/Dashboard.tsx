@@ -158,7 +158,7 @@ export function Dashboard() {
           onValueChange={(value) => {
             if (value === "overview") { router.push("/"); }
             else if (value === "carteira") { router.push("/carteira"); }
-            else if (value === "proventos") { router.push("/proventos"); }
+            else if (value === "proventos") { setActiveTab("proventos"); }
             else if (value === "taxes") { setActiveTab("taxes"); }
             else if (value === "prejuizo_acumulado") { setActiveTab("prejuizo_acumulado"); }
             else { setActiveTab(value); } // For "history" and any other local tabs
@@ -186,6 +186,14 @@ export function Dashboard() {
               resultadosMensais={data.resultados}
               onUpdateDashboard={handleDataUpdate} 
             />
+          </TabsContent>
+
+          <TabsContent value="proventos" className="space-y-6">
+            <div className="container mx-auto py-8">
+              <h2 className="text-2xl font-bold mb-4">Proventos</h2>
+              <p>Conteúdo da seção de Proventos será implementado aqui.</p>
+              {/* TODO: Implementar visualização de proventos */}
+            </div>
           </TabsContent>
 
           <TabsContent value="taxes">
