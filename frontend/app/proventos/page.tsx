@@ -79,6 +79,7 @@ export default function ProventosPage() {
           getProventosUsuarioDetalhado()
         ]);
 
+        console.log("API Response (proventosDetalhados raw):", JSON.stringify(detalhadosData, null, 2));
         setResumoAnualData(anuaisData);
         setProventosDetalhados(detalhadosData);
 
@@ -163,27 +164,73 @@ export default function ProventosPage() {
   const proventosFiltradosParaTabela = useMemo(() => {
     console.log("Filtering proventos. anoSelecionado:", anoSelecionado);
     console.log("proventosDetalhados before filter:", JSON.stringify(proventosDetalhados, null, 2));
-    
-    const filteredResult = (() => {
-        if (!proventosDetalhados) return [];
+
+    // If no year is selected, the original logic was to return proventosDetalhados.
+    // This might mean anoSelecionado is always expected to be set.
+    const filteredResult = (() => { // IIFE to contain existing logic
+        if (!proventosDetalhados) return []; // Handle case where proventosDetalhados might not be loaded yet
 
         if (anoSelecionado === undefined) {
             return proventosDetalhados.filter(p => {
-                if (!p.dt_pagamento) return false;
-                const dateObj = new Date(p.dt_pagamento + 'T00:00:00Z');
-                return !isNaN(dateObj.getTime());
+                let dateToConsider = null;
+                if (p.dt_pagamento) {
+                    dateToConsider = new Date(p.dt_pagamento + 'T00:00:00Z');
+                    if (!isNaN(dateToConsider.getTime())) {
+                        return true; // Valid payment date exists
+                    }
+                }
+                // If no valid payment date, try data_ex
+                if (p.data_ex) {
+                    dateToConsider = new Date(p.data_ex + 'T00:00:00Z');
+                    if (!isNaN(dateToConsider.getTime())) {
+                        return true; // Valid ex-dividend date exists
+                    }
+                }
+                return false; // Neither date is valid
             });
         }
 
         return proventosDetalhados.filter(p => {
-            if (!p.dt_pagamento) return false;
-            const dateObj = new Date(p.dt_pagamento + 'T00:00:00Z');
-            if (isNaN(dateObj.getTime())) {
-                console.warn(`Invalid date encountered for dt_pagamento: ${p.dt_pagamento} for provento ID: ${p.id}`);
+            let dateToParse = p.dt_pagamento;
+            let isPaymentDate = true;
+            let dateFieldNameForLog = "dt_pagamento";
+
+            if (!dateToParse) { // If dt_pagamento is null, undefined, or empty
+                dateToParse = p.data_ex; // Fallback to data_ex
+                isPaymentDate = false;
+                dateFieldNameForLog = "data_ex";
+            }
+
+            if (!dateToParse) { // If both are null/undefined/empty
                 return false;
             }
-            const anoPagamento = dateObj.getFullYear();
-            return anoPagamento === anoSelecionado;
+
+            const dateObj = new Date(dateToParse + 'T00:00:00Z');
+
+            if (isNaN(dateObj.getTime())) {
+                if (isPaymentDate) { // Original attempt was for dt_pagamento
+                     console.warn(`Invalid date encountered for dt_pagamento: ${p.dt_pagamento} for provento ID: ${p.id}, attempting fallback to data_ex or excluding.`);
+                     // Try data_ex if dt_pagamento was invalid
+                     if (p.data_ex) {
+                         const dataExObj = new Date(p.data_ex + 'T00:00:00Z');
+                         if (!isNaN(dataExObj.getTime())) {
+                             const anoDataEx = dataExObj.getFullYear();
+                             return anoDataEx === anoSelecionado;
+                         } else {
+                             console.warn(`Invalid date also for data_ex: ${p.data_ex} for provento ID: ${p.id}. Excluding.`);
+                             return false;
+                         }
+                     } else {
+                         return false; // dt_pagamento invalid and no data_ex to fallback
+                     }
+                } else { // Original attempt was already for data_ex (because dt_pagamento was initially null/empty)
+                     console.warn(`Invalid date encountered for data_ex: ${p.data_ex} for provento ID: ${p.id} (dt_pagamento was also missing/invalid). Excluding.`);
+                     return false;
+                }
+            }
+
+            const anoEvento = dateObj.getFullYear();
+            return anoEvento === anoSelecionado;
         });
     })(); // End of IIFE
 
