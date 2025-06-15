@@ -105,7 +105,7 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
               <TableCell className="text-xs sm:text-sm">{formatDate(provento.dt_pagamento)}</TableCell>
               <TableCell className="font-medium text-xs sm:text-sm">{provento.ticker_acao}</TableCell>
               <TableCell className="hidden lg:table-cell text-xs sm:text-sm">{provento.nome_acao || '-'}</TableCell>
-              <TableCell className="text-xs sm:text-sm">{provento.tipo}</TableCell>
+              <TableCell className="text-xs sm:text-sm">{provento.tipo_provento}</TableCell>
               <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">
                 {(() => {
                   console.log(
