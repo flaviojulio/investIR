@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react"; // Ensure useEffect is imported
+import React, { useState, useEffect, useMemo } from "react"; // useMemo was missing in user's code, but likely needed for sorting/filtering logic
 import {
   Card,
   CardContent,
@@ -8,104 +8,165 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { DarfDetailsModal } from "./DarfDetailsModal";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { FileText, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react";
+import {
+  FileText,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUpDown,
+  ChevronDown,
+  ChevronRight,
+  Building2,
+  TrendingUp,
+  TrendingDown,
+  Calendar,
+  Hash,
+  DollarSign,
+  Clock // Clock was not used in the prototype, but keeping it if user intended it
+} from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { formatCurrency, formatNumber, formatDate } from "@/lib/utils"; // Import centralized formatters
+import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 
-// Helper functions (now imported from utils.ts)
-// const formatCurrency = ... (removed)
-// const formatNumber = ... (removed)
-// const formatDate = ... (removed)
+// Mock formatting functions
+const formatCurrency = (value: number) => {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
+  }).format(value);
+};
+
+const formatNumber = (value: number) => {
+  return new Intl.NumberFormat('pt-BR').format(value);
+};
+
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+};
+
+const formatDateShort = (dateString: string) => {
+  return new Date(dateString).toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short'
+  });
+};
+
+// Mock data
+const mockOperacoes: OperacaoFechada[] = [
+  {
+    ticker: "BBDC4",
+    data_abertura: "2025-06-18T00:00:00",
+    data_fechamento: "2025-06-19T00:00:00",
+    quantidade: 50,
+    valor_compra: 25.00,
+    valor_venda: 24.00,
+    resultado: 48.00,
+    day_trade: false,
+    status_ir: "Isento"
+  },
+  {
+    ticker: "ITSA4",
+    data_abertura: "2025-05-08T00:00:00",
+    data_fechamento: "2025-05-09T00:00:00",
+    quantidade: 100,
+    valor_compra: 11.00,
+    valor_venda: 10.00,
+    resultado: -104.00,
+    day_trade: true,
+    status_ir: "Prejuízo Acumulado"
+  },
+  {
+    ticker: "BBAS3",
+    data_abertura: "2025-04-23T00:00:00",
+    data_fechamento: "2025-04-24T00:00:00",
+    quantidade: 100,
+    valor_compra: 25.00,
+    valor_venda: 28.00,
+    resultado: 297.00,
+    day_trade: false,
+    status_ir: "Isento"
+  },
+  {
+    ticker: "VALE3",
+    data_abertura: "2025-03-03T00:00:00",
+    data_fechamento: "2025-03-04T00:00:00",
+    quantidade: 100,
+    valor_compra: 65.00,
+    valor_venda: 70.00,
+    resultado: 490.00,
+    day_trade: true,
+    status_ir: "Tributável Day Trade"
+  },
+  {
+    ticker: "PETR4",
+    data_abertura: "2025-02-18T00:00:00",
+    data_fechamento: "2025-02-19T00:00:00",
+    quantidade: 5000,
+    valor_compra: 25.00,
+    valor_venda: 40.00,
+    resultado: 74981.67,
+    day_trade: false,
+    status_ir: "Tributável Swing"
+  }
+];
 
 interface OperacoesEncerradasTableProps {
-  operacoesFechadas: OperacaoFechada[];
-  resultadosMensais: ResultadoMensal[];
-  onUpdateDashboard: () => void;
+  operacoesFechadas?: OperacaoFechada[];
+  resultadosMensais?: ResultadoMensal[];
+  onUpdateDashboard?: () => void;
 }
 
-export function OperacoesEncerradasTable({
-  operacoesFechadas,
-  resultadosMensais,
-  onUpdateDashboard,
+export default function OperacoesEncerradasTable({
+  operacoesFechadas = mockOperacoes,
+  resultadosMensais = [],
+  onUpdateDashboard = () => {}
 }: OperacoesEncerradasTableProps) {
-  const [isDarfModalOpen, setIsDarfModalOpen] = useState(false);
-  const [selectedOpForDarf, setSelectedOpForDarf] =
-    useState<OperacaoFechada | null>(null);
-  const [selectedResultadoMensalForDarf, setSelectedResultadoMensalForDarf] =
-    useState<ResultadoMensal | null>(null);
-  const [selectedDarfType, setSelectedDarfType] = useState<
-    "swing" | "daytrade"
-  >("daytrade");
-
-  // New state for sorting (default: data_fechamento descending)
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortConfig, setSortConfig] = useState<{
     key: string;
     direction: "ascending" | "descending";
   }>({ key: "data_fechamento", direction: "descending" });
-
-  // New state for search term
   const [searchTerm, setSearchTerm] = useState<string>("");
-
-  // New state for data to be displayed in the table
-  const [processedOperacoes, setProcessedOperacoes] =
-    useState<OperacaoFechada[]>(operacoesFechadas);
+  const [processedOperacoes, setProcessedOperacoes] = useState<OperacaoFechada[]>(operacoesFechadas);
 
   useEffect(() => {
     let newProcessedData = [...operacoesFechadas];
 
-    // 1. Filtering based on searchTerm
+    // Filtering
     if (searchTerm) {
       const lowercasedSearchTerm = searchTerm.toLowerCase();
       newProcessedData = newProcessedData.filter((op) => {
         const tipoTrade = op.day_trade ? "day trade" : "swing trade";
         return (
           op.ticker.toLowerCase().includes(lowercasedSearchTerm) ||
-          formatDate(op.data_fechamento)
-            .toLowerCase()
-            .includes(lowercasedSearchTerm) ||
-          op.resultado
-            .toString()
-            .toLowerCase()
-            .includes(lowercasedSearchTerm) ||
+          formatDate(op.data_fechamento).toLowerCase().includes(lowercasedSearchTerm) ||
+          op.resultado.toString().toLowerCase().includes(lowercasedSearchTerm) ||
           tipoTrade.toLowerCase().includes(lowercasedSearchTerm) ||
-          (op.status_ir &&
-            op.status_ir.toLowerCase().includes(lowercasedSearchTerm))
+          (op.status_ir && op.status_ir.toLowerCase().includes(lowercasedSearchTerm))
         );
       });
     }
 
-    // 2. Sorting based on sortConfig
+    // Sorting
     if (sortConfig !== null) {
       newProcessedData.sort((a, b) => {
         const getKeyValue = (item: OperacaoFechada, key: string) => {
           if (key === "day_trade") return item.day_trade;
           if (key === "status_ir") return item.status_ir || "";
-          if (key === "data_fechamento")
-            return new Date(item.data_fechamento).getTime();
+          if (key === "data_fechamento") return new Date(item.data_fechamento).getTime();
           if (key === "resultado") return item.resultado;
-          // Fallback for direct properties, ensure they exist or handle potential undefined
           const value = (item as any)[key];
-          return typeof value === "number"
-            ? value
-            : String(value || "").toLowerCase();
+          return typeof value === "number" ? value : String(value || "").toLowerCase();
         };
 
         const valA = getKeyValue(a, sortConfig.key);
@@ -117,25 +178,29 @@ export function OperacoesEncerradasTable({
         } else if (valA < valB) {
           comparison = -1;
         }
-        return sortConfig.direction === "descending"
-          ? comparison * -1
-          : comparison;
+        return sortConfig.direction === "descending" ? comparison * -1 : comparison;
       });
     }
 
     setProcessedOperacoes(newProcessedData);
-  }, [operacoesFechadas, searchTerm, sortConfig]); // Removed formatDate from dependency array
+  }, [operacoesFechadas, searchTerm, sortConfig]);
 
   const requestSort = (key: string) => {
     let direction: "ascending" | "descending" = "ascending";
-    if (
-      sortConfig &&
-      sortConfig.key === key &&
-      sortConfig.direction === "ascending"
-    ) {
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === "ascending") {
       direction = "descending";
     }
     setSortConfig({ key, direction });
+  };
+
+  const toggleRow = (rowKey: string) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(rowKey)) {
+      newExpanded.delete(rowKey);
+    } else {
+      newExpanded.add(rowKey);
+    }
+    setExpandedRows(newExpanded);
   };
 
   const isPreviousMonthOrEarlier = (dateString: string): boolean => {
@@ -144,7 +209,6 @@ export function OperacoesEncerradasTable({
       if (isNaN(operationDate.getTime())) return false;
 
       const currentDate = new Date();
-
       const opYear = operationDate.getFullYear();
       const opMonth = operationDate.getMonth();
       const currentYear = currentDate.getFullYear();
@@ -154,316 +218,346 @@ export function OperacoesEncerradasTable({
       if (opYear === currentYear && opMonth < currentMonth) return true;
       return false;
     } catch (e) {
-      return false; // Error parsing date
+      return false;
     }
   };
 
   const handleDarfClick = (op: OperacaoFechada) => {
-    const mesFechamento = op.data_fechamento.substring(0, 7); // YYYY-MM
-    const tipoDarfAtual: "swing" | "daytrade" = op.day_trade
-      ? "daytrade"
-      : "swing";
+    console.log("DARF clicked for operation:", op);
+  };
 
-    const resultadoMensalCorrespondente = resultadosMensais.find(
-      (rm) => rm.mes === mesFechamento
-    );
+  const getStatusBadge = (status: string, isProfit: boolean) => {
+    const baseClasses = "px-3 py-1 text-xs font-medium rounded-full border";
 
-    if (resultadoMensalCorrespondente) {
-      setSelectedOpForDarf(op);
-      setSelectedResultadoMensalForDarf(resultadoMensalCorrespondente);
-      setSelectedDarfType(tipoDarfAtual);
-      setIsDarfModalOpen(true);
-    } else {
-      console.error(
-        `ResultadoMensal não encontrado para o mês ${mesFechamento} da operação.`,
-        op
-      );
-      // Consider adding a toast notification here for the user
-      // toast({ title: "Erro", description: "Dados mensais de imposto não encontrados para esta operação.", variant: "destructive" });
+    switch (status) {
+      case "Isento":
+        return (
+          <span className={`${baseClasses} bg-emerald-50 text-emerald-700 border-emerald-200`}>
+            Isento
+          </span>
+        );
+      case "Tributável Day Trade":
+      case "Tributável Swing":
+        return (
+          <span className={`${baseClasses} bg-red-50 text-red-700 border-red-200`}>
+            Tributável
+          </span>
+        );
+      case "Lucro Compensado":
+        return (
+          <span className={`${baseClasses} bg-blue-50 text-blue-700 border-blue-200`}>
+            Compensado
+          </span>
+        );
+      case "Prejuízo Acumulado":
+        return (
+          <span className={`${baseClasses} bg-orange-50 text-orange-700 border-orange-200`}>
+            Prejuízo Acum.
+          </span>
+        );
+      default:
+        return (
+          <span className={`${baseClasses} bg-gray-50 text-gray-700 border-gray-200`}>
+            {status || "N/A"}
+          </span>
+        );
     }
   };
 
-  if (!operacoesFechadas || operacoesFechadas.length === 0) {
+  const renderDarfButton = (op: OperacaoFechada) => {
+    const isActionable = ["Tributável Day Trade", "Tributável Swing"].includes(op.status_ir) &&
+                        isPreviousMonthOrEarlier(op.data_fechamento);
+
+    if (!isActionable) return null;
+
     return (
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Operações Encerradas</CardTitle>
-          <CardDescription>
+      <TooltipProvider>
+        <Tooltip delayDuration={300}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDarfClick(op);
+              }}
+            >
+              <FileText className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Consultar DARF</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
+
+  if (!processedOperacoes || processedOperacoes.length === 0) { // Changed to check processedOperacoes
+    return (
+      <Card className="border-0 shadow-sm">
+        <CardHeader className="pb-4">
+          <CardTitle className="text-xl font-semibold text-gray-900">Operações Encerradas</CardTitle>
+          <CardDescription className="text-gray-600">
             Histórico de suas operações de compra e venda finalizadas.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground text-center py-4">
-            Nenhuma operação encerrada encontrada.
-          </p>
+         <div className="w-full sm:w-80 my-4"> {/* Search input even when no data */}
+            <Input
+              placeholder="Pesquisar por ação, data ou resultado..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-10 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+            />
+          </div>
+          <div className="text-center py-12">
+            <Building2 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 text-lg">Nenhuma operação encerrada encontrada {searchTerm ? "para o filtro atual" : ""}</p>
+            <p className="text-gray-400 text-sm mt-2">Suas operações finalizadas aparecerão aqui</p>
+          </div>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="mt-6">
-      <CardHeader>
-        <CardTitle>Operações Encerradas</CardTitle>
-        <CardDescription>
-          Histórico de suas operações de compra e venda finalizadas.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="pt-4">
-        <div className="mb-4">
-          <Input
-            placeholder="Buscar em todas as colunas..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-sm"
-          />
+    <Card className="border-0 shadow-sm bg-white">
+      <CardHeader className="border-b border-gray-100 pb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <CardTitle className="text-xl font-semibold text-gray-900">Operações Encerradas</CardTitle>
+            <CardDescription className="text-gray-600 mt-1">
+              {processedOperacoes.length} operação{processedOperacoes.length !== 1 ? 'ões' : ''} encontrada{processedOperacoes.length !== 1 ? 's' : ''}
+              {searchTerm && operacoesFechadas.length !== processedOperacoes.length ? ` (de ${operacoesFechadas.length} no total)` : ''}
+            </CardDescription>
+          </div>
+          <div className="w-full sm:w-80">
+            <Input
+              placeholder="Pesquisar por ação, data ou resultado..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="h-10 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+            />
+          </div>
         </div>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Ação</TableHead>
-              <TableHead
-                onClick={() => requestSort("data_fechamento")}
-                className="cursor-pointer hover:bg-muted/50"
-              >
-                <div className="flex items-center">
-                  Data Fech.
-                  {sortConfig?.key === "data_fechamento" ? (
-                    sortConfig.direction === "ascending" ? (
-                      <ArrowUp className="ml-2 h-4 w-4" />
-                    ) : (
-                      <ArrowDown className="ml-2 h-4 w-4" />
-                    )
-                  ) : (
-                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                  )}
-                </div>
-              </TableHead>
-              <TableHead className="text-right">Qtd.</TableHead>
-              <TableHead className="text-right">Preço Abert.</TableHead>
-              <TableHead className="text-right">Preço Fech.</TableHead>
-              <TableHead
-                onClick={() => requestSort("resultado")}
-                className="cursor-pointer hover:bg-muted/50 text-right"
-              >
-                <div className="flex items-center justify-end">
-                  Resultado
-                  {sortConfig?.key === "resultado" ? (
-                    sortConfig.direction === "ascending" ? (
-                      <ArrowUp className="ml-2 h-4 w-4" />
-                    ) : (
-                      <ArrowDown className="ml-2 h-4 w-4" />
-                    )
-                  ) : (
-                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                  )}
-                </div>
-              </TableHead>
-              <TableHead
-                onClick={() => requestSort("day_trade")}
-                className="cursor-pointer hover:bg-muted/50"
-              >
-                <div className="flex items-center">
-                  Tipo
-                  {sortConfig?.key === "day_trade" ? (
-                    sortConfig.direction === "ascending" ? (
-                      <ArrowUp className="ml-2 h-4 w-4" />
-                    ) : (
-                      <ArrowDown className="ml-2 h-4 w-4" />
-                    )
-                  ) : (
-                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                  )}
-                </div>
-              </TableHead>
-              <TableHead
-                onClick={() => requestSort("status_ir")}
-                className="cursor-pointer hover:bg-muted/50"
-              >
-                <div className="flex items-center">
-                  Status IR
-                  {sortConfig?.key === "status_ir" ? (
-                    sortConfig.direction === "ascending" ? (
-                      <ArrowUp className="ml-2 h-4 w-4" />
-                    ) : (
-                      <ArrowDown className="ml-2 h-4 w-4" />
-                    )
-                  ) : (
-                    <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                  )}
-                </div>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {processedOperacoes.map((op, index) => {
-              // Use processedOperacoes here
-              // const isDarfLinkActive logic might need to be re-evaluated or moved if it depends on the original op.status_ir string
-              // For now, the switch statement handles display based on op.status_ir from processedOperacoes
+      </CardHeader>
 
-              // Construct a more unique key
-              const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
+      <CardContent className="p-0">
+        {/* Header */}
+        <div className="bg-gray-50/80 border-b border-gray-100">
+          <div className="grid grid-cols-12 gap-4 py-4 px-6 text-sm font-medium text-gray-700">
+            <div className="col-span-1"></div>
+            <div className="col-span-3">Ativo</div>
+            <div
+              className="col-span-2 cursor-pointer hover:text-gray-900 flex items-center transition-colors"
+              onClick={() => requestSort("data_fechamento")}
+            >
+              Data
+              {sortConfig?.key === "data_fechamento" ? (
+                sortConfig.direction === "ascending" ? (
+                  <ArrowUp className="ml-1 h-3 w-3" />
+                ) : (
+                  <ArrowDown className="ml-1 h-3 w-3" />
+                )
+              ) : (
+                <ChevronsUpDown className="ml-1 h-3 w-3 opacity-40" />
+              )}
+            </div>
+            <div
+              className="col-span-3 cursor-pointer hover:text-gray-900 flex items-center justify-end transition-colors"
+              onClick={() => requestSort("resultado")}
+            >
+              Resultado
+              {sortConfig?.key === "resultado" ? (
+                sortConfig.direction === "ascending" ? (
+                  <ArrowUp className="ml-1 h-3 w-3" />
+                ) : (
+                  <ArrowDown className="ml-1 h-3 w-3" />
+                )
+              ) : (
+                <ChevronsUpDown className="ml-1 h-3 w-3 opacity-40" />
+              )}
+            </div>
+            <div
+              className="col-span-3 cursor-pointer hover:text-gray-900 flex items-center transition-colors"
+              onClick={() => requestSort("status_ir")}
+            >
+              Status Fiscal
+              {sortConfig?.key === "status_ir" ? (
+                sortConfig.direction === "ascending" ? (
+                  <ArrowUp className="ml-1 h-3 w-3" />
+                ) : (
+                  <ArrowDown className="ml-1 h-3 w-3" />
+                )
+              ) : (
+                <ChevronsUpDown className="ml-1 h-3 w-3 opacity-40" />
+              )}
+            </div>
+          </div>
+        </div>
 
-              return (
-                <TableRow key={rowKey}>
-                  <TableCell>
-                    <Badge variant="outline">{op.ticker}</Badge>
-                  </TableCell>
-                  <TableCell>{formatDate(op.data_fechamento)}</TableCell>
-                  <TableCell className="text-right">
-                    {formatNumber(op.quantidade)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(op.valor_compra)}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {formatCurrency(op.valor_venda)}
-                  </TableCell>
-                  <TableCell
-                    className={`text-right font-medium ${
-                      op.resultado >= 0 ? "text-green-600" : "text-red-600"
-                    }`}
-                  >
-                    {formatCurrency(op.resultado)}
-                  </TableCell>
-                  <TableCell>
-                    {op.day_trade && (
-                      <Badge
-                        variant="secondary"
-                        className="bg-yellow-200 text-black border-yellow-200"
-                      >
-                        DT
-                      </Badge>
+        {/* Accordion Rows */}
+        <div>
+          {processedOperacoes.map((op, index) => {
+            const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
+            const isExpanded = expandedRows.has(rowKey);
+            const isProfit = op.resultado >= 0;
+
+            return (
+              <div key={rowKey} className="border-b border-gray-100 last:border-b-0 hover:bg-gray-50/50 transition-colors">
+                {/* Main Row */}
+                <div
+                  className="grid grid-cols-12 gap-4 py-5 px-6 cursor-pointer"
+                  onClick={() => toggleRow(rowKey)}
+                >
+                  <div className="col-span-1 flex items-center">
+                    {isExpanded ? (
+                      <ChevronDown className="h-4 w-4 text-gray-400" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-gray-400" />
                     )}
-                  </TableCell>
-                  <TableCell>
-                    {(() => {
-                      let statusIrContent;
-                      // isDarfActionable should use op.status_ir from the current 'op' in the map
-                      const isDarfActionable =
-                        op.status_ir === "Tributável" &&
-                        isPreviousMonthOrEarlier(op.data_fechamento);
+                  </div>
 
-                      switch (op.status_ir) {
-                        case "Isento":
-                          statusIrContent = (
-                            <Badge variant="secondary">Isento</Badge>
-                          );
-                          break;
-                        case "Tributável Day Trade":
-                        case "Tributável Swing":
-                          const isActionableForIcon = isPreviousMonthOrEarlier(
-                            op.data_fechamento
-                          );
-
-                          let monthlyDarfStatusForIcon: string | undefined | null = null;
-                          if (isActionableForIcon) {
-                            const mesFechamento = op.data_fechamento.substring(0,7);
-                            const resultadoMensalCorrespondente =
-                              resultadosMensais.find(
-                                (rm) => rm.mes === mesFechamento
-                              );
-                            if (resultadoMensalCorrespondente) {
-                              if (op.status_ir === "Tributável Day Trade") {
-                                monthlyDarfStatusForIcon = resultadoMensalCorrespondente.status_darf_day_trade;
-                              } else { // Tributável Swing
-                                monthlyDarfStatusForIcon = resultadoMensalCorrespondente.status_darf_swing_trade;
-                              }
-                            }
-                          }
-
-                          statusIrContent = (
-                            <div className="flex items-center space-x-1 justify-start">
-                              <Badge variant="destructive">Tributável</Badge>
-                              {isActionableForIcon && (
-                                <TooltipProvider>
-                                  <Tooltip delayDuration={300}>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => handleDarfClick(op)}
-                                      >
-                                        <FileText
-                                          className={`h-4 w-4 ${
-                                            monthlyDarfStatusForIcon === "Pago"
-                                              ? "text-green-600"
-                                              : "text-blue-600"
-                                          }`}
-                                        />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                      <p>Consultar DARF</p>
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              )}
-                            </div>
-                          );
-                          break;
-                        case "Lucro Compensado":
-                          statusIrContent = (
-                            <TooltipProvider>
-                              <Tooltip delayDuration={300}>
-                                <TooltipTrigger asChild>
-                                  <Badge variant="default">
-                                    Lucro Compensado
-                                  </Badge>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>
-                                    O lucro desta operação foi compensado por
-                                    prejuízos acumulados e não gerou imposto a
-                                    pagar neste mês.
-                                  </p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
-                          );
-                          break;
-                        case "Prejuízo Acumulado":
-                          statusIrContent = (
-                            <Badge
-                              variant="outline"
-                              className="border-orange-500 text-orange-500"
-                            >
-                              Prejuízo Acumulado
-                            </Badge>
-                          );
-                          break;
-                        default:
-                          statusIrContent = (
-                            <span className="text-xs">
-                              {op.status_ir || "-"}
+                  <div className="col-span-3 flex items-center">
+                    <div className="flex items-center space-x-3">
+                      <div className="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center shadow-sm">
+                        <span className="text-white text-xs font-bold">{op.ticker.slice(0, 2)}</span>
+                      </div>
+                      <div>
+                        <div className="font-semibold text-gray-900 text-sm">{op.ticker}</div>
+                        <div className="flex items-center space-x-2 mt-1">
+                          {op.day_trade ? (
+                            <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded">
+                              Day Trade
                             </span>
-                          );
-                      }
-                      return statusIrContent;
-                    })()}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </CardContent>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">
+                              Swing
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-      {selectedOpForDarf && selectedResultadoMensalForDarf && (
-        <DarfDetailsModal
-          isOpen={isDarfModalOpen}
-          onClose={() => {
-            setIsDarfModalOpen(false);
-            setSelectedOpForDarf(null);
-            setSelectedResultadoMensalForDarf(null);
-          }}
-          operacaoFechada={selectedOpForDarf}
-          resultadoMensal={selectedResultadoMensalForDarf}
-          tipoDarf={selectedDarfType}
-          onUpdateDashboard={onUpdateDashboard}
-        />
-      )}
+                  <div className="col-span-2 flex items-center">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{formatDateShort(op.data_fechamento)}</div>
+                      <div className="text-xs text-gray-500 mt-0.5">{new Date(op.data_fechamento).getFullYear()}</div>
+                    </div>
+                  </div>
+
+                  <div className="col-span-3 flex items-center justify-end">
+                    <div className="text-right">
+                      <div className={`text-lg font-bold flex items-center justify-end ${
+                        isProfit ? "text-emerald-600" : "text-red-600"
+                      }`}>
+                        {isProfit ? (
+                          <TrendingUp className="h-4 w-4 mr-1" />
+                        ) : (
+                          <TrendingDown className="h-4 w-4 mr-1" />
+                        )}
+                        {formatCurrency(op.resultado)}
+                      </div>
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {formatNumber(op.quantidade)} ações
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="col-span-3 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+                    {getStatusBadge(op.status_ir, isProfit)}
+                    {renderDarfButton(op)}
+                  </div>
+                </div>
+
+                {/* Expanded Content */}
+                {isExpanded && (
+                  <div className="bg-gray-50/30 border-t border-gray-100">
+                    <div className="px-6 py-6">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Período da Operação */}
+                        <div className="bg-white rounded-lg p-4 border border-gray-200">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <Calendar className="h-4 w-4 text-blue-500" />
+                            <h4 className="font-medium text-gray-900 text-sm">Período da Operação</h4>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Abertura:</span>
+                              <span className="font-medium text-gray-900">{formatDate(op.data_abertura)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Fechamento:</span>
+                              <span className="font-medium text-gray-900">{formatDate(op.data_fechamento)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm pt-2 border-t border-gray-100">
+                              <span className="text-gray-600">Duração:</span>
+                              <span className="font-medium text-gray-900">
+                                {op.day_trade ? "Mesmo dia" : "Swing Trade"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Detalhes da Negociação */}
+                        <div className="bg-white rounded-lg p-4 border border-gray-200">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <Hash className="h-4 w-4 text-green-500" />
+                            <h4 className="font-medium text-gray-900 text-sm">Detalhes da Negociação</h4>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Quantidade:</span>
+                              <span className="font-medium text-gray-900">{formatNumber(op.quantidade)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Preço de Compra:</span>
+                              <span className="font-medium text-gray-900">{formatCurrency(op.valor_compra)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-600">Preço de Venda:</span>
+                              <span className="font-medium text-gray-900">{formatCurrency(op.valor_venda)}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Resultado Financeiro */}
+                        <div className="bg-white rounded-lg p-4 border border-gray-200">
+                          <div className="flex items-center space-x-2 mb-3">
+                            <DollarSign className="h-4 w-4 text-purple-500" />
+                            <h4 className="font-medium text-gray-900 text-sm">Resultado Financeiro</h4>
+                          </div>
+                          <div className="space-y-3">
+                            <div className="text-center">
+                              <div className={`text-2xl font-bold ${
+                                isProfit ? "text-emerald-600" : "text-red-600"
+                              }`}>
+                                {formatCurrency(op.resultado)}
+                              </div>
+                              <div className="text-xs text-gray-500 mt-1">
+                                {isProfit ? "Lucro obtido" : "Prejuízo registrado"}
+                              </div>
+                            </div>
+                            <div className="pt-2 border-t border-gray-100">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-gray-600">Status Fiscal:</span>
+                                <div>{getStatusBadge(op.status_ir, isProfit)}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
     </Card>
   );
 }
