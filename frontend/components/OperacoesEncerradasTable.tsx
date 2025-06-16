@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
+import { DarfDetailsModal } from "@/components/DarfDetailsModal"; // Added import
 
 // Mock formatting functions
 const formatCurrency = (value: number) => {
@@ -138,6 +139,9 @@ export default function OperacoesEncerradasTable({
   }>({ key: "data_fechamento", direction: "descending" });
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [processedOperacoes, setProcessedOperacoes] = useState<OperacaoFechada[]>(operacoesFechadas);
+  const [isDarfModalOpen, setIsDarfModalOpen] = useState(false);
+  const [selectedOpForDarf, setSelectedOpForDarf] = useState<OperacaoFechada | null>(null);
+  const [selectedResultadoMensalForDarf, setSelectedResultadoMensalForDarf] = useState<ResultadoMensal | null>(null);
 
   useEffect(() => {
     let newProcessedData = [...operacoesFechadas];
@@ -292,6 +296,15 @@ export default function OperacoesEncerradasTable({
         </Tooltip>
       </TooltipProvider>
     );
+  };
+
+  const handleOpenDarfModal = (operation: OperacaoFechada) => {
+    setSelectedOpForDarf(operation);
+    // Find the corresponding ResultadoMensal for the operation's month
+    const operationMonthYear = operation.data_fechamento.substring(0, 7); // Extract YYYY-MM
+    const relevantResultadoMensal = resultadosMensais.find(rm => rm.mes === operationMonthYear);
+    setSelectedResultadoMensalForDarf(relevantResultadoMensal || null);
+    setIsDarfModalOpen(true);
   };
 
   if (!processedOperacoes || processedOperacoes.length === 0) { // Changed to check processedOperacoes
@@ -478,29 +491,85 @@ export default function OperacoesEncerradasTable({
                   <div className="bg-gray-50/30 border-t border-gray-100">
                     <div className="px-6 py-6">
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Período da Operação */}
-                        <div className="bg-white rounded-lg p-4 border border-gray-200">
-                          <div className="flex items-center space-x-2 mb-3">
-                            <Calendar className="h-4 w-4 text-blue-500" />
-                            <h4 className="font-medium text-gray-900 text-sm">Período da Operação</h4>
+                        {/* Conditional Card: Prejuízo or Lucro/DARF Info */}
+                        {op.resultado < 0 ? (
+                          // Card para PREJUÍZO
+                          <div className="bg-white rounded-lg p-4 border border-gray-200">
+                            <div className="flex items-center space-x-2 mb-3">
+                              {/* You can choose an appropriate icon for loss/warning */}
+                              <TrendingDown className="h-4 w-4 text-red-500" />
+                              <h4 className="font-medium text-gray-900 text-sm">Situação do Prejuízo</h4>
+                            </div>
+                            <div className="space-y-2 text-sm">
+                              <p className="text-gray-700">
+                                Esta operação resultou em um prejuízo de <span className="font-semibold text-red-600">{formatCurrency(op.resultado)}</span>.
+                              </p>
+                              <p className="text-gray-600 mt-1">
+                                Status Fiscal: <span className="font-semibold">{op.status_ir || "N/A"}</span>.
+                              </p>
+                              {op.status_ir === "Prejuízo Acumulado" && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Este prejuízo pode ser utilizado para abater lucros futuros tributáveis do mesmo tipo (Swing Trade ou Day Trade), reduzindo o imposto devido.
+                                </p>
+                              )}
+                              {op.status_ir === "Lucro Compensado" && (
+                                 // This status is less likely for a losing op, but if backend sets it, explain.
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Este prejuízo foi registrado, e pode ter sido utilizado para compensar lucros em outros momentos, conforme apuração mensal.
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          <div className="space-y-2">
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-600">Abertura:</span>
-                              <span className="font-medium text-gray-900">{formatDate(op.data_abertura)}</span>
+                        ) : (
+                          // Card para LUCRO ou resultado zero
+                          <div className="bg-white rounded-lg p-4 border border-gray-200">
+                            <div className="flex items-center space-x-2 mb-3">
+                              <FileText className="h-4 w-4 text-green-500" />
+                              <h4 className="font-medium text-gray-900 text-sm">Informações do Imposto de Renda</h4>
                             </div>
-                            <div className="flex justify-between text-sm">
-                              <span className="text-gray-600">Fechamento:</span>
-                              <span className="font-medium text-gray-900">{formatDate(op.data_fechamento)}</span>
-                            </div>
-                            <div className="flex justify-between text-sm pt-2 border-t border-gray-100">
-                              <span className="text-gray-600">Duração:</span>
-                              <span className="font-medium text-gray-900">
-                                {op.day_trade ? "Mesmo dia" : "Swing Trade"}
-                              </span>
+                            <div className="space-y-2 text-sm">
+                              <p className="text-gray-700">
+                                Resultado da Operação: <span className="font-semibold text-emerald-600">{formatCurrency(op.resultado)}</span>.
+                              </p>
+                              <p className="text-gray-600 mt-1">
+                                Status Fiscal: <span className="font-semibold">{op.status_ir || "N/A"}</span>.
+                              </p>
+                              {op.status_ir === "Isento" && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Esta operação é isenta de Imposto de Renda, geralmente aplicável a vendas de Swing Trade abaixo de R$20.000,00 no mês (verifique as regras vigentes).
+                                </p>
+                              )}
+                              {["Tributável Day Trade", "Tributável Swing"].includes(op.status_ir || "") && (
+                                <>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    Esta operação é tributável. O imposto devido é consolidado mensalmente.
+                                  </p>
+                                  <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="p-0 h-auto text-sm text-blue-600 hover:text-blue-700 mt-2"
+                                    onClick={() => handleOpenDarfModal(op)}
+                                  >
+                                    Ver Detalhes do DARF Mensal
+                                  </Button>
+                                </>
+                              )}
+                               {op.status_ir === "Lucro Compensado" && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  O lucro desta operação foi compensado por prejuízos acumulados anteriormente, não gerando imposto a pagar sobre este resultado específico. Verifique o DARF mensal para o consolidado.
+                                   <Button
+                                    variant="link"
+                                    size="sm"
+                                    className="p-0 h-auto text-sm text-blue-600 hover:text-blue-700 mt-1 ml-1"
+                                    onClick={() => handleOpenDarfModal(op)}
+                                  >
+                                    Ver Detalhes do DARF Mensal
+                                  </Button>
+                                </p>
+                              )}
                             </div>
                           </div>
-                        </div>
+                        )}
 
                         {/* Detalhes da Negociação */}
                         <div className="bg-white rounded-lg p-4 border border-gray-200">
@@ -559,5 +628,16 @@ export default function OperacoesEncerradasTable({
         </div>
       </CardContent>
     </Card>
-  );
+
+    {isDarfModalOpen && selectedOpForDarf && selectedResultadoMensalForDarf && (
+      <DarfDetailsModal
+        isOpen={isDarfModalOpen}
+        onClose={() => setIsDarfModalOpen(false)}
+        operacaoFechada={selectedOpForDarf}
+        resultadoMensal={selectedResultadoMensalForDarf}
+        tipoDarf={selectedOpForDarf.day_trade ? 'daytrade' : 'swing'}
+        onUpdateDashboard={onUpdateDashboard}
+      />
+    )}
+  </>);
 }
