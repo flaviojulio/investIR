@@ -314,6 +314,33 @@ class EventoCorporativoBase(BaseModel):
     data_ex: Optional[date] = None
     razao: Optional[str] = None
 
+    def get_adjustment_factor(self) -> float:
+        """
+        Calcula o fator de ajuste com base na razão do evento corporativo.
+        Exemplos:
+        - "1:5" (desdobramento) -> 5.0 (quantidade é multiplicada por 5)
+        - "10:1" (grupamento) -> 0.1 (quantidade é multiplicada por 0.1)
+        - "2:3" (desdobramento fracionado) -> 1.5 (quantidade é multiplicada por 3/2)
+        Retorna 1.0 se a razão for None, vazia ou malformada.
+        """
+        if not self.razao:
+            return 1.0
+
+        parts = self.razao.split(':')
+        if len(parts) != 2:
+            return 1.0  # Malformed string
+
+        try:
+            a = float(parts[0].strip())
+            b = float(parts[1].strip())
+
+            if a == 0: # Evitar divisão por zero
+                return 1.0
+
+            return b / a
+        except ValueError:
+            return 1.0 # Non-numeric parts
+
 class EventoCorporativoCreate(BaseModel):
     id_acao: int
     evento: str
@@ -339,7 +366,6 @@ class EventoCorporativoCreate(BaseModel):
 class EventoCorporativoInfo(EventoCorporativoBase):
     id: int
     model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat() if d else None})
-
 
 # Modelos para Resumos de Proventos
 

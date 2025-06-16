@@ -4,6 +4,14 @@ from dateutil.relativedelta import relativedelta
 from pydantic import BaseModel, validator, Field
 from typing import List, Dict, Any, Optional
 
+from backend.database import (
+    obter_id_acao_por_ticker,
+    obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a
+)
+from backend.models import EventoCorporativoInfo
+# Note: datetime is already imported, List, Dict, Any, Optional are from typing.
+# datetime_date is an alias for date, which is fine.
+
 # Updated Operacao model
 class Operacao(BaseModel):
     ticker: str
@@ -171,9 +179,136 @@ def get_holdings_on_date(operations: List[Operacao], target_date_str: str) -> Di
 
     # Filter out tickers with zero or negative quantities if necessary,
     # or handle as per specific requirements (e.g., short selling).
-    # For now, returning all, including potentially zero/negative.
-    return {ticker: quantity for ticker, quantity in holdings.items() if quantity > 0}
+def get_holdings_on_date(operations: List[Operacao], target_date_str: str) -> Dict[str, int]:
+    try:
+        # Validator for date string format, using datetime.date for target_d
+        target_d = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        # Handle invalid date string format for target_date_str
+        # This case should ideally be validated before calling this function,
+        # but as a safeguard:
+        print(f"Error: Invalid target_date_str format '{target_date_str}'. Expected YYYY-MM-DD.")
+        return {}
 
+
+    # Ensure operations are parsed if they are raw dicts (existing logic in some versions)
+    # The Operacao model in this file has its own parser for date.
+    parsed_operations: List[Operacao] = []
+    if not operations: # Handle empty operations list
+            parsed_operations = []
+    elif operations and not isinstance(operations[0], Operacao): # Check if parsing is needed
+        try:
+            # Assuming Operacao model expects price and fees if they are part of its definition
+            # The local Operacao model does define price and fees.
+            parsed_operations = [Operacao(**op_data) for op_data in operations]
+        except Exception as e: # Catch potential Pydantic validation errors
+            print(f"Error parsing operations data in get_holdings_on_date: {e}")
+            return {}
+    else: # operations is already List[Operacao]
+        parsed_operations = operations
+
+    # --- START NEW LOGIC FOR CORPORATE EVENTS ---
+
+    # 1. Collect unique tickers and fetch their corporate events
+    unique_tickers = list(set(op.ticker for op in parsed_operations))
+    events_by_ticker: Dict[str, List[EventoCorporativoInfo]] = {}
+
+    for ticker_symbol in unique_tickers:
+        id_acao = obter_id_acao_por_ticker(ticker_symbol)
+        if id_acao:
+            raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, target_d)
+            # raw_events_data returns List[Dict[str, Any]], suitable for EventoCorporativoInfo(**event_data)
+            events_by_ticker[ticker_symbol] = [EventoCorporativoInfo(**event_data) for event_data in raw_events_data]
+
+    # 2. Define helper to apply events to a single operation
+    def _apply_events_to_operation(operation: Operacao, ticker_events: List[EventoCorporativoInfo]) -> Operacao:
+        adjusted_op = operation
+
+        # ticker_events are already sorted by data_ex ASC from the database function.
+        for event_info in ticker_events:
+            # Ensure event_info.data_ex is not None. It should be guaranteed by DB query.
+            if event_info.data_ex is None:
+                continue
+
+            # Apply event only if operation date is strictly BEFORE event's data_ex
+            # op.date is datetime_date (alias for datetime.date)
+            if adjusted_op.date < event_info.data_ex:
+                factor = event_info.get_adjustment_factor()
+
+                if factor == 1.0: # No change from this event
+                    continue
+
+                new_quantity_float = float(adjusted_op.quantity) # Start with float for precision
+                new_price_float = float(adjusted_op.price)
+
+                # Assuming "Desdobramento" and "Agrupamento" are the primary events affecting quantity/price this way.
+                # The prompt implies this, but a more robust solution might check event_info.razao directly.
+                # For now, trusting get_adjustment_factor() covers the logic based on 'razao'.
+                # The prompt's example shows get_adjustment_factor handles "1:5" -> 5.0 and "10:1" -> 0.1
+                # For splits (desdobramento, 1:5, factor=5), quantity * 5, price / 5
+                # For reverse splits (agrupamento, 10:1, factor=0.1), quantity * 0.1, price / 0.1
+
+                new_quantity_float = new_quantity_float * factor
+                if factor != 0.0: # Should always be true for valid factors from razao
+                    new_price_float = new_price_float / factor
+                # If factor is 0 (e.g. from "X:0" if allowed), price remains unchanged.
+                # The get_adjustment_factor should prevent factor being 0 if 'A' in 'A:B' is non-zero.
+                # If A is 0 (e.g. "0:B"), get_adjustment_factor returns 1.0, so this block is skipped.
+
+                # Placeholder for Bonificacao if needed in future
+                # The current factor logic primarily addresses splits/groupings.
+                # Bonificacao might require different handling (e.g., factor might represent percentage increase, price adjustment is different)
+                # For example, if event_info.evento == "Bonificacao":
+                #    # Future logic for bonus issues:
+                #    # - Increase quantity based on bonus ratio (e.g., 10% bonus -> quantity * 1.1)
+                #    # - Price per share is diluted. Total cost remains same, so new_price = (old_price * old_quantity) / new_quantity
+                #    # - This typically means the 'factor' concept might differ for Bonificacao or need special handling.
+                #    # - For now, the existing factor application will proceed. If Bonificacao has factor 1.0, no change occurs.
+                #    #   If it has a different factor from razao, it will be applied as per current logic, which might be okay or need review.
+                #    pass
+
+                # Create a new Operacao instance with adjusted values
+                # Ensure quantity is integer as per Operacao model's type hint
+                update_data = {
+                    'quantity': int(round(new_quantity_float)),
+                    'price': new_price_float
+                    # Fees are not adjusted by these corporate actions
+                }
+                # Pydantic models are immutable by default, but .copy() allows creating modified one.
+                # Ensure the local Operacao model supports .copy() or manual recreation:
+                # temp_data = adjusted_op.dict()
+                # temp_data.update(update_data)
+                # adjusted_op = Operacao(**temp_data)
+                # For Pydantic v1, .copy(update=...) is common. For v2, model_copy(update=...)
+                # Assuming Pydantic v1 style .copy() or that the model is mutable for simplicity of example.
+                # The local Operacao is a Pydantic model, should support .copy(update=...)
+                adjusted_op = adjusted_op.copy(update=update_data)
+        return adjusted_op
+
+    # 3. Create a list of adjusted operations
+    adjusted_operations_list: List[Operacao] = []
+    for op in parsed_operations:
+        ticker_events_for_op = events_by_ticker.get(op.ticker, [])
+        adjusted_op = _apply_events_to_operation(op, ticker_events_for_op)
+        adjusted_operations_list.append(adjusted_op)
+    # --- END NEW LOGIC FOR CORPORATE EVENTS ---
+
+    holdings: Dict[str, int] = {}
+    # Use adjusted_operations_list for calculating holdings
+    for op_adj in adjusted_operations_list:
+        # op_adj.date is already a datetime.date object due to Pydantic validator
+        if op_adj.date <= target_d: # Filter operations up to the target date
+            current_quantity = holdings.get(op_adj.ticker, 0)
+            if op_adj.operation_type == 'buy':
+                holdings[op_adj.ticker] = current_quantity + op_adj.quantity
+            elif op_adj.operation_type == 'sell':
+                holdings[op_adj.ticker] = current_quantity - op_adj.quantity
+            # Pydantic validator on Operacao model handles unknown operation_type
+
+    # Filter out tickers with zero or negative quantities if necessary,
+    # or handle as per specific requirements (e.g., short selling).
+    # Current: return only those with quantity > 0
+    return {ticker: quantity for ticker, quantity in holdings.items() if quantity > 0}
 
 if __name__ == '__main__':
     # (Previous example usage for get_historical_prices remains)

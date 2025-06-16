@@ -1056,6 +1056,18 @@ def obter_operacoes_por_ticker_ate_data_db(usuario_id: int, ticker: str, data_at
         # return [{"operation": row["operation"], "quantity": row["quantity"]} for row in rows]
         return [dict(row) for row in rows]
 
+def obter_id_acao_por_ticker(ticker: str) -> Optional[int]:
+    """
+    Obtém o ID de uma ação específica pelo seu ticker.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM acoes WHERE ticker = ?", (ticker,))
+        row = cursor.fetchone()
+        if row:
+            return row['id']
+        return None
+
 def obter_acao_por_id(id_acao: int) -> Optional[Dict[str, Any]]:
     """
     Obtém uma ação específica pelo seu ID.
@@ -1359,5 +1371,37 @@ def obter_todos_eventos_corporativos() -> List[Dict[str, Any]]:
                 CASE WHEN data_ex IS NULL THEN 1 ELSE 0 END, data_ex DESC,
                 CASE WHEN data_registro IS NULL THEN 1 ELSE 0 END, data_registro DESC
         """)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao: int, data_limite: date) -> List[Dict[str, Any]]:
+    """
+    Obtém eventos corporativos para uma ação específica onde data_ex é anterior ou igual à data_limite.
+    As datas na tabela eventos_corporativos (data_aprovacao, data_registro, data_ex) são armazenadas como TEXT no formato YYYY-MM-DD.
+    A conversão para objetos date é feita automaticamente pelo sqlite3.register_converter se as colunas forem selecionadas com o tipo [date].
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Formata a data_limite para string 'YYYY-MM-DD' para comparação no SQL
+        data_limite_str = data_limite.isoformat()
+
+        # Note: data_aprovacao, data_registro, data_ex são TEXT.
+        # O alias "data_ex [date]" etc., instrui o sqlite3 a usar o conversor 'date'.
+        query = """
+            SELECT
+                id,
+                id_acao,
+                evento,
+                data_aprovacao AS "data_aprovacao [date]",
+                data_registro AS "data_registro [date]",
+                data_ex AS "data_ex [date]",
+                razao
+            FROM eventos_corporativos
+            WHERE id_acao = ?
+              AND data_ex IS NOT NULL
+              AND data_ex <= ?
+            ORDER BY data_ex ASC
+        """
+        cursor.execute(query, (id_acao, data_limite_str))
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
