@@ -34,6 +34,7 @@ import {
 import { Input } from "@/components/ui/input";
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { DarfDetailsModal } from "@/components/DarfDetailsModal"; // Added import
+import OperacoesEncerradasTable from '@/components/OperacoesEncerradasTable';
 
 // Mock formatting functions
 const formatCurrency = (value: number) => {
@@ -308,6 +309,7 @@ export default function OperacoesEncerradasTable({
   }
 
   return (
+    <>
     <Card className="border-0 shadow-sm bg-white">
       <CardHeader className="border-b border-gray-100 pb-6">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4"> {/* Changed items-center to items-start */}
