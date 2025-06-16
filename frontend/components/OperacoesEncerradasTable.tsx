@@ -268,36 +268,6 @@ export default function OperacoesEncerradasTable({
     }
   };
 
-  const renderDarfButton = (op: OperacaoFechada) => {
-    const isActionable = ["Tributável Day Trade", "Tributável Swing"].includes(op.status_ir) &&
-                        isPreviousMonthOrEarlier(op.data_fechamento);
-
-    if (!isActionable) return null;
-
-    return (
-      <TooltipProvider>
-        <Tooltip delayDuration={300}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 w-8 p-0 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDarfClick(op);
-              }}
-            >
-              <FileText className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>Consultar DARF</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    );
-  };
-
   const handleOpenDarfModal = (operation: OperacaoFechada) => {
     setSelectedOpForDarf(operation);
     // Find the corresponding ResultadoMensal for the operation's month
@@ -306,6 +276,8 @@ export default function OperacoesEncerradasTable({
     setSelectedResultadoMensalForDarf(relevantResultadoMensal || null);
     setIsDarfModalOpen(true);
   };
+
+  const totalResultadoOperacoes = processedOperacoes.reduce((acc, op) => acc + op.resultado, 0);
 
   if (!processedOperacoes || processedOperacoes.length === 0) { // Changed to check processedOperacoes
     return (
@@ -336,16 +308,18 @@ export default function OperacoesEncerradasTable({
   }
 
   return (
-    <>
     <Card className="border-0 shadow-sm bg-white">
       <CardHeader className="border-b border-gray-100 pb-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4"> {/* Changed items-center to items-start */}
           <div>
             <CardTitle className="text-xl font-semibold text-gray-900">Operações Encerradas</CardTitle>
             <CardDescription className="text-gray-600 mt-1">
               {processedOperacoes.length} operação{processedOperacoes.length !== 1 ? 'ões' : ''} encontrada{processedOperacoes.length !== 1 ? 's' : ''}
               {searchTerm && operacoesFechadas.length !== processedOperacoes.length ? ` (de ${operacoesFechadas.length} no total)` : ''}
             </CardDescription>
+            <p className={`mt-2 text-sm font-semibold ${totalResultadoOperacoes >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              Resultado Total (Filtrado): {formatCurrency(totalResultadoOperacoes)}
+            </p>
           </div>
           <div className="w-full sm:w-80">
             <Input
@@ -481,9 +455,8 @@ export default function OperacoesEncerradasTable({
                     </div>
                   </div>
 
-                  <div className="col-span-3 flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+                  <div className="col-span-3 flex items-center justify-start" onClick={(e) => e.stopPropagation()}>
                     {getStatusBadge(op.status_ir, isProfit)}
-                    {renderDarfButton(op)}
                   </div>
                 </div>
 
@@ -629,6 +602,7 @@ export default function OperacoesEncerradasTable({
         </div>
       </CardContent>
     </Card>
+
     {isDarfModalOpen && selectedOpForDarf && selectedResultadoMensalForDarf && (
       <DarfDetailsModal
         isOpen={isDarfModalOpen}

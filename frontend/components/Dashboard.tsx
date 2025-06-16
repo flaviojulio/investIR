@@ -36,7 +36,7 @@ import { UploadOperations } from "@/components/UploadOperations"
 import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"
 import { TaxResults } from "@/components/TaxResults"
-import OperacoesEncerradasTable from '@/components/OperacoesEncerradasTable';
+import { OperacoesEncerradasTable } from "@/components/OperacoesEncerradasTable";
 import { useToast } from "@/hooks/use-toast"
 // Added ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario
 import type { Operacao, CarteiraItem, ResultadoMensal, OperacaoFechada, ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario } from "@/lib/types"
