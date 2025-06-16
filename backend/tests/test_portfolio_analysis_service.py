@@ -289,6 +289,51 @@ def test_get_holdings_invalid_target_date_str_format():
 
 @patch('backend.app.services.portfolio_analysis_service.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
 @patch('backend.app.services.portfolio_analysis_service.obter_id_acao_por_ticker')
+def test_get_holdings_bbas3_split_scenario(mock_obter_id_acao_por_ticker, mock_obter_eventos_corporativos):
+    """Test BBAS3 split scenario: 1000 shares bought, then 1:2 split."""
+    bbas3_ticker = "BBAS3"
+    bbas3_id_acao = 123 # Dummy ID for BBAS3
+
+    # Configure mocks
+    mock_obter_id_acao_por_ticker.return_value = bbas3_id_acao
+
+    bbas3_split_event = {
+        'id': 99,
+        'id_acao': bbas3_id_acao,
+        'evento': "Desdobramento",
+        'data_aprovacao': date(2024, 4, 1),
+        'data_registro': date(2024, 4, 10),
+        'data_ex': date(2024, 4, 16),
+        'razao': "1:2"
+    }
+    mock_obter_eventos_corporativos.return_value = [bbas3_split_event]
+
+    # Initial operation
+    operations = [
+        ServiceOperacao(
+            ticker=bbas3_ticker,
+            date=date(2024, 1, 8), # Date before split data_ex
+            operation_type="buy",
+            quantity=1000,
+            price=60.0, # Some dummy price
+            fees=0
+        )
+    ]
+
+    target_date_str = "2024-04-20" # Date after split data_ex
+    target_date_obj = date(2024, 4, 20)
+
+    holdings = get_holdings_on_date(operations, target_date_str)
+
+    assert holdings.get(bbas3_ticker) == 2000 # 1000 shares * 2 (split factor)
+
+    # Verify mocks were called as expected
+    mock_obter_id_acao_por_ticker.assert_called_once_with(bbas3_ticker)
+    mock_obter_eventos_corporativos.assert_called_once_with(bbas3_id_acao, target_date_obj)
+
+
+@patch('backend.app.services.portfolio_analysis_service.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
+@patch('backend.app.services.portfolio_analysis_service.obter_id_acao_por_ticker')
 def test_get_holdings_parses_raw_operations_data(mock_get_id_acao, mock_get_events):
     mock_get_id_acao.return_value = 1
     mock_get_events.return_value = []
