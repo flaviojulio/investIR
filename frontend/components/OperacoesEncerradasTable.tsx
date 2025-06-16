@@ -336,6 +336,7 @@ export default function OperacoesEncerradasTable({
   }
 
   return (
+    <>
     <Card className="border-0 shadow-sm bg-white">
       <CardHeader className="border-b border-gray-100 pb-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -628,7 +629,6 @@ export default function OperacoesEncerradasTable({
         </div>
       </CardContent>
     </Card>
-
     {isDarfModalOpen && selectedOpForDarf && selectedResultadoMensalForDarf && (
       <DarfDetailsModal
         isOpen={isDarfModalOpen}
