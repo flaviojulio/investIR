@@ -314,6 +314,28 @@ class EventoCorporativoBase(BaseModel):
     data_ex: Optional[date] = None
     razao: Optional[str] = None
 
+    @field_validator('data_aprovacao', 'data_registro', 'data_ex', mode='before')
+    @classmethod
+    def parse_dmy_date_str(cls, value: Any) -> Optional[date]:
+        if isinstance(value, str):
+            if not value.strip():
+                return None # Convert empty string to None
+            try:
+                # Attempt to parse "DD/MM/YYYY"
+                return datetime.strptime(value, "%d/%m/%Y").date()
+            except ValueError:
+                # If DMY parsing fails, return the original string.
+                # Pydantic will then attempt its default parsing (e.g., ISO format)
+                # or raise a validation error if it's truly an invalid date string.
+                return value
+
+        # Pass through if already a date object or None
+        if isinstance(value, date) or value is None:
+            return value
+
+        # For any other types, return as is and let Pydantic handle validation
+        return value
+
     def get_adjustment_factor(self) -> float:
         """
         Calcula o fator de ajuste com base na razão do evento corporativo.
