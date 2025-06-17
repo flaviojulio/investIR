@@ -3,34 +3,35 @@ from datetime import date
 from pydantic import ValidationError
 from backend.models import EventoCorporativoBase
 
-def test_evento_corporativo_base_date_parsing_dmy():
-    data = {
-        "id_acao": 1, "evento": "TestEvent",
-        "data_aprovacao": "01/01/2024",
-        "data_registro": "02/02/2024",
-        "data_ex": "03/03/2024",
-        "razao": "1:1"
-        # id field is part of EventoCorporativoInfo, not Base.
-        # If testing EventoCorporativoInfo, an 'id' would be needed.
-        # For EventoCorporativoBase, this should be fine.
-    }
-    event = EventoCorporativoBase(**data)
-    assert event.data_aprovacao == date(2024, 1, 1)
-    assert event.data_registro == date(2024, 2, 2)
-    assert event.data_ex == date(2024, 3, 3)
+# Removed test_evento_corporativo_base_date_parsing_dmy as the custom DMY validator was removed.
 
 def test_evento_corporativo_base_date_parsing_none_and_empty():
-    data = {
+    # Test with None: should be allowed
+    data_none = {
         "id_acao": 1, "evento": "TestEvent",
         "data_aprovacao": None,
-        "data_registro": "", # Empty string
-        "data_ex": "   ", # Whitespace string
         "razao": "1:1"
     }
-    event = EventoCorporativoBase(**data)
-    assert event.data_aprovacao is None
-    assert event.data_registro is None
-    assert event.data_ex is None
+    event_none = EventoCorporativoBase(**data_none)
+    assert event_none.data_aprovacao is None
+
+    # Test with empty string: Pydantic's default for Optional[date] should raise ValidationError
+    data_empty_str = {
+        "id_acao": 1, "evento": "TestEvent",
+        "data_registro": "",
+        "razao": "1:1"
+    }
+    with pytest.raises(ValidationError):
+        EventoCorporativoBase(**data_empty_str)
+
+    # Test with whitespace string: Pydantic's default for Optional[date] should raise ValidationError
+    data_whitespace_str = {
+        "id_acao": 1, "evento": "TestEvent",
+        "data_ex": "   ",
+        "razao": "1:1"
+    }
+    with pytest.raises(ValidationError):
+        EventoCorporativoBase(**data_whitespace_str)
 
 def test_evento_corporativo_base_date_parsing_already_date_object():
     d_aprov = date(2024, 1, 1)
@@ -85,23 +86,22 @@ def test_evento_corporativo_base_partial_dmy_then_valid_iso():
     #    or if it's strict ISO, this might pass or fail.
     #    The current validator returns the original string if DMY fails.
     #    Pydantic's default for `date` usually expects ISO "YYYY-MM-DD".
-    #    So, "01/20/2024" (if not parsed by DMY) will likely cause ValidationError by Pydantic.
-    data_ambiguous_dmy = {
+    # So, "01/20/2024" (which is not ISO) will likely cause ValidationError by Pydantic.
+    data_not_iso_format = {
         "id_acao": 1, "evento": "TestEvent",
-        "data_ex": "01/20/2024", # Could be Jan 20 or (invalid) 20th month
+        "data_ex": "01/20/2024", # Not ISO
         "razao": "1:1"
     }
-    # Our validator fails %d/%m/%Y, returns "01/20/2024". Pydantic then fails to parse this as date.
     with pytest.raises(ValidationError):
-         EventoCorporativoBase(**data_ambiguous_dmy)
+         EventoCorporativoBase(**data_not_iso_format)
 
-    # Test with a valid ISO date after a field that was DMY
-    data_mixed_formats = {
+    # Test that ISO format still works alongside other valid inputs (like None or date objects)
+    data_mixed_valid = {
         "id_acao": 1, "evento": "TestEvent",
-        "data_aprovacao": "01/01/2024", # DMY
+        "data_aprovacao": None,
         "data_ex": "2024-03-03",      # ISO
         "razao": "1:1"
     }
-    event_mixed = EventoCorporativoBase(**data_mixed_formats)
-    assert event_mixed.data_aprovacao == date(2024, 1, 1)
+    event_mixed = EventoCorporativoBase(**data_mixed_valid)
+    assert event_mixed.data_aprovacao is None
     assert event_mixed.data_ex == date(2024, 3, 3)

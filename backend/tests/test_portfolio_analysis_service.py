@@ -301,9 +301,9 @@ def test_get_holdings_bbas3_split_scenario(mock_obter_id_acao_por_ticker, mock_o
         'id': 99,
         'id_acao': bbas3_id_acao,
         'evento': "Desdobramento",
-        'data_aprovacao': '01/04/2024', # Was date(2024, 4, 1)
-        'data_registro': '10/04/2024', # Was date(2024, 4, 10)
-        'data_ex': '16/04/2024',       # Was date(2024, 4, 16)
+        'data_aprovacao': date(2024, 4, 1), # Reverted to date object
+        'data_registro': date(2024, 4, 10), # Reverted to date object
+        'data_ex': date(2024, 4, 16),       # Reverted to date object
         'razao': "1:2"
     }
     mock_obter_eventos_corporativos.return_value = [bbas3_split_event]

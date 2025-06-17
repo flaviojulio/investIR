@@ -322,19 +322,58 @@ def criar_tabelas():
         # Criar índice para a coluna id_acao na tabela proventos
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_proventos_id_acao ON proventos(id_acao);')
 
-        # Tabela de eventos corporativos
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS eventos_corporativos (
+        # Tabela de eventos corporativos - Migration Logic
+        eventos_corporativos_final_schema = """
+        CREATE TABLE eventos_corporativos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             id_acao INTEGER NOT NULL,
             evento TEXT NOT NULL,
-            data_aprovacao TEXT,
-            data_registro TEXT,
-            data_ex TEXT,
+            data_aprovacao DATE,
+            data_registro DATE,
+            data_ex DATE,
             razao TEXT,
             FOREIGN KEY(id_acao) REFERENCES acoes(id)
         )
-        ''')
+        """
+
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eventos_corporativos';")
+        eventos_table_exists = cursor.fetchone()
+        eventos_needs_migration = False
+
+        if eventos_table_exists:
+            cursor.execute("PRAGMA table_info(eventos_corporativos);")
+            columns_info = {row['name']: str(row['type']).upper() for row in cursor.fetchall()}
+            # Check if any of the date columns are TEXT, indicating need for migration
+            if columns_info.get('data_aprovacao') == 'TEXT' or \
+               columns_info.get('data_registro') == 'TEXT' or \
+               columns_info.get('data_ex') == 'TEXT':
+                eventos_needs_migration = True
+
+        if eventos_needs_migration:
+            print("INFO: Migrating 'eventos_corporativos' table to use DATE types for date columns...")
+            try:
+                cursor.execute("ALTER TABLE eventos_corporativos RENAME TO eventos_corporativos_old;")
+                cursor.execute(eventos_corporativos_final_schema) # Create new table with DATE types
+                # Data is NOT copied from _old to new as per requirements
+                cursor.execute("DROP TABLE eventos_corporativos_old;")
+                print("INFO: 'eventos_corporativos' table migrated (data not copied).")
+            except Exception as e:
+                print(f"ERROR: Failed to migrate 'eventos_corporativos' table: {e}")
+                # Attempt to restore if rename succeeded but subsequent steps failed
+                try:
+                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eventos_corporativos_old';")
+                    if cursor.fetchone():
+                        # If new table was created, drop it before renaming old one back
+                        cursor.execute("DROP TABLE IF EXISTS eventos_corporativos;")
+                        cursor.execute("ALTER TABLE eventos_corporativos_old RENAME TO eventos_corporativos;")
+                        print("INFO: Attempted to restore 'eventos_corporativos' table from backup due to migration error.")
+                except Exception as restore_e:
+                    print(f"ERROR: Failed to restore 'eventos_corporativos' table from backup: {restore_e}")
+                raise # Re-raise the original migration error
+        else:
+            # If no migration needed, just ensure table exists with the correct schema (DATE types)
+            # Replace "CREATE TABLE" with "CREATE TABLE IF NOT EXISTS"
+            cursor.execute(eventos_corporativos_final_schema.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1))
 
         # Criar índice para a coluna id_acao na tabela eventos_corporativos
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_eventos_corporativos_id_acao ON eventos_corporativos(id_acao);')
