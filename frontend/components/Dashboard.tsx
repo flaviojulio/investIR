@@ -625,16 +625,17 @@ export function Dashboard() {
         <Tabs
           value={activeTab}
           onValueChange={(value) => {
-            if (value === "overview") { router.push("/"); }
-            else if (value === "proventos") { setActiveTab("proventos"); }
-            else if (value === "taxes") { setActiveTab("taxes"); }
-            else if (value === "prejuizo_acumulado") { setActiveTab("prejuizo_acumulado"); }
-            else { setActiveTab(value); } // For "history" and any other local tabs
+            if (value === "overview") {
+              setActiveTab("overview");
+              router.push("/");
+            } else {
+              setActiveTab(value);
+            }
           }}
           className="space-y-6"
         >
           <TabsList className="grid w-full grid-cols-5 md:grid-cols-8 lg:grid-cols-11 xl:grid-cols-11">
-            <TabsTrigger value="overview">Visão Geral</TabsTrigger>
+            <TabsTrigger value="overview">Dashboard</TabsTrigger>
             <TabsTrigger value="proventos">Proventos</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
             <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
