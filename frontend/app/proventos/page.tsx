@@ -314,9 +314,9 @@ export default function ProventosPage() {
                   <YAxis stroke="hsl(var(--foreground))" tickFormatter={formatYAxisTick} />
                   <Tooltip content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
                   <Legend content={<ChartLegendContent />} />
-                  <Bar dataKey="Dividendos" stackId="a" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="JCP" stackId="a" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Outros" stackId="a" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Dividendos" stackId="a" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="JCP" stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Outros" stackId="a" fill="#fbbf24" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartContainer>

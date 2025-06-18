@@ -4,11 +4,11 @@ from dateutil.relativedelta import relativedelta
 from pydantic import BaseModel, validator, Field
 from typing import List, Dict, Any, Optional
 
-from backend.database import (
-    obter_id_acao_por_ticker,
+from database import (
+    obter_id_acao_por_ticker, 
     obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a
 )
-from backend.models import EventoCorporativoInfo
+from models import EventoCorporativoInfo
 # Note: datetime is already imported, List, Dict, Any, Optional are from typing.
 # datetime_date is an alias for date, which is fine.
 
@@ -217,6 +217,7 @@ def get_holdings_on_date(operations: List[Operacao], target_date_str: str) -> Di
         id_acao = obter_id_acao_por_ticker(ticker_symbol)
         if id_acao:
             raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, target_d)
+            print(f"Eventos retornados para {ticker_symbol} até {target_d}: {raw_events_data}")
             # raw_events_data returns List[Dict[str, Any]], suitable for EventoCorporativoInfo(**event_data)
             events_by_ticker[ticker_symbol] = [EventoCorporativoInfo(**event_data) for event_data in raw_events_data]
 
@@ -565,7 +566,7 @@ def calculate_portfolio_history(
     # Simpler: Capital Gain / (IPV + Cash Invested from Buys during period)
     # If IPV is 0 (started with no portfolio), then denominator is just cash_invested_in_period.
 
-    # Let's use: IPV + cash_invested_in_period. If IPV is from before period, it's part of base.
+    # Let's use: IPV + cash_invested_in_period. If IPV is from before base, it's part of base.
     # If an operation (buy) happened on start_date, its value is part of IPV *and* cash_invested_in_period.
     # This needs to be careful.
     # Let's consider IPV as the value of holdings *at the start of start_date*.
