@@ -67,14 +67,22 @@ const formatMonthName = (monthStr: string): string => {
   return date.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
 };
 
+const BAR_COLORS = {
+  Dividendos: "#2563eb", // azul
+  JCP: "#22c55e",       // verde
+  Outros: "#fbbf24",    // amarelo
+};
+
 const PIE_CHART_COLORS = [
-  "hsl(var(--chart-1))",
-  "hsl(var(--chart-2))",
-  "hsl(var(--chart-3))",
-  "hsl(var(--chart-4))",
-  "hsl(var(--chart-5))",
-  "hsl(var(--primary))",
-  "hsl(var(--secondary))",
+  BAR_COLORS.Dividendos, // azul
+  BAR_COLORS.JCP,        // verde
+  BAR_COLORS.Outros,     // amarelo
+  "#a21caf",            // extra: roxo
+  "#0ea5e9",            // extra: ciano
+  "#eab308",            // extra: dourado
+  "#14b8a6",            // extra: teal
+  "#f472b6",            // extra: rosa
+  "#6366f1",            // extra: indigo
 ];
 
 function ProventosTabContent() {
@@ -358,11 +366,23 @@ function ProventosTabContent() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" stroke="hsl(var(--foreground))" />
                   <YAxis stroke="hsl(var(--foreground))" tickFormatter={formatYAxisTick} />
-                  <Tooltip content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
+                  <Tooltip content={<ChartTooltipContent formatter={(value, name) => `${name}: ${formatCurrency(Number(value))}`} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
                   <Legend content={<ChartLegendContent />} />
-                  <Bar dataKey="Dividendos" stackId="a" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="JCP" stackId="a" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Outros" stackId="a" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Dividendos" stackId="a" radius={[4, 4, 0, 0]}>
+                    {dadosGraficoAnual.map((_, index) => (
+                      <Cell key={`dividendo-bar-${index}`} fill={BAR_COLORS.Dividendos} />
+                    ))}
+                  </Bar>
+                  <Bar dataKey="JCP" stackId="a" radius={[4, 4, 0, 0]}>
+                    {dadosGraficoAnual.map((_, index) => (
+                      <Cell key={`jcp-bar-${index}`} fill={BAR_COLORS.JCP} />
+                    ))}
+                  </Bar>
+                  <Bar dataKey="Outros" stackId="a" radius={[4, 4, 0, 0]}>
+                    {dadosGraficoAnual.map((_, index) => (
+                      <Cell key={`outros-bar-${index}`} fill={BAR_COLORS.Outros} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -384,11 +404,23 @@ function ProventosTabContent() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" stroke="hsl(var(--foreground))" />
                   <YAxis stroke="hsl(var(--foreground))" tickFormatter={formatYAxisTick} />
-                  <Tooltip content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
+                  <Tooltip content={<ChartTooltipContent formatter={(value, name) => `${name}: ${formatCurrency(Number(value))}`} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
                   <Legend content={<ChartLegendContent />} />
-                  <Bar dataKey="Dividendos" stackId="a" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="JCP" stackId="a" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Outros" stackId="a" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Dividendos" stackId="a" radius={[4, 4, 0, 0]}>
+                    {dadosGraficoMensal.map((_, index) => (
+                      <Cell key={`dividendo-mes-bar-${index}`} fill={BAR_COLORS.Dividendos} />
+                    ))}
+                  </Bar>
+                  <Bar dataKey="JCP" stackId="a" radius={[4, 4, 0, 0]}>
+                    {dadosGraficoMensal.map((_, index) => (
+                      <Cell key={`jcp-mes-bar-${index}`} fill={BAR_COLORS.JCP} />
+                    ))}
+                  </Bar>
+                  <Bar dataKey="Outros" stackId="a" radius={[4, 4, 0, 0]}>
+                    {dadosGraficoMensal.map((_, index) => (
+                      <Cell key={`outros-mes-bar-${index}`} fill={BAR_COLORS.Outros} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </ChartContainer>
@@ -408,13 +440,22 @@ function ProventosTabContent() {
           <ChartContainer config={{}} className="min-h-[300px] w-full">
             <ResponsiveContainer width="100%" height={400}>
               <PieChart>
-                <Pie data={dadosGraficoPizzaAcao} cx="50%" cy="50%" labelLine={false} outerRadius={120} fill="#8884d8" dataKey="value" nameKey="name">
+                <Pie data={dadosGraficoPizzaAcao} cx="50%" cy="50%" labelLine={false} outerRadius={120} fill={BAR_COLORS.Dividendos} dataKey="value" nameKey="name">
                   {dadosGraficoPizzaAcao.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={PIE_CHART_COLORS[index % PIE_CHART_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip content={<ChartTooltipContent formatter={(value, name) => [formatCurrency(Number(value)), name]} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
-                <Legend content={<ChartLegendContent />} />
+                <Tooltip content={<ChartTooltipContent formatter={(value, name) => [formatCurrency(Number(value)), ' '+ name]} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
+                <Legend content={({ payload }) => (
+                  <ul className="flex flex-wrap gap-4 mt-2">
+                    {payload && payload.map((entry, idx) => (
+                      <li key={`legend-pie-${entry.value}`} className="flex items-center gap-2">
+                        <span style={{ background: entry.color, width: 16, height: 16, display: 'inline-block', borderRadius: 4 }}></span>
+                        <span className="text-sm">{entry.value}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )} />
               </PieChart>
             </ResponsiveContainer>
           </ChartContainer>

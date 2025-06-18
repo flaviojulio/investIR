@@ -10,7 +10,7 @@ interface TabelaProventosProps {
   data: ProventoRecebidoUsuario[];
 }
 
-type SortableKeys = 'data_ex' | 'dt_pagamento' | 'ticker_acao' | 'tipo' | 'valor_total_recebido';
+type SortableKeys = 'data_ex' | 'dt_pagamento' | 'ticker_acao' | 'tipo_provento' | 'valor_total_recebido';
 
 export function TabelaProventos({ data }: TabelaProventosProps) {
   const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' } | null>({ key: 'dt_pagamento', direction: 'descending' });
@@ -68,7 +68,7 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
     { key: 'dt_pagamento', label: 'Data Pag.', isSortable: true },
     { key: 'ticker_acao', label: 'Ticker', isSortable: true },
     { label: 'Nome Ação', className: 'hidden lg:table-cell', isSortable: false },
-    { key: 'tipo', label: 'Tipo', isSortable: true },
+    { key: 'tipo_provento', label: 'Tipo', isSortable: true },
     { label: 'Qtd. na Data Ex', className: 'text-right hidden sm:table-cell', isSortable: false },
     { label: 'Valor Unit.', className: 'text-right', isSortable: false }, // valor unitário do provento
     { key: 'valor_total_recebido', label: 'Total Recebido', className: 'text-right', isSortable: true },

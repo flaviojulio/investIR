@@ -9,7 +9,7 @@ import logging # Added logging import
 from models import (
     OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
     OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
-    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo,
+    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # EventoCorporativoInfo already here
     UsuarioProventoRecebidoDB, # Modelo para a tabela do banco
     # ProventoRecebidoUsuario, # Comentado pois o serviço agora retorna UsuarioProventoRecebidoDB e os resumos são construídos a partir de queries diretas.
     ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, DetalheTipoProvento
@@ -51,6 +51,8 @@ from database import (
     obter_todos_eventos_corporativos,
     # For saldo_acao_em_data
     obter_operacoes_por_ticker_ate_data_db,
+    obter_id_acao_por_ticker, # Added for corporate event processing
+    obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a, # Added for corporate event processing
     # For new service:
     limpar_usuario_proventos_recebidos_db,
     inserir_usuario_provento_recebido_db,
@@ -600,14 +602,72 @@ def recalcular_carteira(usuario_id: int) -> None:
     limpar_carteira_usuario_db(usuario_id=usuario_id)
 
     # Obtém todas as operações do usuário
-    operacoes = obter_todas_operacoes(usuario_id=usuario_id)
+    operacoes_originais = obter_todas_operacoes(usuario_id=usuario_id)
+
+    # --- START NEW LOGIC FOR CORPORATE EVENTS ---
+    adjusted_operacoes = []
+    if operacoes_originais: # Only proceed if there are operations
+        today_date = date.today()
+        unique_tickers = list(set(op_from_db['ticker'] for op_from_db in operacoes_originais))
+        events_by_ticker: Dict[str, List[EventoCorporativoInfo]] = {}
+
+        for ticker_symbol in unique_tickers:
+            id_acao = obter_id_acao_por_ticker(ticker_symbol)
+            if id_acao:
+                raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, today_date)
+                # Event data from DB should have date objects due to [date] alias and converters
+                events_by_ticker[ticker_symbol] = [EventoCorporativoInfo.model_validate(event_data) for event_data in raw_events_data]
+
+        for op_from_db in operacoes_originais:
+            current_op_date = op_from_db['date']
+            # Ensure current_op_date is a date object (should be from obter_todas_operacoes)
+            if not isinstance(current_op_date, date):
+                try: # Defensive parsing if it's an ISO string
+                    current_op_date = datetime.fromisoformat(str(current_op_date).split("T")[0]).date()
+                except ValueError: # If parsing fails, log and skip adjustment for this op or handle error
+                    logging.error(f"Invalid date format for operation ID {op_from_db.get('id')}: {op_from_db['date']}. Skipping event adjustment for this op.")
+                    adjusted_operacoes.append(op_from_db.copy()) # Add original op and continue
+                    continue
+
+            adj_op_data = op_from_db.copy()
+            adj_op_data['date'] = current_op_date
+
+            adj_op_data['quantity'] = int(adj_op_data['quantity'])
+            adj_op_data['price'] = float(adj_op_data['price'])
+
+            ticker_events = events_by_ticker.get(adj_op_data['ticker'], [])
+
+            for event_info in ticker_events:
+                if event_info.data_ex is None:
+                    continue
+
+                if adj_op_data['date'] < event_info.data_ex:
+                    factor = event_info.get_adjustment_factor()
+                    if factor == 1.0:
+                        continue
+
+                    current_quantity_float = float(adj_op_data['quantity'])
+                    current_price_float = float(adj_op_data['price'])
+
+                    # Assuming Desdobramento and Agrupamento are primary events handled by get_adjustment_factor
+                    current_quantity_float = current_quantity_float * factor
+                    if factor != 0.0:
+                        current_price_float = current_price_float / factor
+
+                    adj_op_data['quantity'] = int(round(current_quantity_float))
+                    adj_op_data['price'] = current_price_float
+
+            adjusted_operacoes.append(adj_op_data)
+    else: # No original operations
+        adjusted_operacoes = []
+    # --- END NEW LOGIC FOR CORPORATE EVENTS ---
     
     # Dicionário para armazenar a carteira atual
     carteira_temp = defaultdict(lambda: {"quantidade": 0, "custo_total": 0.0, "preco_medio": 0.0})
     
-    # Processa cada operação
-    for op in operacoes:
-        logging.info(f"[recalcular_carteira] Processando op: {op['ticker']}, {op['operation']}, Qtd: {op['quantity']}, Preço: {op['price']}, Data: {op.get('date')})")
+    # Processa cada operação ajustada
+    for op in adjusted_operacoes: # Iterate over adjusted_operacoes
+        logging.info(f"[recalcular_carteira] Processando op ajustada: {op['ticker']}, {op['operation']}, Qtd: {op['quantity']}, Preço: {op['price']}, Data: {op.get('date')})")
         ticker = op["ticker"]
 
         # Log ANTES da operação
