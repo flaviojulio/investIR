@@ -21,6 +21,7 @@ import {
 } from "@/lib/types" // Import actual types
 import { getPortfolioEquityHistory } from "@/lib/api" // Import actual API function
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+import { ptBR } from 'date-fns/locale';
 
 const chartConfig = {
   portfolioValue: {
@@ -91,18 +92,51 @@ export function PortfolioEquityChart() {
   }
 
   useEffect(() => {
+    let didCancel = false;
     const fetchData = async () => {
       setIsLoading(true)
       setError(null)
 
       const { startDate, endDate, frequency } = calculateDates(selectedPeriod)
 
-      try {
-        // Use the actual API function
-        const response = await getPortfolioEquityHistory(startDate, endDate, frequency)
+      // Lógica especial para o período 'all':
+      if (selectedPeriod === 'all') {
+        try {
+          // 1. Busca ampla (como antes)
+          const response = await getPortfolioEquityHistory(startDate, endDate, frequency)
+          if (didCancel) return;
+          // 2. Se houver dados, pega a data do primeiro ponto real
+          if (response.equity_curve && response.equity_curve.length > 0) {
+            const firstDate = response.equity_curve[0].date;
+            // Se o primeiro dado não for igual ao startDate original, refaz a busca
+            if (firstDate !== startDate) {
+              const refined = await getPortfolioEquityHistory(firstDate, endDate, frequency)
+              if (didCancel) return;
+              setChartData(refined.equity_curve)
+              setProfitability(refined.profitability)
+              setIsLoading(false)
+              return;
+            }
+          }
+          setChartData(response.equity_curve)
+          setProfitability(response.profitability)
+        } catch (err) {
+          if (err instanceof Error) {
+            setError(err.message)
+          } else {
+            setError("Ocorreu um erro desconhecido.")
+          }
+          setChartData([])
+          setProfitability(null)
+        } finally {
+          setIsLoading(false)
+        }
+        return;
+      }
 
-        // The API returns dates as "YYYY-MM-DD" or "YYYY-MM".
-        // XAxis tickFormatter will handle display formatting.
+      // Demais períodos (lógica padrão)
+      try {
+        const response = await getPortfolioEquityHistory(startDate, endDate, frequency)
         setChartData(response.equity_curve)
         setProfitability(response.profitability)
       } catch (err) {
@@ -117,21 +151,13 @@ export function PortfolioEquityChart() {
         setIsLoading(false)
       }
     }
-
     fetchData()
+    return () => { didCancel = true }
   }, [selectedPeriod])
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
-  const formatDateTick = (tickItem: string) => {
-    // Se já estiver no formato 'jan-24', retorna direto
-    if (/^[a-zA-Z]{3}-\d{2}$/.test(tickItem)) return tickItem;
-    if (tickItem.length === 7) return format(parseISO(tickItem + '-01'), 'MMM/yy').replace('.', '');
-    return format(parseISO(tickItem), 'dd/MM/yy');
-  };
-
-  // Após obter chartData e antes de renderizar o BarChart:
   const filteredChartData = React.useMemo(() => {
     if (selectedPeriod === "all" && chartData.length > 0) {
       // Agrupar por mês: pegar o último valor de cada mês
@@ -142,12 +168,29 @@ export function PortfolioEquityChart() {
         monthlyMap.set(key, d); // sobrescreve, fica o último do mês
       });
       // Converter para array e ordenar
-      const monthlyData = Array.from(monthlyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-      // Formatar o campo date para 'MMM-yy' (jan-24)
-      return monthlyData.map((d) => ({ ...d, date: format(parseISO(d.date), 'MMM-yy', { locale: undefined }).replace('.', '') }));
+      let monthlyData = Array.from(monthlyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      // Remover meses "vazios": só manter se for o primeiro ou se o valor mudou
+      monthlyData = monthlyData.filter((d, i, arr) => {
+        if (i === 0) return true;
+        return d.value !== arr[i - 1].value;
+      });
+      // Remover datas inválidas (ex: Jan-00 ou datas antes do primeiro dado real)
+      monthlyData = monthlyData.filter((d) => {
+        const dateObj = parseISO(d.date);
+        return dateObj.getFullYear() > 2000 || (dateObj.getFullYear() === 2000 && dateObj.getMonth() > 0);
+      });
+      // Formatar o campo date para 'MMM-yy' em português
+      return monthlyData.map((d) => ({ ...d, date: format(parseISO(d.date), 'MMM-yy', { locale: ptBR }).replace('.', '') }));
     }
     return chartData;
   }, [selectedPeriod, chartData]);
+
+  const formatDateTick = (tickItem: string) => {
+    // Se já estiver no formato 'jan-24', retorna direto
+    if (/^[a-zA-Záéíóúãõâêôç]{3}-\d{2}$/i.test(tickItem)) return tickItem;
+    if (tickItem.length === 7) return format(parseISO(tickItem + '-01'), 'MMM/yy', { locale: ptBR }).replace('.', '');
+    return format(parseISO(tickItem), 'dd/MM/yy');
+  };
 
   return (
     <Card>
@@ -205,8 +248,8 @@ export function PortfolioEquityChart() {
                       labelFormatter={(label) => {
                         try {
                           if (!label) return '';
-                          if (/^[a-zA-Z]{3}-\d{2}$/.test(label)) return label;
-                          if (label.length === 7) return format(parseISO(label + '-01'), 'MMM/yy').replace('.', '');
+                          if (/^[a-zA-Záéíóúãõâêôç]{3}-\d{2}$/i.test(label)) return label;
+                          if (label.length === 7) return format(parseISO(label + '-01'), 'MMM/yy', { locale: ptBR }).replace('.', '');
                           if (label.length === 10) return format(parseISO(label), 'dd/MM/yyyy');
                           return format(parseISO(label), 'dd/MM/yyyy HH:mm');
                         } catch (e) {
