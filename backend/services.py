@@ -642,6 +642,16 @@ def recalcular_carteira(usuario_id: int) -> None:
                     continue
 
                 if adj_op_data['date'] < event_info.data_ex:
+                    if event_info.evento and event_info.evento.lower().startswith("bonific"):
+                        # Bonificação: quantidade_nova = quantidade_antiga + (quantidade_antiga * (numerador/denominador))
+                        bonus_increase = event_info.get_bonus_quantity_increase(float(adj_op_data['quantity']))
+                        quantidade_antiga = float(adj_op_data['quantity'])
+                        quantidade_nova = quantidade_antiga + bonus_increase
+                        adj_op_data['quantity'] = int(round(quantidade_nova))
+                        # Preço por ação é diluído: novo_preco = (preco_antigo * quantidade_antiga) / quantidade_nova
+                        if quantidade_nova > 0:
+                            adj_op_data['price'] = float(adj_op_data['price']) * quantidade_antiga / quantidade_nova
+                        continue
                     factor = event_info.get_adjustment_factor()
                     if factor == 1.0:
                         continue
@@ -649,7 +659,7 @@ def recalcular_carteira(usuario_id: int) -> None:
                     current_quantity_float = float(adj_op_data['quantity'])
                     current_price_float = float(adj_op_data['price'])
 
-                    # Assuming Desdobramento and Agrupamento are primary events handled by get_adjustment_factor
+                    # Desdobramento/Agrupamento: multiplicação
                     current_quantity_float = current_quantity_float * factor
                     if factor != 0.0:
                         current_price_float = current_price_float / factor
@@ -926,7 +936,7 @@ def recalcular_resultados(usuario_id: int) -> None:
                 if quantidade_vendida_a_descoberto > 0:
                     valor_desta_venda_descoberto_bruto = quantidade_vendida_a_descoberto * preco_venda_unitario
                     fees_desta_venda_descoberto = (fees_total_venda / quantidade_venda_total) * quantidade_vendida_a_descoberto if quantidade_venda_total > 0 else 0
-                    valor_liquido_desta_venda_descoberto = valor_desta_venda_descoberto_bruto - fees_desta_venda_descoberto
+                    valor_liquido_desta_venda_descoberto = valor_desta_venda_descoberto_bruto - fees_desta_venda_descoberta
 
                     resultado_mes_swing["vendas"] += valor_liquido_desta_venda_descoberto
                     # O custo da venda a descoberto será apurado na recompra.
@@ -1217,6 +1227,7 @@ def calcular_resultados_por_ticker_service(usuario_id: int, ticker: str) -> Resu
         custo_total_atual = item_carteira_atual.get("custo_total", 0.0)
 
     # 2. Historical Aggregates from Operations
+
     operacoes_ticker = listar_operacoes_por_ticker_service(usuario_id=usuario_id, ticker=ticker_upper)
     
     total_investido_historico = 0.0

@@ -227,62 +227,39 @@ def get_holdings_on_date(operations: List[Operacao], target_date_str: str) -> Di
 
         # ticker_events are already sorted by data_ex ASC from the database function.
         for event_info in ticker_events:
-            # Ensure event_info.data_ex is not None. It should be guaranteed by DB query.
             if event_info.data_ex is None:
                 continue
 
-            # Apply event only if operation date is strictly BEFORE event's data_ex
-            # op.date is datetime_date (alias for datetime.date)
             if adjusted_op.date < event_info.data_ex:
+                if event_info.evento and event_info.evento.lower().startswith("bonific"):
+                    bonus_increase = event_info.get_bonus_quantity_increase(float(adjusted_op.quantity))
+                    new_quantity = float(adjusted_op.quantity) + bonus_increase
+                    # Preço por ação é diluído: novo_preco = (preco_antigo * quantidade_antiga) / quantidade_nova
+                    if new_quantity > 0:
+                        new_price = float(adjusted_op.price) * float(adjusted_op.quantity) / new_quantity
+                    else:
+                        new_price = float(adjusted_op.price)
+                    update_data = {
+                        'quantity': int(round(new_quantity)),
+                        'price': new_price
+                    }
+                    adjusted_op = adjusted_op.copy(update=update_data)
+                    continue
                 factor = event_info.get_adjustment_factor()
-
-                if factor == 1.0: # No change from this event
+                if factor == 1.0:
                     continue
 
-                new_quantity_float = float(adjusted_op.quantity) # Start with float for precision
+                new_quantity_float = float(adjusted_op.quantity)
                 new_price_float = float(adjusted_op.price)
 
-                # Assuming "Desdobramento" and "Agrupamento" are the primary events affecting quantity/price this way.
-                # The prompt implies this, but a more robust solution might check event_info.razao directly.
-                # For now, trusting get_adjustment_factor() covers the logic based on 'razao'.
-                # The prompt's example shows get_adjustment_factor handles "1:5" -> 5.0 and "10:1" -> 0.1
-                # For splits (desdobramento, 1:5, factor=5), quantity * 5, price / 5
-                # For reverse splits (agrupamento, 10:1, factor=0.1), quantity * 0.1, price / 0.1
-
                 new_quantity_float = new_quantity_float * factor
-                if factor != 0.0: # Should always be true for valid factors from razao
+                if factor != 0.0:
                     new_price_float = new_price_float / factor
-                # If factor is 0 (e.g. from "X:0" if allowed), price remains unchanged.
-                # The get_adjustment_factor should prevent factor being 0 if 'A' in 'A:B' is non-zero.
-                # If A is 0 (e.g. "0:B"), get_adjustment_factor returns 1.0, so this block is skipped.
 
-                # Placeholder for Bonificacao if needed in future
-                # The current factor logic primarily addresses splits/groupings.
-                # Bonificacao might require different handling (e.g., factor might represent percentage increase, price adjustment is different)
-                # For example, if event_info.evento == "Bonificacao":
-                #    # Future logic for bonus issues:
-                #    # - Increase quantity based on bonus ratio (e.g., 10% bonus -> quantity * 1.1)
-                #    # - Price per share is diluted. Total cost remains same, so new_price = (old_price * old_quantity) / new_quantity
-                #    # - This typically means the 'factor' concept might differ for Bonificacao or need special handling.
-                #    # - For now, the existing factor application will proceed. If Bonificacao has factor 1.0, no change occurs.
-                #    #   If it has a different factor from razao, it will be applied as per current logic, which might be okay or need review.
-                #    pass
-
-                # Create a new Operacao instance with adjusted values
-                # Ensure quantity is integer as per Operacao model's type hint
                 update_data = {
                     'quantity': int(round(new_quantity_float)),
                     'price': new_price_float
-                    # Fees are not adjusted by these corporate actions
                 }
-                # Pydantic models are immutable by default, but .copy() allows creating modified one.
-                # Ensure the local Operacao model supports .copy() or manual recreation:
-                # temp_data = adjusted_op.dict()
-                # temp_data.update(update_data)
-                # adjusted_op = Operacao(**temp_data)
-                # For Pydantic v1, .copy(update=...) is common. For v2, model_copy(update=...)
-                # Assuming Pydantic v1 style .copy() or that the model is mutable for simplicity of example.
-                # The local Operacao is a Pydantic model, should support .copy(update=...)
                 adjusted_op = adjusted_op.copy(update=update_data)
         return adjusted_op
 
@@ -573,7 +550,7 @@ def calculate_portfolio_history(
     # Cash flows are for operations *during* [start_date, end_date].
 
     # Recalculate IPV based on holdings just before any operations on start_date,
-    # or simply use equity_curve[0]['value'] which is value at end of start_date (or first period end).
+    # or simply use equity_curve[0]['value'] which is value at end of the first period (e.g., end of start_date or end of start_month).
     # The current IPV (equity_curve[0]['value']) is at the end of the first period (e.g., end of start_date or end of start_month).
     # This is fine.
 
