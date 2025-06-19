@@ -15,6 +15,13 @@ import { api } from "@/lib/api" // For API calls
 import { useToast } from "@/hooks/use-toast" // For notifications
 import { formatCurrency, formatNumber } from "@/lib/utils"; // Import centralized formatters
 
+// Extensão do tipo CarteiraItem para incluir campos calculados
+interface CarteiraItemWithCalc extends CarteiraItem {
+  _valorAtualCalculated: number;
+  _resultadoAtualCalculated: number;
+  _resultadoPercentualCalculated: number;
+}
+
 interface StockTableProps {
   carteira: CarteiraItem[]
   onUpdate: () => void
@@ -39,7 +46,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
   const [searchTermST, setSearchTermST] = useState<string>("");
   
   // New state for data to be displayed in the table
-  const [processedCarteira, setProcessedCarteira] = useState<CarteiraItem[]>(carteira); 
+  const [processedCarteira, setProcessedCarteira] = useState<CarteiraItemWithCalc[]>(carteira as CarteiraItemWithCalc[]); 
 
   useEffect(() => {
     // Augment items with values needed for sorting/filtering, especially calculated ones
@@ -140,7 +147,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
       });
     }
 
-    setProcessedCarteira(newProcessedData);
+    setProcessedCarteira(newProcessedData as CarteiraItemWithCalc[]);
   }, [carteira, searchTermST, sortConfigST, formatCurrency]); // formatCurrency is stable if defined outside or memoized
 
   const requestSortST = (key: string) => {
@@ -350,34 +357,22 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {processedCarteira.map((item) => { // Changed to map over processedCarteira
-                console.log("StockTable: Rendering item", { ticker: item.ticker, quantidade: item.quantidade, custo_total: item.custo_total, preco_medio: item.preco_medio, _valorAtualCalculated: item._valorAtualCalculated, _resultadoAtualCalculated: item._resultadoAtualCalculated, _resultadoPercentualCalculated: item._resultadoPercentualCalculated }); // <--- ADICIONAR/CONFIRMAR ESTE LOG
-
-                // Utilizar os valores pré-calculados e corrigidos do useEffect
-                // const valorInicial = item.custo_total; // Esta linha pode ser removida
-                const currentPrice = getSimulatedCurrentPrice(item.preco_medio); // Necessário para a coluna "Preço Atual*"
-                const valorAtualDisplay = item._valorAtualCalculated; // Valor para a coluna "Valor Atual*"
-                const resultadoAtualDisplay = item._resultadoAtualCalculated; // Valor para a coluna "Resultado*"
-                const resultadoPercentualAtualDisplay = item._resultadoPercentualCalculated; // Valor para a coluna "Resultado (%)*"
-
+              {processedCarteira.map((item) => {
+                const typedItem = item as CarteiraItemWithCalc;
+                const currentPrice = getSimulatedCurrentPrice(typedItem.preco_medio);
+                const valorAtualDisplay = typedItem._valorAtualCalculated;
+                const resultadoAtualDisplay = typedItem._resultadoAtualCalculated;
+                const resultadoPercentualAtualDisplay = typedItem._resultadoPercentualCalculated;
                 return (
-                  <TableRow key={item.ticker}>
-                    <TableCell className="font-medium">
-                      <Link href={`/acao/${item.ticker}`} passHref>
-                        <Badge variant="outline" className="hover:underline cursor-pointer">
-                          {item.ticker}
-                        </Badge>
-                      </Link>
-                    </TableCell>
-                    <TableCell>{item.nome || '-'}</TableCell> {/* Display stock name */}
-                    <TableCell className="text-right">{formatNumber(item.quantidade)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(item.preco_medio)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(Math.abs(item.custo_total))}</TableCell>
+                  <TableRow key={typedItem.ticker}>
+                    <TableCell className="font-medium"><Link href={`/acao/${typedItem.ticker}`} passHref><Badge variant="outline" className="hover:underline cursor-pointer">{typedItem.ticker}</Badge></Link></TableCell>
+                    <TableCell>{typedItem.nome || '-'}</TableCell> {/* Display stock name */}
+                    <TableCell className="text-right">{formatNumber(typedItem.quantidade)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(typedItem.preco_medio)}</TableCell>
+                    <TableCell className="text-right">{formatCurrency(Math.abs(typedItem.custo_total))}</TableCell>
                     <TableCell className="text-right">{formatCurrency(currentPrice)}</TableCell>
                     <TableCell className="text-right font-medium">{formatCurrency(valorAtualDisplay)}</TableCell>
-                    <TableCell
-                      className={`text-right font-medium ${resultadoAtualDisplay >= 0 ? "text-green-600" : "text-red-600"}`}
-                    >
+                    <TableCell className={`text-right font-medium ${resultadoAtualDisplay >= 0 ? "text-green-600" : "text-red-600"}`}>
                       <div className="flex items-center justify-end gap-1">
                         {resultadoAtualDisplay >= 0 ? (
                           <TrendingUp className="h-4 w-4" />
@@ -387,20 +382,16 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                         {formatCurrency(Math.abs(resultadoAtualDisplay))}
                       </div>
                     </TableCell>
-                    <TableCell
-                      className={`text-right font-medium ${
-                        typeof resultadoPercentualAtualDisplay === 'number' && resultadoPercentualAtualDisplay >= 0 ? "text-green-600" : "text-red-600"
-                      }`}
-                    >
+                    <TableCell className={`text-right font-medium ${typeof resultadoPercentualAtualDisplay === 'number' && resultadoPercentualAtualDisplay >= 0 ? "text-green-600" : "text-red-600"}`}>
                       {typeof resultadoPercentualAtualDisplay === 'number' && resultadoPercentualAtualDisplay >= 0 ? "+" : ""}
                       {typeof resultadoPercentualAtualDisplay === 'number' ? resultadoPercentualAtualDisplay.toFixed(2) : 'N/A'}%
                     </TableCell>
                     <TableCell className="text-center space-x-1">
-                      <Button variant="ghost" size="sm" onClick={() => handleOpenEditModal(item)} title="Editar">
+                      <Button variant="ghost" size="sm" onClick={() => handleOpenEditModal(typedItem)} title="Editar">
                         <Edit className="h-4 w-4" />
                       </Button>
                       <AlertDialog 
-                        open={isDeleteAlertOpen && deletingTicker === item.ticker} 
+                        open={isDeleteAlertOpen && deletingTicker === typedItem.ticker} 
                         onOpenChange={(isOpen) => { 
                           if (!isOpen) setDeletingTicker(null); 
                           setIsDeleteAlertOpen(isOpen); 
@@ -411,23 +402,23 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                             variant="ghost" 
                             size="sm" 
                             title="Excluir"
-                            onClick={() => { setDeletingTicker(item.ticker); setIsDeleteAlertOpen(true); }} 
-                            disabled={isDeleting && deletingTicker === item.ticker}
+                            onClick={() => { setDeletingTicker(typedItem.ticker); setIsDeleteAlertOpen(true); }} 
+                            disabled={isDeleting && deletingTicker === typedItem.ticker}
                           >
                             <Trash2 className="h-4 w-4 text-red-500" />
                           </Button>
                         </AlertDialogTrigger>
-                        {deletingTicker === item.ticker && ( // Ensure content is rendered only for the target item
+                        {deletingTicker === typedItem.ticker && (
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Tem certeza que deseja remover {item.ticker} da sua carteira? Esta ação não pode ser desfeita e removerá o item da sua visualização de carteira atual.
+                                Tem certeza que deseja remover {typedItem.ticker} da sua carteira? Esta ação não pode ser desfeita e removerá o item da sua visualização de carteira atual.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel onClick={() => { setIsDeleteAlertOpen(false); setDeletingTicker(null); }}>Cancelar</AlertDialogCancel>
-                              <AlertDialogAction onClick={() => handleDeleteConfirm(item.ticker)} disabled={isDeleting}>
+                              <AlertDialogAction onClick={() => handleDeleteConfirm(typedItem.ticker)} disabled={isDeleting}>
                                 {isDeleting ? "Excluindo..." : "Confirmar Exclusão"}
                               </AlertDialogAction>
                             </AlertDialogFooter>
