@@ -324,6 +324,22 @@ class EventoCorporativoBase(BaseModel):
                 return 1.0
         return 1.0
     
+    def get_bonus_quantity_increase(self, current_quantity: float) -> float:
+        """
+        Para eventos de Bonificação, retorna o acréscimo de ações:
+        quantidade_bonificada = quantidade_antiga * (numerador / denominador)
+        Exemplo: 1:10 → 100 * (1/10) = 10
+        """
+        if self.evento and self.evento.lower().startswith("bonific") and self.razao and ":" in self.razao:
+            try:
+                numerador, denominador = map(float, self.razao.split(":"))
+                if denominador == 0:
+                    return 0.0
+                return current_quantity * (numerador / denominador)
+            except Exception:
+                return 0.0
+        return 0.0
+    
 class EventoCorporativoCreate(BaseModel):
     id_acao: int
     evento: str
