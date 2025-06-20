@@ -1,3 +1,27 @@
+## [Unreleased] - 2024-07-15
+### Changed
+- Optimized dividend calculation (`proventos`) by introducing a new function `recalcular_proventos_recebidos_rapido`. This function only considers stocks the user has operated, significantly improving performance when adding new operations.
+- Replaced all calls to the old `recalcular_proventos_recebidos_para_usuario_service` with the new optimized function.
+- Enhanced logging and API responses for the dividend recalculation process to include detailed statistics.
+- Modified the schema of the `proventos` table in the database: `data_registro`, `data_ex`, and `dt_pagamento` columns are now `DATE` type instead of `TEXT`.
+    - Implemented data migration logic in `database.py` to transform existing date strings (YYYY-MM-DD or DD/MM/YYYY) to the new `DATE` format.
+- Adjusted date handling in the service layer (`services.py`) to work with `datetime.date` objects returned from the database for `proventos` date fields, removing redundant string parsing.
+- Updated unit tests to reflect the new date handling, ensuring mocks provide `datetime.date` objects where appropriate.
+- Improved database query performance for dividend calculations and display by:
+    - Adding a composite index `idx_operacoes_usuario_ticker_date` on the `operacoes` table (`usuario_id`, `ticker`, `date`).
+    - Adding a composite index `idx_usr_prov_rec_uid_dtpag_dataex` on the `usuario_proventos_recebidos` table (`usuario_id`, `dt_pagamento DESC`, `data_ex DESC`).
+
+### Added
+- New database function `obter_tickers_operados_por_usuario(usuario_id)` to fetch tickers specifically operated by a user.
+- New database function `obter_proventos_por_ticker(ticker)` to fetch proventos for a specific stock ticker.
+- Unit tests for the new database and service functions to ensure correctness and cover various scenarios.
+- Configured SQLite date adapters and converters in `database.py` to automatically handle `datetime.date` objects for database columns declared with the `DATE` type.
+
+### Fixed
+- Corrected date parsing in `recalcular_proventos_recebidos_rapido` to handle "DD/MM/YYYY" format for `data_ex` field originating from the database.
+- Ensured accurate error counting in the summary returned by `recalcular_proventos_recebidos_rapido` when date parsing fails or other exceptions occur during individual provento processing.
+- Fixed an issue in the frontend Proventos page where proventos (especially those with null payment dates) were not being displayed due to incorrect date handling in the filtering logic.
+
 # Changelog
 
 Este arquivo documenta as principais mudanças e correções implementadas no sistema.

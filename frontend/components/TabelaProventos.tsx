@@ -10,7 +10,7 @@ interface TabelaProventosProps {
   data: ProventoRecebidoUsuario[];
 }
 
-type SortableKeys = 'data_ex' | 'dt_pagamento' | 'ticker_acao' | 'tipo' | 'valor_total_recebido';
+type SortableKeys = 'data_ex' | 'dt_pagamento' | 'ticker_acao' | 'tipo_provento' | 'valor_total_recebido';
 
 export function TabelaProventos({ data }: TabelaProventosProps) {
   const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' } | null>({ key: 'dt_pagamento', direction: 'descending' });
@@ -68,7 +68,7 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
     { key: 'dt_pagamento', label: 'Data Pag.', isSortable: true },
     { key: 'ticker_acao', label: 'Ticker', isSortable: true },
     { label: 'Nome Ação', className: 'hidden lg:table-cell', isSortable: false },
-    { key: 'tipo', label: 'Tipo', isSortable: true },
+    { key: 'tipo_provento', label: 'Tipo', isSortable: true },
     { label: 'Qtd. na Data Ex', className: 'text-right hidden sm:table-cell', isSortable: false },
     { label: 'Valor Unit.', className: 'text-right', isSortable: false }, // valor unitário do provento
     { key: 'valor_total_recebido', label: 'Total Recebido', className: 'text-right', isSortable: true },
@@ -105,9 +105,16 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
               <TableCell className="text-xs sm:text-sm">{formatDate(provento.dt_pagamento)}</TableCell>
               <TableCell className="font-medium text-xs sm:text-sm">{provento.ticker_acao}</TableCell>
               <TableCell className="hidden lg:table-cell text-xs sm:text-sm">{provento.nome_acao || '-'}</TableCell>
-              <TableCell className="text-xs sm:text-sm">{provento.tipo}</TableCell>
-              <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{formatNumber(provento.quantidade_na_data_ex)}</TableCell>
-              <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor)}</TableCell>
+              <TableCell className="text-xs sm:text-sm">{provento.tipo_provento}</TableCell>
+              <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">
+                {(() => {
+                  console.log(
+                    `TabelaProventos - Rendering Qtd.: ID=${provento.id}, ticker=${provento.ticker_acao}, quantidade_possuida_na_data_ex=${provento.quantidade_possuida_na_data_ex}, type=${typeof provento.quantidade_possuida_na_data_ex}`
+                  );
+                  return formatNumber(provento.quantidade_possuida_na_data_ex);
+                })()}
+              </TableCell>
+              <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor_unitario_provento)}</TableCell>
               <TableCell className="text-right font-semibold text-xs sm:text-sm">{formatCurrency(provento.valor_total_recebido)}</TableCell>
             </TableRow>
           ))}

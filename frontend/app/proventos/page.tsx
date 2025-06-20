@@ -79,6 +79,7 @@ export default function ProventosPage() {
           getProventosUsuarioDetalhado()
         ]);
 
+        console.log("API Response (proventosDetalhados raw):", JSON.stringify(detalhadosData, null, 2));
         setResumoAnualData(anuaisData);
         setProventosDetalhados(detalhadosData);
 
@@ -161,15 +162,82 @@ export default function ProventosPage() {
     .sort((a,b) => b.value - a.value) ?? [];
 
   const proventosFiltradosParaTabela = useMemo(() => {
-    if (!anoSelecionado) {
-      return proventosDetalhados; // Mostra todos se nenhum ano selecionado
-    }
-    return proventosDetalhados.filter(p => {
-      const anoPagamento = new Date(p.dt_pagamento + 'T00:00:00').getFullYear(); // Considera dt_pagamento
-      return anoPagamento === anoSelecionado;
-    });
-  }, [proventosDetalhados, anoSelecionado]);
+    console.log("Filtering proventos. anoSelecionado:", anoSelecionado);
+    console.log("proventosDetalhados before filter:", JSON.stringify(proventosDetalhados, null, 2));
 
+    // If no year is selected, the original logic was to return proventosDetalhados.
+    // This might mean anoSelecionado is always expected to be set.
+    const filteredResult = (() => { // IIFE to contain existing logic
+        if (!proventosDetalhados) return []; // Handle case where proventosDetalhados might not be loaded yet
+
+        if (anoSelecionado === undefined) {
+            return proventosDetalhados.filter(p => {
+                let dateToConsider = null;
+                if (p.dt_pagamento) {
+                    dateToConsider = new Date(p.dt_pagamento + 'T00:00:00Z');
+                    if (!isNaN(dateToConsider.getTime())) {
+                        return true; // Valid payment date exists
+                    }
+                }
+                // If no valid payment date, try data_ex
+                if (p.data_ex) {
+                    dateToConsider = new Date(p.data_ex + 'T00:00:00Z');
+                    if (!isNaN(dateToConsider.getTime())) {
+                        return true; // Valid ex-dividend date exists
+                    }
+                }
+                return false; // Neither date is valid
+            });
+        }
+
+        return proventosDetalhados.filter(p => {
+            let dateToParse = p.dt_pagamento;
+            let isPaymentDate = true;
+            let dateFieldNameForLog = "dt_pagamento";
+
+            if (!dateToParse) { // If dt_pagamento is null, undefined, or empty
+                dateToParse = p.data_ex; // Fallback to data_ex
+                isPaymentDate = false;
+                dateFieldNameForLog = "data_ex";
+            }
+
+            if (!dateToParse) { // If both are null/undefined/empty
+                return false;
+            }
+
+            const dateObj = new Date(dateToParse + 'T00:00:00Z');
+
+            if (isNaN(dateObj.getTime())) {
+                if (isPaymentDate) { // Original attempt was for dt_pagamento
+                     console.warn(`Invalid date encountered for dt_pagamento: ${p.dt_pagamento} for provento ID: ${p.id}, attempting fallback to data_ex or excluding.`);
+                     // Try data_ex if dt_pagamento was invalid
+                     if (p.data_ex) {
+                         const dataExObj = new Date(p.data_ex + 'T00:00:00Z');
+                         if (!isNaN(dataExObj.getTime())) {
+                             const anoDataEx = dataExObj.getFullYear();
+                             return anoDataEx === anoSelecionado;
+                         } else {
+                             console.warn(`Invalid date also for data_ex: ${p.data_ex} for provento ID: ${p.id}. Excluding.`);
+                             return false;
+                         }
+                     } else {
+                         return false; // dt_pagamento invalid and no data_ex to fallback
+                     }
+                } else { // Original attempt was already for data_ex (because dt_pagamento was initially null/empty)
+                     console.warn(`Invalid date encountered for data_ex: ${p.data_ex} for provento ID: ${p.id} (dt_pagamento was also missing/invalid). Excluding.`);
+                     return false;
+                }
+            }
+
+            const anoEvento = dateObj.getFullYear();
+            return anoEvento === anoSelecionado;
+        });
+    })(); // End of IIFE
+
+    console.log("proventosFiltradosParaTabela after filter:", JSON.stringify(filteredResult, null, 2));
+    return filteredResult;
+
+  }, [proventosDetalhados, anoSelecionado]);
 
   return (
     <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8">
@@ -246,9 +314,9 @@ export default function ProventosPage() {
                   <YAxis stroke="hsl(var(--foreground))" tickFormatter={formatYAxisTick} />
                   <Tooltip content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
                   <Legend content={<ChartLegendContent />} />
-                  <Bar dataKey="Dividendos" stackId="a" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="JCP" stackId="a" fill="hsl(var(--chart-2))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Outros" stackId="a" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Dividendos" stackId="a" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="JCP" stackId="a" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Outros" stackId="a" fill="#fbbf24" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartContainer>

@@ -314,6 +314,32 @@ class EventoCorporativoBase(BaseModel):
     data_ex: Optional[date] = None
     razao: Optional[str] = None
 
+    def get_adjustment_factor(self) -> float:
+        if self.razao and ":" in self.razao:
+            try:
+                numerador, denominador = map(float, self.razao.split(":"))
+                print(f"Calculando fator de ajuste: {denominador} / {numerador} para o evento {self.evento}")
+                return denominador / numerador
+            except Exception:
+                return 1.0
+        return 1.0
+    
+    def get_bonus_quantity_increase(self, current_quantity: float) -> float:
+        """
+        Para eventos de Bonificação, retorna o acréscimo de ações:
+        quantidade_bonificada = quantidade_antiga * (numerador / denominador)
+        Exemplo: 1:10 → 100 * (1/10) = 10
+        """
+        if self.evento and self.evento.lower().startswith("bonific") and self.razao and ":" in self.razao:
+            try:
+                numerador, denominador = map(float, self.razao.split(":"))
+                if denominador == 0:
+                    return 0.0
+                return current_quantity * (numerador / denominador)
+            except Exception:
+                return 0.0
+        return 0.0
+    
 class EventoCorporativoCreate(BaseModel):
     id_acao: int
     evento: str
@@ -339,7 +365,6 @@ class EventoCorporativoCreate(BaseModel):
 class EventoCorporativoInfo(EventoCorporativoBase):
     id: int
     model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat() if d else None})
-
 
 # Modelos para Resumos de Proventos
 

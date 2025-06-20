@@ -20,7 +20,7 @@ import {
   PortfolioHistoryResponse,
 } from "@/lib/types" // Import actual types
 import { getPortfolioEquityHistory } from "@/lib/api" // Import actual API function
-
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 
 const chartConfig = {
   portfolioValue: {
@@ -36,13 +36,16 @@ interface PeriodButton {
   value: PeriodOption
 }
 
-const periodButtons: PeriodButton[] = [
-  { label: "6M", value: "6m" },
-  { label: "12M", value: "12m" },
-  { label: "Este Ano (YTD)", value: "ytd" },
-  { label: "2023", value: "2023" },
-  { label: "2022", value: "2022" },
-  // { label: "Tudo", value: "all" }, // "all" needs a known very first operation date
+// Definir anos dinâmicos
+const currentYear = new Date().getFullYear();
+const lastYear = currentYear - 1;
+
+const periodOptions: { label: string; value: PeriodOption }[] = [
+  { label: "6 meses", value: "6m" },
+  { label: "12 meses", value: "12m" },
+  { label: "Este Ano", value: "ytd" },
+  { label: String(lastYear), value: String(lastYear) as PeriodOption },
+  { label: "Total", value: "all" },
 ]
 
 export function PortfolioEquityChart() {
@@ -53,39 +56,36 @@ export function PortfolioEquityChart() {
   const [error, setError] = useState<string | null>(null)
 
   const calculateDates = (period: PeriodOption): { startDate: string, endDate: string, frequency: "daily" | "monthly" } => {
-    const today = endOfDay(new Date())
-    let startDate: Date
-    let frequency: "daily" | "monthly" = "monthly" // Default to monthly
+    const today = endOfDay(new Date());
+    let startDate: Date;
+    let endDate: Date = today;
+    let frequency: "daily" | "monthly" = "monthly";
 
     switch (period) {
       case "6m":
-        startDate = subMonths(today, 6)
-        frequency = "daily"
-        break
+        startDate = subMonths(today, 6);
+        frequency = "daily";
+        break;
       case "12m":
-        startDate = subMonths(today, 12)
-        break
+        startDate = subMonths(today, 12);
+        break;
       case "ytd":
-        startDate = startOfYear(today)
-        frequency = "daily"
-        break
-      case "2023":
-        startDate = startOfYear(new Date(2023, 0, 1))
-        today.setFullYear(2023, 11, 31) // end of 2023
-        break
-      case "2022":
-        startDate = startOfYear(new Date(2022, 0, 1))
-        today.setFullYear(2022, 11, 31) // end of 2022
-        break
+        startDate = startOfYear(today);
+        frequency = "daily";
+        break;
+      case String(lastYear):
+        startDate = startOfYear(new Date(lastYear, 0, 1));
+        endDate = new Date(lastYear, 11, 31, 23, 59, 59, 999);
+        break;
       case "all":
-        startDate = new Date(2000, 0, 1) // Placeholder for "all time" start
-        break
+        startDate = new Date(2000, 0, 1);
+        break;
       default:
-        startDate = subMonths(today, 12)
+        startDate = subMonths(today, 12);
     }
     return {
       startDate: format(startDate, "yyyy-MM-dd"),
-      endDate: format(today, "yyyy-MM-dd"),
+      endDate: format(endDate, "yyyy-MM-dd"),
       frequency
     }
   }
@@ -125,28 +125,48 @@ export function PortfolioEquityChart() {
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
   const formatDateTick = (tickItem: string) => {
-    // Assuming tickItem is "YYYY-MM-DD" or "YYYY-MM"
-    if (tickItem.length === 7) return format(parseISO(tickItem + '-01'), 'MMM/yy'); // For "YYYY-MM"
-    return format(parseISO(tickItem), 'dd/MM/yy'); // For "YYYY-MM-DD"
+    // Se já estiver no formato 'jan-24', retorna direto
+    if (/^[a-zA-Z]{3}-\d{2}$/.test(tickItem)) return tickItem;
+    if (tickItem.length === 7) return format(parseISO(tickItem + '-01'), 'MMM/yy').replace('.', '');
+    return format(parseISO(tickItem), 'dd/MM/yy');
   };
 
+  // Após obter chartData e antes de renderizar o BarChart:
+  const filteredChartData = React.useMemo(() => {
+    if (selectedPeriod === "all" && chartData.length > 0) {
+      // Agrupar por mês: pegar o último valor de cada mês
+      const monthlyMap = new Map();
+      chartData.forEach((d) => {
+        const dateObj = parseISO(d.date);
+        const key = format(dateObj, 'yyyy-MM');
+        monthlyMap.set(key, d); // sobrescreve, fica o último do mês
+      });
+      // Converter para array e ordenar
+      const monthlyData = Array.from(monthlyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      // Formatar o campo date para 'MMM-yy' (jan-24)
+      return monthlyData.map((d) => ({ ...d, date: format(parseISO(d.date), 'MMM-yy', { locale: undefined }).replace('.', '') }));
+    }
+    return chartData;
+  }, [selectedPeriod, chartData]);
 
   return (
     <Card>
       <CardHeader>
         <div className="flex justify-between items-center">
           <CardTitle>Evolução da Carteira</CardTitle>
-          <div className="flex space-x-2">
-            {periodButtons.map((period) => (
-              <Button
-                key={period.value}
-                variant={selectedPeriod === period.value ? "default" : "outline"}
-                size="sm"
-                onClick={() => setSelectedPeriod(period.value)}
-              >
-                {period.label}
-              </Button>
-            ))}
+          <div className="w-44">
+            <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodOption)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Período" />
+              </SelectTrigger>
+              <SelectContent>
+                {periodOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
       </CardHeader>
@@ -160,7 +180,7 @@ export function PortfolioEquityChart() {
           <>
             <div className="h-[350px] w-full">
               <ChartContainer config={chartConfig} className="h-full w-full">
-                <BarChart data={chartData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
+                <BarChart data={filteredChartData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis
                     dataKey="date"
@@ -176,14 +196,24 @@ export function PortfolioEquityChart() {
                   />
                   <Tooltip
                     content={<ChartTooltipContent
-                                formatter={(value, name, props) => {
-                                   if (typeof value === 'number') {
-                                     return [formatCurrency(value), chartConfig.portfolioValue.label];
-                                   }
-                                   return [String(value), name];
-                                }}
-                                labelFormatter={(label) => format(parseISO(label), 'dd/MM/yyyy HH:mm')}
-                             />}
+                      formatter={(value, name, props) => {
+                        if (typeof value === 'number') {
+                          return [formatCurrency(value), chartConfig.portfolioValue.label];
+                        }
+                        return [String(value), name];
+                      }}
+                      labelFormatter={(label) => {
+                        try {
+                          if (!label) return '';
+                          if (/^[a-zA-Z]{3}-\d{2}$/.test(label)) return label;
+                          if (label.length === 7) return format(parseISO(label + '-01'), 'MMM/yy').replace('.', '');
+                          if (label.length === 10) return format(parseISO(label), 'dd/MM/yyyy');
+                          return format(parseISO(label), 'dd/MM/yyyy HH:mm');
+                        } catch (e) {
+                          return String(label);
+                        }
+                      }}
+                    />}
                   />
                   <Bar dataKey="value" fill="var(--color-portfolioValue)" radius={4} name="Valor da Carteira" />
                 </BarChart>
