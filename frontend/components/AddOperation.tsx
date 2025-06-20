@@ -8,12 +8,12 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, AlertCircle, ChevronsUpDown } from "lucide-react" // Added ChevronsUpDown
-import { api } from "@/lib/api"
+import { Plus, AlertCircle, ChevronsUpDown } from "lucide-react"
+import { api, fetchCorretoras } from "@/lib/api" // Added fetchCorretoras
 import { useToast } from "@/hooks/use-toast"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command" // Added Command components
-import type { AcaoInfo } from "@/lib/types" // Added AcaoInfo type import
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import type { AcaoInfo, Corretora } from "@/lib/types" // Added Corretora type import
 import { getCarteira } from "@/lib/getCarteira";
 
 interface AddOperationProps {
@@ -28,39 +28,46 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
     quantity: "",
     price: "",
     fees: "",
+    corretora_id: "", // Added corretora_id
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const { toast } = useToast()
 
   const [acoesList, setAcoesList] = useState<AcaoInfo[]>([])
+  const [corretorasList, setCorretorasList] = useState<Corretora[]>([]) // State for corretoras
   const [comboboxOpen, setComboboxOpen] = useState(false)
   const [carteira, setCarteira] = useState<string[]>([])
 
   useEffect(() => {
-    const fetchAcoes = async () => {
+    const fetchInitialData = async () => {
       try {
-        const response = await api.get<AcaoInfo[]>("/acoes")
-        setAcoesList(response.data || [])
+        const [acoesResponse, corretorasResponse] = await Promise.all([
+          api.get<AcaoInfo[]>("/acoes"),
+          fetchCorretoras() // Use the new API function
+        ]);
+        setAcoesList(acoesResponse.data || []);
+        setCorretorasList(corretorasResponse || []);
       } catch (err) {
-        console.error("Erro ao buscar ações:", err)
+        console.error("Erro ao buscar dados iniciais (ações/corretoras):", err);
         toast({
-          title: "Erro ao carregar tickers",
-          description: "Não foi possível buscar a lista de tickers disponíveis.",
+          title: "Erro ao carregar dados",
+          description: "Não foi possível buscar a lista de tickers ou corretoras.",
           variant: "destructive",
-        })
+        });
       }
-    }
-    const fetchCarteira = async () => {
+    };
+
+    const fetchCarteiraData = async () => {
       try {
         const carteiraData = await getCarteira();
         setCarteira(carteiraData.map(item => item.ticker));
       } catch (err) {
-        // Ignora erro de carteira, não bloqueia uso do componente
+        // Ignora erro de carteira
       }
-    }
-    fetchAcoes();
-    fetchCarteira();
+    };
+    fetchInitialData();
+    fetchCarteiraData();
   }, [toast])
 
   const handleInputChange = (field: string, value: string) => {
@@ -100,7 +107,14 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
         quantity: Number.parseInt(formData.quantity),
         price: Number.parseFloat(formData.price),
         fees: Number.parseFloat(formData.fees) || 0,
+        corretora_id: formData.corretora_id ? Number.parseInt(formData.corretora_id) : null,
       }
+
+      // Ensure corretora_id is not an empty string if it's optional and not selected
+      if (operationData.corretora_id === undefined || operationData.corretora_id === null || isNaN(operationData.corretora_id as any) ) {
+        delete operationData.corretora_id; // Remove if not a valid number or not provided
+      }
+
 
       await api.post("/operacoes", operationData)
 
@@ -117,6 +131,7 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
         quantity: "",
         price: "",
         fees: "",
+        corretora_id: "", // Reset corretora_id
       })
 
       onSuccess()
@@ -263,6 +278,25 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
             </div>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="corretora">Corretora (Opcional)</Label>
+            <Select value={formData.corretora_id} onValueChange={(value) => handleInputChange("corretora_id", value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione a corretora" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">
+                  <em>Nenhuma (ou não aplicável)</em>
+                </SelectItem>
+                {corretorasList.map((corretora) => (
+                  <SelectItem key={corretora.id} value={String(corretora.id)}>
+                    {corretora.nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -285,6 +319,7 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
                   quantity: "",
                   price: "",
                   fees: "",
+                  corretora_id: "", // Clear corretora_id on reset
                 })
               }
             >

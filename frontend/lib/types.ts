@@ -7,6 +7,20 @@ export interface Operacao {
   quantity: number;
   price: number;
   fees: number;
+  corretora_id?: number | null;
+  nome_corretora?: string | null;
+}
+
+export interface Corretora {
+  id: number;
+  nome: string;
+  cnpj?: string | null;
+  usuario_id: number; // Included as it's part of the model from backend
+}
+
+export interface CorretoraCreate {
+  nome: string;
+  cnpj?: string;
 }
 
 export interface CarteiraItem {

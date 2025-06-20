@@ -385,6 +385,32 @@ def criar_tabelas():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_carteira_atual_usuario_id ON carteira_atual(usuario_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_usuario_id ON operacoes_fechadas(usuario_id)')
 
+        # Tabela de Corretoras
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS corretoras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            cnpj TEXT,
+            usuario_id INTEGER NOT NULL,
+            FOREIGN KEY(usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE,
+            UNIQUE(nome, usuario_id),
+            UNIQUE(cnpj, usuario_id)
+        )
+        ''')
+
+        # Adicionar coluna corretora_id e índice à tabela operacoes
+        cursor.execute("PRAGMA table_info(operacoes)")
+        colunas_operacoes = [info[1] for info in cursor.fetchall()]
+        if 'corretora_id' not in colunas_operacoes:
+            cursor.execute('ALTER TABLE operacoes ADD COLUMN corretora_id INTEGER DEFAULT NULL')
+            # Adicionar FOREIGN KEY constraint aqui é complexo para tabelas existentes no SQLite.
+            # A FK será assumida pela lógica da aplicação ou para novas bases de dados.
+            # Para novas bases, a FK deveria estar na CREATE TABLE de operacoes.
+
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_corretora_id ON operacoes(corretora_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_corretoras_usuario_id ON corretoras(usuario_id)')
+
+
         # Tabela usuario_proventos_recebidos
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS usuario_proventos_recebidos (
@@ -419,7 +445,106 @@ def criar_tabelas():
     # Inicializa o sistema de autenticação
     from auth import inicializar_autenticacao # Relative import
     inicializar_autenticacao()
-    
+
+# --- Funções CRUD para Corretoras ---
+
+def inserir_corretora(corretora: Dict[str, Any], usuario_id: int) -> int:
+    """
+    Insere uma nova corretora no banco de dados.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        try:
+            cursor.execute('''
+            INSERT INTO corretoras (nome, cnpj, usuario_id)
+            VALUES (?, ?, ?)
+            ''', (corretora["nome"], corretora.get("cnpj"), usuario_id))
+            conn.commit()
+            return cursor.lastrowid
+        except sqlite3.IntegrityError as e:
+            # Tratar erro de constraint UNIQUE (nome, usuario_id) ou (cnpj, usuario_id)
+            # print(f"Erro de integridade ao inserir corretora: {e}")
+            raise ValueError(f"Corretora com este nome ou CNPJ já existe para este usuário. Detalhe: {e}")
+
+
+def obter_corretora_por_id(corretora_id: int, usuario_id: int) -> Optional[sqlite3.Row]:
+    """
+    Obtém uma corretora pelo ID e ID do usuário.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM corretoras WHERE id = ? AND usuario_id = ?", (corretora_id, usuario_id))
+        return cursor.fetchone()
+
+def obter_corretoras_por_usuario(usuario_id: int) -> List[sqlite3.Row]:
+    """
+    Lista todas as corretoras de um usuário.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM corretoras WHERE usuario_id = ? ORDER BY nome", (usuario_id,))
+        return cursor.fetchall()
+
+def atualizar_corretora(corretora_id: int, corretora_data: Dict[str, Any], usuario_id: int) -> bool:
+    """
+    Atualiza nome e/ou CNPJ de uma corretora.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        # Verifica se a corretora existe e pertence ao usuário
+        cursor.execute("SELECT id FROM corretoras WHERE id = ? AND usuario_id = ?", (corretora_id, usuario_id))
+        if not cursor.fetchone():
+            return False # Corretora não encontrada ou não pertence ao usuário
+
+        updates = []
+        params = []
+        if "nome" in corretora_data and corretora_data["nome"] is not None:
+            updates.append("nome = ?")
+            params.append(corretora_data["nome"])
+        if "cnpj" in corretora_data: # CNPJ pode ser None para limpá-lo
+            updates.append("cnpj = ?")
+            params.append(corretora_data["cnpj"])
+
+        if not updates:
+            return False # Nada para atualizar
+
+        params.extend([corretora_id, usuario_id])
+
+        try:
+            cursor.execute(f'''
+            UPDATE corretoras
+            SET {', '.join(updates)}
+            WHERE id = ? AND usuario_id = ?
+            ''', tuple(params))
+            conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.IntegrityError as e:
+            # Tratar erro de constraint UNIQUE
+            # print(f"Erro de integridade ao atualizar corretora: {e}")
+            raise ValueError(f"Atualização resultaria em nome ou CNPJ duplicado para este usuário. Detalhe: {e}")
+
+def remover_corretora(corretora_id: int, usuario_id: int) -> bool:
+    """
+    Remove uma corretora.
+    NOTA: Esta função não lida com a FK em 'operacoes'.
+    A coluna 'corretora_id' em 'operacoes' permanecerá com o ID antigo (órfão)
+    ou será NULL se já era NULL. ON DELETE CASCADE na FK da tabela 'corretoras'
+    resolveria isso automaticamente, ou seria necessário um UPDATE em 'operacoes'
+    para setar 'corretora_id' para NULL antes de deletar a corretora.
+    Por agora, a remoção é direta.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Opcional: Antes de remover, pode-se setar corretora_id para NULL nas operações associadas
+        # cursor.execute("UPDATE operacoes SET corretora_id = NULL WHERE corretora_id = ? AND usuario_id = ?", (corretora_id, usuario_id))
+
+        cursor.execute('DELETE FROM corretoras WHERE id = ? AND usuario_id = ?', (corretora_id, usuario_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+# --- Fim Funções CRUD para Corretoras ---
+
 def date_converter(obj):
     """
     Conversor de data para JSON.
@@ -456,8 +581,8 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
 
         # Adiciona usuario_id ao INSERT
         cursor.execute('''
-        INSERT INTO operacoes (date, ticker, operation, quantity, price, fees, usuario_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO operacoes (date, ticker, operation, quantity, price, fees, usuario_id, corretora_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             operacao["date"].isoformat() if isinstance(operacao["date"], (datetime, date)) else operacao["date"],
             operacao["ticker"],
@@ -465,7 +590,8 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
             operacao["quantity"],
             operacao["price"],
             operacao.get("fees", 0.0),
-            usuario_id # Garante que usuario_id seja passado
+            usuario_id, # Garante que usuario_id seja passado
+            operacao.get("corretora_id") # Adiciona corretora_id
         ))
         
         conn.commit()
@@ -486,25 +612,36 @@ def obter_operacao_por_id(operacao_id: int, usuario_id: int) -> Optional[Dict[st
         cursor = conn.cursor()
         
         cursor.execute('''
-        SELECT id, date, ticker, operation, quantity, price, fees, usuario_id
-        FROM operacoes
-        WHERE id = ? AND usuario_id = ?
+        SELECT
+            o.id, o.date, o.ticker, o.operation, o.quantity, o.price, o.fees, o.usuario_id,
+            o.corretora_id, c.nome as nome_corretora
+        FROM operacoes o
+        LEFT JOIN corretoras c ON o.corretora_id = c.id
+        WHERE o.id = ? AND o.usuario_id = ?
         ''', (operacao_id, usuario_id))
+        # Adicionado AND c.usuario_id = o.usuario_id ao JOIN se corretoras fossem compartilhadas
+        # mas o modelo atual é uma corretora por usuário, então c.id é suficiente se o.usuario_id já filtra.
+        # Para ser explícito e seguro caso o modelo de corretora mude, o ideal seria:
+        # LEFT JOIN corretoras c ON o.corretora_id = c.id AND c.usuario_id = o.usuario_id
+        # No entanto, como estamos obtendo corretoras por usuario_id em outras funções,
+        # vamos assumir que o filtro o.usuario_id na WHERE clause é o principal.
         
-        operacao = cursor.fetchone()
+        operacao_row = cursor.fetchone() # Renomeado para evitar conflito com o nome da função
         
-        if not operacao:
+        if not operacao_row:
             return None
         
         return {
-            "id": operacao["id"],
-            "date": datetime.fromisoformat(operacao["date"].split("T")[0]).date() if isinstance(operacao["date"], str) else operacao["date"], # Standardize to date object
-            "ticker": operacao["ticker"],
-            "operation": operacao["operation"],
-            "quantity": operacao["quantity"],
-            "price": operacao["price"],
-            "fees": operacao["fees"],
-            "usuario_id": operacao["usuario_id"]
+            "id": operacao_row["id"],
+            "date": datetime.fromisoformat(operacao_row["date"].split("T")[0]).date() if isinstance(operacao_row["date"], str) else operacao_row["date"],
+            "ticker": operacao_row["ticker"],
+            "operation": operacao_row["operation"],
+            "quantity": operacao_row["quantity"],
+            "price": operacao_row["price"],
+            "fees": operacao_row["fees"],
+            "usuario_id": operacao_row["usuario_id"],
+            "corretora_id": operacao_row["corretora_id"],
+            "nome_corretora": operacao_row["nome_corretora"]
         }
 
 def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
@@ -520,30 +657,36 @@ def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Filtra estritamente por usuario_id
+        # Filtra estritamente por usuario_id e faz LEFT JOIN com corretoras
         query = '''
-        SELECT id, date, ticker, operation, quantity, price, fees, usuario_id
-        FROM operacoes
-        WHERE usuario_id = ?
-        ORDER BY date
+        SELECT
+            o.id, o.date, o.ticker, o.operation, o.quantity, o.price, o.fees, o.usuario_id,
+            o.corretora_id, c.nome as nome_corretora
+        FROM operacoes o
+        LEFT JOIN corretoras c ON o.corretora_id = c.id
+        WHERE o.usuario_id = ?
+        ORDER BY o.date, o.id
         '''
+        # Adicionado o.id na ordenação para consistência
         
         cursor.execute(query, (usuario_id,))
         
-        operacoes = []
-        for operacao in cursor.fetchall():
-            operacoes.append({
-                "id": operacao["id"],
-                "date": datetime.fromisoformat(operacao["date"].split("T")[0]).date() if isinstance(operacao["date"], str) else operacao["date"], # Standardize to date object
-                "ticker": operacao["ticker"],
-                "operation": operacao["operation"],
-                "quantity": operacao["quantity"],
-                "price": operacao["price"],
-                "fees": operacao["fees"],
-                "usuario_id": operacao["usuario_id"]
+        operacoes_list = [] # Renomeado para evitar conflito
+        for operacao_row in cursor.fetchall(): # Renomeado para evitar conflito
+            operacoes_list.append({
+                "id": operacao_row["id"],
+                "date": datetime.fromisoformat(operacao_row["date"].split("T")[0]).date() if isinstance(operacao_row["date"], str) else operacao_row["date"],
+                "ticker": operacao_row["ticker"],
+                "operation": operacao_row["operation"],
+                "quantity": operacao_row["quantity"],
+                "price": operacao_row["price"],
+                "fees": operacao_row["fees"],
+                "usuario_id": operacao_row["usuario_id"],
+                "corretora_id": operacao_row["corretora_id"],
+                "nome_corretora": operacao_row["nome_corretora"]
             })
         
-        return operacoes
+        return operacoes_list
 
 def obter_tickers_operados_por_usuario(usuario_id: int) -> List[str]:
     """
@@ -584,9 +727,12 @@ def atualizar_operacao(operacao_id: int, operacao: Dict[str, Any], usuario_id: O
         if not cursor.fetchone():
             return False # Operação não encontrada ou não pertence ao usuário
         
+
+        # Adiciona corretora_id à atualização
+        # O valor de corretora_id pode ser None, o que é permitido pela coluna (DEFAULT NULL)
         cursor.execute('''
         UPDATE operacoes
-        SET date = ?, ticker = ?, operation = ?, quantity = ?, price = ?, fees = ?
+        SET date = ?, ticker = ?, operation = ?, quantity = ?, price = ?, fees = ?, corretora_id = ?
         WHERE id = ? AND usuario_id = ? 
         ''', (
             operacao["date"].isoformat() if isinstance(operacao["date"], (datetime, date)) else operacao["date"],
@@ -595,6 +741,7 @@ def atualizar_operacao(operacao_id: int, operacao: Dict[str, Any], usuario_id: O
             operacao["quantity"],
             operacao["price"],
             operacao.get("fees", 0.0),
+            operacao.get("corretora_id"), # Adiciona corretora_id
             operacao_id,
             usuario_id # Garante que a atualização seja no registro do usuário
         ))

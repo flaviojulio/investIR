@@ -173,6 +173,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                 <TableHead className="text-right">Quantidade</TableHead>
                 <TableHead className="text-right">Preço</TableHead>
                 <TableHead className="text-right">Taxas</TableHead>
+                <TableHead>Corretora</TableHead> {/* Added Corretora Header */}
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead className="text-center">Ações</TableHead>
               </TableRow>
@@ -180,7 +181,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
             <TableBody>
               {filteredOperations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground"> {/* Adjusted colSpan */}
                     {operacoes.length === 0
                       ? "Nenhuma operação encontrada. Adicione operações para vê-las aqui."
                       : "Nenhuma operação corresponde aos filtros aplicados."}
@@ -205,6 +206,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                       <TableCell className="text-right">{operacao.quantity.toLocaleString("pt-BR")}</TableCell>
                       <TableCell className="text-right">{formatCurrency(operacao.price)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(operacao.fees)}</TableCell>
+                      <TableCell>{operacao.nome_corretora || 'N/A'}</TableCell> {/* Added Corretora Cell */}
                       <TableCell className="text-right font-medium">{formatCurrency(totalWithFees)}</TableCell>
                       <TableCell className="text-center">
                         <Button

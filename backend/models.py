@@ -55,7 +55,27 @@ class FuncaoUpdate(BaseModel):
     nome: Optional[str] = None
     descricao: Optional[str] = None
 
+
+# Modelos para Corretoras
+
+class CorretoraBase(BaseModel):
+    nome: str
+    cnpj: Optional[str] = None
+
+class CorretoraCreate(CorretoraBase):
+    pass
+
+class Corretora(CorretoraBase):
+    id: int
+    usuario_id: int
+    model_config = ConfigDict(from_attributes=True)
+
+class CorretoraUpdate(BaseModel):
+    nome: Optional[str] = None
+    cnpj: Optional[str] = None
+
 class OperacaoBase(BaseModel):
+    corretora_id: Optional[int] = Field(default=None)
     date: date
     ticker: str
     operation: str
@@ -64,11 +84,18 @@ class OperacaoBase(BaseModel):
     fees: Optional[float] = 0.0
 
 class OperacaoCreate(OperacaoBase):
+    corretora_id: Optional[int] = Field(default=None)
     pass
 
 class Operacao(OperacaoBase):
     id: int
     usuario_id: Optional[int] = None
+    corretora_id: Optional[int] = Field(default=None)
+
+class OperacaoResponse(Operacao): # Herda de Operacao que já tem corretora_id
+    nome_corretora: Optional[str] = None
+    # Se Operacao não tivesse corretora_id, e viesse de OperacaoBase, seria:
+    # corretora_id: Optional[int] = Field(default=None)
 
 class ResultadoMensal(BaseModel):
     mes: str  # Formato: YYYY-MM

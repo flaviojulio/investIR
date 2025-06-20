@@ -14,6 +14,7 @@ from models import (
     ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # Added EventoCorporativo models
     ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, # ProventoRecebidoUsuario removed as it's no longer the response_model here
     UsuarioProventoRecebidoDB, # Explicitly import UsuarioProventoRecebidoDB
+    OperacaoResponse, # Import OperacaoResponse
     # Modelos de autenticação
     UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     BaseModel # Ensure BaseModel is available for DARFStatusUpdate
@@ -70,7 +71,7 @@ import auth # Keep this for other auth functions
 # auth.get_db removed from here
 
 # Import the new router
-from routers import analysis_router
+from routers import analysis_router, corretoras_router
 from dependencies import get_current_user, oauth2_scheme # Import from dependencies
 
 # Inicialização do banco de dados
@@ -94,6 +95,7 @@ app.add_middleware(
 
 # Include the analysis router
 app.include_router(analysis_router.router, prefix="/api") # Assuming all API routes are prefixed with /api
+app.include_router(corretoras_router.router, prefix="/api") # Adiciona as rotas de corretoras, com o mesmo prefixo /api
 
 # Endpoint para listar todas as ações (acoes)
 @app.get("/api/acoes", response_model=List[AcaoInfo], tags=["Ações"]) # Renamed path, response_model, tags
@@ -631,17 +633,20 @@ async def deletar_funcao_existente(
         raise HTTPException(status_code=500, detail=f"Erro interno ao excluir função: {str(e)}")
 
 # Endpoints de operações com autenticação
-@app.get("/api/operacoes", response_model=List[Operacao])
+@app.get("/api/operacoes", response_model=List[OperacaoResponse]) # Changed response_model
 async def listar_operacoes(usuario: UsuarioResponse = Depends(get_current_user)):
     try:
+        # listar_operacoes_service calls db.obter_todas_operacoes which now includes nome_corretora
         operacoes = listar_operacoes_service(usuario_id=usuario.id)
+        # FastAPI will automatically map the fields from the dicts/model instances returned by the service
+        # to the OperacaoResponse model, including nome_corretora.
         return operacoes
     except Exception as e:
         user_id_for_log = usuario.id if usuario else "Unknown"
         logging.error(f"Error in /api/operacoes for user {user_id_for_log}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes. Check logs.")
 
-@app.get("/api/operacoes/ticker/{ticker}", response_model=List[Operacao])
+@app.get("/api/operacoes/ticker/{ticker}", response_model=List[OperacaoResponse]) # Changed response_model
 async def listar_operacoes_por_ticker(
     ticker: str = Path(..., description="Ticker da ação"),
     usuario: UsuarioResponse = Depends(get_current_user) # Changed type hint
@@ -650,10 +655,11 @@ async def listar_operacoes_por_ticker(
     Lista todas as operações de um usuário para um ticker específico.
     """
     try:
-        operacoes = services.listar_operacoes_por_ticker_service(usuario_id=usuario.id, ticker=ticker) # Use .id
+        # listar_operacoes_por_ticker_service calls db.obter_operacoes_por_ticker_db which now includes nome_corretora
+        operacoes = services.listar_operacoes_por_ticker_service(usuario_id=usuario.id, ticker=ticker)
         return operacoes
     except Exception as e:
-        user_id_for_log = usuario.id if usuario else "Unknown" # Use .id
+        user_id_for_log = usuario.id if usuario else "Unknown"
         logging.error(f"Error in /api/operacoes/ticker/{ticker} for user {user_id_for_log}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes/ticker. Check logs.")
 
@@ -809,28 +815,28 @@ async def atualizar_status_darf(
 
 # Novos endpoints para as funcionalidades adicionais
 
-@app.post("/api/operacoes", response_model=Operacao)
+@app.post("/api/operacoes", response_model=OperacaoResponse) # Changed response_model
 async def criar_operacao(
     operacao: OperacaoCreate,
-    usuario: Dict = Depends(get_current_user)
+    usuario: UsuarioResponse = Depends(get_current_user) # Changed type hint for usuario
 ):
     """
-    Cria uma nova operação manualmente e retorna a operação criada.
+    Cria uma nova operação manualmente e retorna a operação criada, incluindo nome da corretora.
     
     Args:
         operacao: Dados da operação a ser criada.
     """
     try:
-        new_operacao_id = services.inserir_operacao_manual(operacao, usuario_id=usuario.id) # Use .id
-        operacao_criada = services.obter_operacao_service(new_operacao_id, usuario_id=usuario.id) # Use .id
+        new_operacao_id = services.inserir_operacao_manual(operacao, usuario_id=usuario.id)
+        # obter_operacao_service calls db.obter_operacao_por_id which now includes nome_corretora
+        operacao_criada = services.obter_operacao_service(new_operacao_id, usuario_id=usuario.id)
         if not operacao_criada:
-            # This case should ideally not happen if insertion and ID return were successful
             raise HTTPException(status_code=500, detail="Operação criada mas não pôde ser recuperada.")
+        # FastAPI will map the dict from operacao_criada to OperacaoResponse
         return operacao_criada
-    except ValueError as e: # Handle ticker validation error
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        # Log the exception e for detailed debugging
         raise HTTPException(status_code=500, detail=f"Erro ao criar operação: {str(e)}")
 
 @app.put("/api/carteira/{ticker}", response_model=Dict[str, str])
