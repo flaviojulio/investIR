@@ -13,7 +13,7 @@ import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command" // Added Command components
-import type { AcaoInfo } from "@/lib/types" // Added AcaoInfo type import
+import type { AcaoInfo, Corretora } from "@/lib/types" // Added AcaoInfo type import
 import { getCarteira } from "@/lib/getCarteira";
 
 interface AddOperationProps {
@@ -28,6 +28,8 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
     quantity: "",
     price: "",
     fees: "",
+    corretora_id: "", // Novo campo
+    corretoraSearch: "",
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -36,6 +38,7 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
   const [acoesList, setAcoesList] = useState<AcaoInfo[]>([])
   const [comboboxOpen, setComboboxOpen] = useState(false)
   const [carteira, setCarteira] = useState<string[]>([])
+  const [corretoras, setCorretoras] = useState<Corretora[]>([])
 
   useEffect(() => {
     const fetchAcoes = async () => {
@@ -59,8 +62,17 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
         // Ignora erro de carteira, não bloqueia uso do componente
       }
     }
+    const fetchCorretoras = async () => {
+      try {
+        const response = await api.get<Corretora[]>("/corretoras")
+        setCorretoras(response.data || [])
+      } catch (err) {
+        // Não bloqueia o uso do componente
+      }
+    }
     fetchAcoes();
     fetchCarteira();
+    fetchCorretoras();
   }, [toast])
 
   const handleInputChange = (field: string, value: string) => {
@@ -92,14 +104,20 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
       if (!formData.date || !formData.ticker || !formData.operation || !formData.quantity || !formData.price) {
         throw new Error("Todos os campos obrigatórios devem ser preenchidos")
       }
+      if (isNaN(Number(formData.quantity)) || isNaN(Number(formData.price))) {
+        throw new Error("Quantidade e preço devem ser números válidos")
+      }
 
-      const operationData = {
+      const operationData: any = {
         date: formData.date,
         ticker: formData.ticker.toUpperCase(),
         operation: formData.operation,
         quantity: Number.parseInt(formData.quantity),
         price: Number.parseFloat(formData.price),
         fees: Number.parseFloat(formData.fees) || 0,
+      }
+      if (formData.corretora_id && formData.corretora_id !== "none") {
+        operationData.corretora_id = Number(formData.corretora_id)
       }
 
       await api.post("/operacoes", operationData)
@@ -117,6 +135,8 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
         quantity: "",
         price: "",
         fees: "",
+        corretora_id: "",
+        corretoraSearch: "",
       })
 
       onSuccess()
@@ -263,6 +283,42 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-4">
+              <Label htmlFor="corretora_id">Corretora</Label>
+              <Select
+                value={formData.corretora_id}
+                onValueChange={(value) => handleInputChange("corretora_id", value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a corretora (opcional)" />
+                </SelectTrigger>
+                <SelectContent className="min-w-[340px] max-w-[480px]">
+                  <div className="px-2 py-1">
+                    <Input
+                      placeholder="Buscar corretora..."
+                      value={formData.corretoraSearch || ""}
+                      onChange={e => handleInputChange("corretoraSearch", e.target.value)}
+                      className="w-full mb-2"
+                    />
+                  </div>
+                  <SelectItem value="none">Nenhuma</SelectItem>
+                  {corretoras
+                    .filter(corretora =>
+                      !formData.corretoraSearch ||
+                      corretora.nome.toLowerCase().includes(formData.corretoraSearch.toLowerCase()) ||
+                      corretora.cnpj.includes(formData.corretoraSearch)
+                    )
+                    .map((corretora) => (
+                      <SelectItem key={corretora.id} value={String(corretora.id)}>
+                        {corretora.nome} ({corretora.cnpj})
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -285,6 +341,8 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
                   quantity: "",
                   price: "",
                   fees: "",
+                  corretora_id: "",
+                  corretoraSearch: "",
                 })
               }
             >

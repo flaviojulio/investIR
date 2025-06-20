@@ -7,6 +7,7 @@ export interface Operacao {
   quantity: number;
   price: number;
   fees: number;
+  corretora_id?: number | null;
 }
 
 export interface CarteiraItem {
@@ -176,4 +177,10 @@ export interface ResumoProventoPorAcaoAPI {
   nome_acao?: string;
   total_recebido_geral_acao: number;
   detalhes_por_tipo: DetalheTipoProventoAPI[];
+}
+
+export interface Corretora {
+  id: number;
+  nome: string;
+  cnpj: string;
 }
