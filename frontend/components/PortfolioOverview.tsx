@@ -2,16 +2,17 @@
 
 import { useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { TrendingUp, TrendingDown, DollarSign, BarChart3 } from "lucide-react"
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, Landmark } from "lucide-react"
 import type { Operacao, CarteiraItem, ResultadoMensal } from "@/lib/types"
 
 interface PortfolioOverviewProps {
   carteira: CarteiraItem[]
   resultados: ResultadoMensal[]
   operacoes: Operacao[]
+  totalDividendosRecebidos: number // NOVA PROP
 }
 
-export function PortfolioOverview({ carteira, resultados, operacoes }: PortfolioOverviewProps) {
+export function PortfolioOverview({ carteira, resultados, operacoes, totalDividendosRecebidos }: PortfolioOverviewProps) {
   const metrics = useMemo(() => {
     // Valor total da carteira
     const valorTotal = carteira.reduce((total, item) => {
@@ -22,9 +23,6 @@ export function PortfolioOverview({ carteira, resultados, operacoes }: Portfolio
     const ultimoResultado = resultados[resultados.length - 1]
     const ganhoMensal = ultimoResultado ? ultimoResultado.ganho_liquido_swing + ultimoResultado.ganho_liquido_day : 0
 
-    // Total de operações
-    const totalOperacoes = operacoes.length
-
     // Vendas do mês atual para o impostômetro
     const mesAtual = new Date().toISOString().slice(0, 7) // YYYY-MM
     const resultadoMesAtual = resultados.find((r) => r.mes === mesAtual)
@@ -33,7 +31,6 @@ export function PortfolioOverview({ carteira, resultados, operacoes }: Portfolio
     return {
       valorTotal,
       ganhoMensal,
-      totalOperacoes,
       vendasMesAtual,
     }
   }, [carteira, resultados, operacoes])
@@ -77,12 +74,12 @@ export function PortfolioOverview({ carteira, resultados, operacoes }: Portfolio
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Total de Operações</CardTitle>
-          <BarChart3 className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-medium">Dividendos Recebidos</CardTitle>
+          <Landmark className="h-4 w-4 text-blue-600" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">{metrics.totalOperacoes}</div>
-          <p className="text-xs text-muted-foreground">Compras e vendas registradas</p>
+          <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalDividendosRecebidos)}</div>
+          <p className="text-xs text-muted-foreground">Total de dividendos recebidos até hoje</p>
         </CardContent>
       </Card>
 

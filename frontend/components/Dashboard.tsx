@@ -272,16 +272,14 @@ function ProventosTabContent() {
     const lowerSearchTerm = searchTerm.toLowerCase();
     const searchedResult = filteredResult.filter(p => {
       const fieldsToSearch = [
-        p.ticker,
-        p.tipo_provento,
+        p.ticker_acao,
+        p.tipo,
         p.dt_pagamento,
         p.data_ex,
-        String(p.valor_bruto_por_acao),
-        String(p.qtd_acoes),
-        String(p.valor_total_bruto_recebido),
-        String(p.valor_ir_retido),
-        String(p.valor_total_liquido_recebido),
-        p.nome_acao // Assuming nome_acao might be part of ProventoRecebidoUsuario, add if available
+        String(p.valor_unitario_provento),
+        String(p.quantidade_na_data_ex),
+        String(p.valor_total_recebido),
+        p.nome_acao
       ];
 
       return fieldsToSearch.some(field =>
@@ -509,12 +507,14 @@ export function Dashboard() {
   })
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("overview")
+  const [totalDividendosRecebidos, setTotalDividendosRecebidos] = useState<number>(0);
 
   const router = useRouter() // Initialize useRouter
   const pathname = usePathname() // Initialize usePathname
 
   useEffect(() => {
-    fetchDashboardData()
+    fetchDashboardData();
+    fetchTotalDividendosRecebidos();
   }, [])
 
   // Sync activeTab with pathname
@@ -553,6 +553,17 @@ export function Dashboard() {
       setLoading(false)
     }
   }
+
+  const fetchTotalDividendosRecebidos = async () => {
+    try {
+      const resumoAnual = await getResumoProventosAnuaisUsuario();
+      // Soma todos os proventos (dividendos + JCP + outros) de todos os anos
+      const total = resumoAnual.reduce((acc, ano) => acc + (ano.total_geral || 0), 0);
+      setTotalDividendosRecebidos(total);
+    } catch (error) {
+      setTotalDividendosRecebidos(0);
+    }
+  };
 
   const handleDataUpdate = () => {
     fetchDashboardData()
@@ -643,7 +654,7 @@ export function Dashboard() {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} />
+            <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} totalDividendosRecebidos={totalDividendosRecebidos} />
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <PortfolioEquityChart />
               <TaxMeter resultados={data.resultados} />
