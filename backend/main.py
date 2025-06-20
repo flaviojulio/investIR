@@ -7,17 +7,16 @@ import logging # Added logging import
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
 
-import models # Import the entire models module to use models.UsuarioProventoRecebidoDB
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
-    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo, # Changed StockInfo to AcaoInfo
-    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # Added EventoCorporativo models
-    ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, # ProventoRecebidoUsuario removed as it's no longer the response_model here
-    UsuarioProventoRecebidoDB, # Explicitly import UsuarioProventoRecebidoDB
-    # Modelos de autenticação
-    UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
-    BaseModel # Ensure BaseModel is available for DARFStatusUpdate
+    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo,
+    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo,
+    ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao,
+    UsuarioProventoRecebidoDB, UsuarioCreate, UsuarioUpdate, UsuarioResponse,
+    LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse
 )
+from pydantic import BaseModel
+
 
 # Pydantic model for DARF status update
 class DARFStatusUpdate(BaseModel):
@@ -209,7 +208,7 @@ async def listar_todos_os_eventos_corporativos_api( # Renamed to avoid conflict 
 
 # Endpoints de Proventos do Usuário
 
-@app.get("/api/usuario/proventos/", response_model=List[models.UsuarioProventoRecebidoDB], tags=["Proventos Usuário"])
+@app.get("/api/usuario/proventos/", response_model=List[UsuarioProventoRecebidoDB], tags=["Proventos Usuário"])
 async def listar_proventos_usuario_detalhado(
     usuario: UsuarioResponse = Depends(get_current_user)
 ):

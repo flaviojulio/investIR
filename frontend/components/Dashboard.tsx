@@ -38,7 +38,8 @@ import { OperationsHistory } from "@/components/OperationsHistory"
 import { TaxResults } from "@/components/TaxResults"
 import OperacoesEncerradasTable from '@/components/OperacoesEncerradasTable';
 import { useToast } from "@/hooks/use-toast"
-import { DividendTimeline } from "@/components/DividendTimeline"
+// Removed DividendTimeline import
+// import { DividendTimeline } from "@/components/DividendTimeline"
 // Added ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario
 import type { Operacao, CarteiraItem, ResultadoMensal, OperacaoFechada, ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario } from "@/lib/types"
 
@@ -488,7 +489,7 @@ function ProventosTabContent() {
         )}
       </div>
 
-      {/* Timeline de dividendos */}
+      {/* Removed DividendTimeline section
       <div className="mb-8">
         <h2 className="text-xl font-semibold mb-2 text-gray-700 dark:text-gray-200">Linha do Tempo dos Dividendos</h2>
         <DividendTimeline
@@ -510,6 +511,7 @@ function ProventosTabContent() {
           }
         />
       </div>
+      */}
 
       {/* Seção de Resumo Geral por Ação (Todos os Anos) - Pode ser opcional ou movida */}
       {/* <div className="mt-12">

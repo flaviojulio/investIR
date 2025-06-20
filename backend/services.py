@@ -8,12 +8,11 @@ import logging # Added logging import
 
 from models import (
     OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
-    OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
-    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # EventoCorporativoInfo already here
-    UsuarioProventoRecebidoDB, # Modelo para a tabela do banco
-    # ProventoRecebidoUsuario, # Comentado pois o serviço agora retorna UsuarioProventoRecebidoDB e os resumos são construídos a partir de queries diretas.
+    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo,
+    UsuarioProventoRecebidoDB,
     ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, DetalheTipoProvento
 )
+
 # datetime is already imported from datetime import date, datetime, timedelta but ensure strptime is accessible
 from datetime import datetime as dt # Alias for strptime usage if needed, or just use datetime.strptime
 import sqlite3 # For sqlite3.IntegrityError
