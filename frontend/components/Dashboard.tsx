@@ -38,6 +38,7 @@ import { OperationsHistory } from "@/components/OperationsHistory"
 import { TaxResults } from "@/components/TaxResults"
 import OperacoesEncerradasTable from '@/components/OperacoesEncerradasTable';
 import { useToast } from "@/hooks/use-toast"
+import { DividendTimeline } from "@/components/DividendTimeline"
 // Added ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario
 import type { Operacao, CarteiraItem, ResultadoMensal, OperacaoFechada, ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario } from "@/lib/types"
 
@@ -485,6 +486,29 @@ function ProventosTabContent() {
             <TabelaProventos data={proventosFiltradosParaTabela} />
           </>
         )}
+      </div>
+
+      {/* Timeline de dividendos */}
+      <div className="mb-8">
+        <h2 className="text-xl font-semibold mb-2 text-gray-700 dark:text-gray-200">Linha do Tempo dos Dividendos</h2>
+        <DividendTimeline
+          eventos={proventosDetalhados
+            .filter(p =>
+              // Mostra últimos recebidos (pagos até hoje) e futuros garantidos (data_ex futura)
+              (p.dt_pagamento && new Date(p.dt_pagamento) <= new Date()) ||
+              (p.data_ex && new Date(p.data_ex) > new Date())
+            )
+            .map(p => ({
+              id: p.id,
+              ticker: p.ticker_acao,
+              nome_acao: p.nome_acao,
+              tipo: p.tipo_provento || p.tipo, // cobre ambos os casos
+              valor: p.valor_total_recebido, // CORRETO!
+              dt_pagamento: p.dt_pagamento,
+              data_ex: p.data_ex,
+            }))
+          }
+        />
       </div>
 
       {/* Seção de Resumo Geral por Ação (Todos os Anos) - Pode ser opcional ou movida */}
