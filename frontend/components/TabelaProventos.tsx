@@ -63,6 +63,7 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
   }
 
   // Configuration for table headers
+  // Adiciona coluna de status (Recebido/A Receber)
   const headerConfig: { key?: SortableKeys; label: string; className?: string; isSortable: boolean }[] = [
     { key: 'data_ex', label: 'Data Ex', className: 'hidden md:table-cell', isSortable: true },
     { key: 'dt_pagamento', label: 'Data Pag.', isSortable: true },
@@ -70,9 +71,13 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
     { label: 'Nome Ação', className: 'hidden lg:table-cell', isSortable: false },
     { key: 'tipo_provento', label: 'Tipo', isSortable: true },
     { label: 'Qtd. na Data Ex', className: 'text-right hidden sm:table-cell', isSortable: false },
-    { label: 'Valor Unit.', className: 'text-right', isSortable: false }, // valor unitário do provento
+    { label: 'Valor Unit.', className: 'text-right', isSortable: false },
     { key: 'valor_total_recebido', label: 'Total Recebido', className: 'text-right', isSortable: true },
+    { label: 'Status', className: 'text-center', isSortable: false },
   ];
+
+  const now = new Date();
+  const uniqueData = Array.from(new Map(data.map(item => [item.id, item])).values());
 
   return (
     <div className="overflow-x-auto rounded-md border">
@@ -99,25 +104,32 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sortedData.map((provento) => (
-            <TableRow key={provento.id}>
-              <TableCell className="hidden md:table-cell text-xs sm:text-sm">{formatDate(provento.data_ex)}</TableCell>
-              <TableCell className="text-xs sm:text-sm">{formatDate(provento.dt_pagamento)}</TableCell>
-              <TableCell className="font-medium text-xs sm:text-sm">{provento.ticker_acao}</TableCell>
-              <TableCell className="hidden lg:table-cell text-xs sm:text-sm">{provento.nome_acao || '-'}</TableCell>
-              <TableCell className="text-xs sm:text-sm">{provento.tipo_provento}</TableCell>
-              <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">
-                {(() => {
-                  console.log(
-                    `TabelaProventos - Rendering Qtd.: ID=${provento.id}, ticker=${provento.ticker_acao}, quantidade_possuida_na_data_ex=${provento.quantidade_possuida_na_data_ex}, type=${typeof provento.quantidade_possuida_na_data_ex}`
-                  );
-                  return formatNumber(provento.quantidade_possuida_na_data_ex);
-                })()}
-              </TableCell>
-              <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor_unitario_provento)}</TableCell>
-              <TableCell className="text-right font-semibold text-xs sm:text-sm">{formatCurrency(provento.valor_total_recebido)}</TableCell>
-            </TableRow>
-          ))}
+          {uniqueData.map((provento) => {
+            // Badge: Recebido se dt_pagamento <= hoje, A Receber se dt_pagamento > hoje ou ausente e data_ex futura
+            let status = 'Recebido';
+            if (!provento.dt_pagamento || new Date(provento.dt_pagamento) > now) {
+              status = 'A Receber';
+            }
+            return (
+              <TableRow key={provento.id}>
+                <TableCell className="hidden md:table-cell text-xs sm:text-sm">{formatDate(provento.data_ex)}</TableCell>
+                <TableCell className="text-xs sm:text-sm">{formatDate(provento.dt_pagamento)}</TableCell>
+                <TableCell className="font-medium text-xs sm:text-sm">{provento.ticker_acao}</TableCell>
+                <TableCell className="hidden lg:table-cell text-xs sm:text-sm">{provento.nome_acao || '-'}</TableCell>
+                <TableCell className="text-xs sm:text-sm">{provento.tipo_provento}</TableCell>
+                <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{formatNumber(provento.quantidade_possuida_na_data_ex)}</TableCell>
+                <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor_unitario_provento)}</TableCell>
+                <TableCell className="text-right font-semibold text-xs sm:text-sm">{formatCurrency(provento.valor_total_recebido)}</TableCell>
+                <TableCell className="text-center text-xs sm:text-sm">
+                  {status === 'Recebido' ? (
+                    <span className="inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs">Recebido</span>
+                  ) : (
+                    <span className="inline-block px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs">A Receber</span>
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>

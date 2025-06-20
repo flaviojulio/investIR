@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command" // Added Command components
 import type { AcaoInfo } from "@/lib/types" // Added AcaoInfo type import
+import { getCarteira } from "@/lib/getCarteira";
 
 interface AddOperationProps {
   onSuccess: () => void
@@ -34,6 +35,7 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
 
   const [acoesList, setAcoesList] = useState<AcaoInfo[]>([])
   const [comboboxOpen, setComboboxOpen] = useState(false)
+  const [carteira, setCarteira] = useState<string[]>([])
 
   useEffect(() => {
     const fetchAcoes = async () => {
@@ -42,7 +44,6 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
         setAcoesList(response.data || [])
       } catch (err) {
         console.error("Erro ao buscar ações:", err)
-        // Optionally set an error state or toast here
         toast({
           title: "Erro ao carregar tickers",
           description: "Não foi possível buscar a lista de tickers disponíveis.",
@@ -50,7 +51,16 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
         })
       }
     }
-    fetchAcoes()
+    const fetchCarteira = async () => {
+      try {
+        const carteiraData = await getCarteira();
+        setCarteira(carteiraData.map(item => item.ticker));
+      } catch (err) {
+        // Ignora erro de carteira, não bloqueia uso do componente
+      }
+    }
+    fetchAcoes();
+    fetchCarteira();
   }, [toast])
 
   const handleInputChange = (field: string, value: string) => {
@@ -168,18 +178,26 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
                     <CommandList>
                       <CommandEmpty>Nenhum ticker encontrado.</CommandEmpty>
                       <CommandGroup>
-                        {acoesList.map((acao) => (
-                          <CommandItem
-                            key={acao.ticker}
-                            value={acao.ticker}
-                            onSelect={(currentValue) => {
-                              // currentValue is the ticker string
-                              handleTickerSelect(currentValue === formData.ticker ? "" : currentValue)
-                            }}
-                          >
-                            {acao.ticker} - {acao.nome || "Nome não disponível"}
-                          </CommandItem>
-                        ))}
+                        {acoesList
+                          .slice()
+                          .sort((a, b) => {
+                            const aIn = carteira.includes(a.ticker);
+                            const bIn = carteira.includes(b.ticker);
+                            if (aIn && !bIn) return -1;
+                            if (!aIn && bIn) return 1;
+                            return a.ticker.localeCompare(b.ticker);
+                          })
+                          .map((acao) => (
+                            <CommandItem
+                              key={acao.ticker}
+                              value={acao.ticker}
+                              onSelect={(currentValue) => {
+                                handleTickerSelect(currentValue === formData.ticker ? "" : currentValue)
+                              }}
+                            >
+                              {acao.ticker} - {acao.nome || "Nome não disponível"}
+                            </CommandItem>
+                          ))}
                       </CommandGroup>
                     </CommandList>
                   </Command>

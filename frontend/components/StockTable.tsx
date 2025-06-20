@@ -300,16 +300,7 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                     )}
                   </div>
                 </TableHead>
-                <TableHead onClick={() => requestSortST('nome')} className="cursor-pointer hover:bg-muted/50">
-                  <div className="flex items-center">
-                    Nome
-                    {sortConfigST?.key === 'nome' ? (
-                      sortConfigST.direction === 'ascending' ? <ArrowUp className="ml-2 h-4 w-4" /> : <ArrowDown className="ml-2 h-4 w-4" />
-                    ) : (
-                      <ChevronsUpDown className="ml-2 h-4 w-4 opacity-50" />
-                    )}
-                  </div>
-                </TableHead>
+                {/* Nome column removed, now shown as hint on badge */}
                 <TableHead onClick={() => requestSortST('quantidade')} className="cursor-pointer hover:bg-muted/50 text-right">
                   <div className="flex items-center justify-end">
                     Quantidade
@@ -365,8 +356,13 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                 const resultadoPercentualAtualDisplay = typedItem._resultadoPercentualCalculated;
                 return (
                   <TableRow key={typedItem.ticker}>
-                    <TableCell className="font-medium"><Link href={`/acao/${typedItem.ticker}`} passHref><Badge variant="outline" className="hover:underline cursor-pointer">{typedItem.ticker}</Badge></Link></TableCell>
-                    <TableCell>{typedItem.nome || '-'}</TableCell> {/* Display stock name */}
+                    <TableCell className="font-medium">
+                      <Link href={`/acao/${typedItem.ticker}`} passHref>
+                        <Badge variant="outline" className="hover:underline cursor-pointer" title={typedItem.nome || undefined}>
+                          {typedItem.ticker}
+                        </Badge>
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-right">{formatNumber(typedItem.quantidade)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(typedItem.preco_medio)}</TableCell>
                     <TableCell className="text-right">{formatCurrency(Math.abs(typedItem.custo_total))}</TableCell>

@@ -935,8 +935,9 @@ def recalcular_resultados(usuario_id: int) -> None:
                 
                 if quantidade_vendida_a_descoberto > 0:
                     valor_desta_venda_descoberto_bruto = quantidade_vendida_a_descoberto * preco_venda_unitario
+                    # Corrige nome da variável para fees_desta_venda_descoberto
                     fees_desta_venda_descoberto = (fees_total_venda / quantidade_venda_total) * quantidade_vendida_a_descoberto if quantidade_venda_total > 0 else 0
-                    valor_liquido_desta_venda_descoberto = valor_desta_venda_descoberto_bruto - fees_desta_venda_descoberta
+                    valor_liquido_desta_venda_descoberto = valor_desta_venda_descoberto_bruto - fees_desta_venda_descoberto
 
                     resultado_mes_swing["vendas"] += valor_liquido_desta_venda_descoberto
                     # O custo da venda a descoberto será apurado na recompra.

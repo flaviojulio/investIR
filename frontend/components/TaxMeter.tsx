@@ -21,6 +21,7 @@ export function TaxMeter({ resultados }: TaxMeterProps) {
     const limiteIsencao = 20000
     const percentualUtilizado = (vendasMesAtual / limiteIsencao) * 100
     const valorRestante = Math.max(0, limiteIsencao - vendasMesAtual)
+    const valorExcedente = Math.max(0, vendasMesAtual - limiteIsencao)
     const isento = vendasMesAtual <= limiteIsencao
 
     return {
@@ -28,6 +29,7 @@ export function TaxMeter({ resultados }: TaxMeterProps) {
       limiteIsencao,
       percentualUtilizado: Math.min(100, percentualUtilizado),
       valorRestante,
+      valorExcedente,
       isento,
       ultrapassou: vendasMesAtual > limiteIsencao,
     }
@@ -106,8 +108,10 @@ export function TaxMeter({ resultados }: TaxMeterProps) {
             <div className="text-sm text-muted-foreground">Limite de isenção</div>
           </div>
           <div className="text-center">
-            <div className={`text-lg font-semibold ${taxData.ultrapassou ? "text-red-600" : "text-green-600"}`}>
-              {formatCurrency(taxData.valorRestante)}
+            <div className={`text-lg font-semibold ${taxData.ultrapassou ? "text-yellow-700" : "text-green-600"}`}>
+              {taxData.ultrapassou
+                ? formatCurrency(taxData.valorExcedente)
+                : formatCurrency(taxData.valorRestante)}
             </div>
             <div className="text-sm text-muted-foreground">
               {taxData.ultrapassou ? "Valor excedente" : "Valor restante"}
@@ -116,13 +120,13 @@ export function TaxMeter({ resultados }: TaxMeterProps) {
         </div>
 
         {taxData.ultrapassou && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-            <div className="flex items-center gap-2 text-red-800">
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-yellow-800">
               <AlertTriangle className="h-4 w-4" />
-              <span className="font-medium">Atenção!</span>
+              <span className="font-medium">Aviso</span>
             </div>
-            <p className="text-sm text-red-700 mt-1">
-              Você ultrapassou o limite de isenção. Será necessário pagar 15% de IR sobre os ganhos de swing trade.
+            <p className="text-sm text-yellow-700 mt-1">
+              O limite de isenção foi ultrapassado este mês. Ganhos de swing trade acima de R$ 20.000,00 estão sujeitos à alíquota de 15% de IR. Consulte seu extrato para detalhes.
             </p>
           </div>
         )}
