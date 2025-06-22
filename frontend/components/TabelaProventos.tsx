@@ -131,6 +131,33 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
             );
           })}
         </TableBody>
+        {/* Rodapé com somatórios */}
+        <tfoot>
+          <TableRow>
+            <TableCell colSpan={headerConfig.length} className="p-0" style={{ background: '#f9fafb' }}>
+              <div className="flex flex-col md:flex-row w-full text-base md:text-lg font-bold divide-y md:divide-y-0 md:divide-x divide-gray-200">
+                <div className="flex-1 flex flex-col items-center py-3 px-2">
+                  <span className="text-muted-foreground text-xs md:text-sm mb-1">Recebidos</span>
+                  <span className="text-green-700">{formatCurrency(uniqueData.filter(p => {
+                    const now = new Date();
+                    return p.dt_pagamento && new Date(p.dt_pagamento) <= now;
+                  }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0))}</span>
+                </div>
+                <div className="flex-1 flex flex-col items-center py-3 px-2">
+                  <span className="text-muted-foreground text-xs md:text-sm mb-1">A Receber</span>
+                  <span className="text-blue-700">{formatCurrency(uniqueData.filter(p => {
+                    const now = new Date();
+                    return !p.dt_pagamento || new Date(p.dt_pagamento) > now;
+                  }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0))}</span>
+                </div>
+                <div className="flex-1 flex flex-col items-center py-3 px-2">
+                  <span className="text-muted-foreground text-xs md:text-sm mb-1">Total</span>
+                  <span>{formatCurrency(uniqueData.reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0))}</span>
+                </div>
+              </div>
+            </TableCell>
+          </TableRow>
+        </tfoot>
       </Table>
     </div>
   );

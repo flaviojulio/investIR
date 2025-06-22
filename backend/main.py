@@ -4,6 +4,7 @@ import json
 from typing import List, Dict, Any
 import uvicorn
 import logging # Added logging import
+from datetime import datetime, date # Added for date handling
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
 
@@ -634,6 +635,10 @@ async def deletar_funcao_existente(
 async def listar_operacoes(usuario: UsuarioResponse = Depends(get_current_user)):
     try:
         operacoes = listar_operacoes_service(usuario_id=usuario.id)
+        # Ajusta datas para string e inclui corretora_nome
+        for op in operacoes:
+            if isinstance(op["date"], (datetime, date)):
+                op["date"] = op["date"].isoformat()
         return operacoes
     except Exception as e:
         user_id_for_log = usuario.id if usuario else "Unknown"

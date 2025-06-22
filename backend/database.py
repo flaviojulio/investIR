@@ -523,7 +523,7 @@ def obter_operacao_por_id(operacao_id: int, usuario_id: int) -> Optional[Dict[st
 
 def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
     """
-    Obtém todas as operações de um usuário específico.
+    Obtém todas as operações de um usuário específico, incluindo o nome da corretora.
     
     Args:
         usuario_id: ID do usuário para filtrar operações.
@@ -533,30 +533,29 @@ def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
     """
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Filtra estritamente por usuario_id
+        # Agora faz join com corretoras
         query = '''
-        SELECT id, date, ticker, operation, quantity, price, fees, usuario_id
-        FROM operacoes
-        WHERE usuario_id = ?
-        ORDER BY date
+        SELECT o.id, o.date, o.ticker, o.operation, o.quantity, o.price, o.fees, o.usuario_id, o.corretora_id, c.nome as corretora_nome
+        FROM operacoes o
+        LEFT JOIN corretoras c ON o.corretora_id = c.id
+        WHERE o.usuario_id = ?
+        ORDER BY o.date
         '''
-        
         cursor.execute(query, (usuario_id,))
-        
         operacoes = []
         for operacao in cursor.fetchall():
             operacoes.append({
                 "id": operacao["id"],
-                "date": datetime.fromisoformat(operacao["date"].split("T")[0]).date() if isinstance(operacao["date"], str) else operacao["date"], # Standardize to date object
+                "date": datetime.fromisoformat(operacao["date"].split("T")[0]).date() if isinstance(operacao["date"], str) else operacao["date"],
                 "ticker": operacao["ticker"],
                 "operation": operacao["operation"],
                 "quantity": operacao["quantity"],
                 "price": operacao["price"],
                 "fees": operacao["fees"],
-                "usuario_id": operacao["usuario_id"]
+                "usuario_id": operacao["usuario_id"],
+                "corretora_id": operacao["corretora_id"],
+                "corretora_nome": operacao["corretora_nome"]
             })
-        
         return operacoes
 
 def obter_tickers_operados_por_usuario(usuario_id: int) -> List[str]:

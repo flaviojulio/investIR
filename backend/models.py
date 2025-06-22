@@ -70,6 +70,7 @@ class OperacaoCreate(OperacaoBase):
 class Operacao(OperacaoBase):
     id: int
     usuario_id: Optional[int] = None
+    corretora_nome: Optional[str] = None  # Nome da corretora para exibição
 
 class ResultadoMensal(BaseModel):
     mes: str  # Formato: YYYY-MM

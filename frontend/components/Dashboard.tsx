@@ -273,17 +273,23 @@ function ProventosTabContent() {
 
     const lowerSearchTerm = searchTerm.toLowerCase();
     const searchedResult = filteredResult.filter(p => {
+      // Determina status
+      let status = 'Recebido';
+      const now = new Date();
+      if (!p.dt_pagamento || new Date(p.dt_pagamento) > now) {
+        status = 'A Receber';
+      }
       const fieldsToSearch = [
         p.ticker_acao,
-        p.tipo,
+        p.tipo, // Corrigido para o campo correto
         p.dt_pagamento,
         p.data_ex,
         String(p.valor_unitario_provento),
         String(p.quantidade_na_data_ex),
         String(p.valor_total_recebido),
-        p.nome_acao
+        p.nome_acao,
+        status
       ];
-
       return fieldsToSearch.some(field =>
         field && field.toString().toLowerCase().includes(lowerSearchTerm)
       );

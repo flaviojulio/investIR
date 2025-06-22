@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Trash2, Search } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import type { Operacao } from "@/lib/types"
+import type { Operacao, Corretora } from "@/lib/types"
 
 interface OperationsHistoryProps {
   operacoes: Operacao[]
@@ -18,16 +18,39 @@ interface OperationsHistoryProps {
 }
 
 export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProps) {
-  const [searchTicker, setSearchTicker] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
   const [filterOperation, setFilterOperation] = useState("all")
   const [loading, setLoading] = useState<number | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false); // State for bulk delete
+  const [corretoras, setCorretoras] = useState<Corretora[]>([])
   const { toast } = useToast()
 
+  useEffect(() => {
+    api.get<Corretora[]>("/corretoras")
+      .then(res => setCorretoras(res.data))
+      .catch(() => setCorretoras([]))
+  }, [])
+
   const filteredOperations = operacoes.filter((op) => {
-    const matchesTicker = !searchTicker || op.ticker.toLowerCase().includes(searchTicker.toLowerCase())
-    const matchesOperation = filterOperation === "all" || op.operation === filterOperation
-    return matchesTicker && matchesOperation
+    const lowerSearch = searchTerm.toLowerCase()
+    const matchesTicker = op.ticker.toLowerCase().includes(lowerSearch)
+    const matchesCorretora = (op.corretora_nome || "").toLowerCase().includes(lowerSearch)
+    const matchesOperation = op.operation === "buy" ? "compra".includes(lowerSearch) : "venda".includes(lowerSearch) || op.operation.toLowerCase().includes(lowerSearch)
+    const matchesQuantity = String(op.quantity).includes(lowerSearch)
+    const matchesPrice = String(op.price).includes(lowerSearch)
+    const matchesFees = String(op.fees).includes(lowerSearch)
+    // Permite busca por data (formato brasileiro)
+    const matchesDate = op.date && new Date(op.date).toLocaleDateString("pt-BR").includes(lowerSearch)
+    return (
+      !searchTerm ||
+      matchesTicker ||
+      matchesCorretora ||
+      matchesOperation ||
+      matchesQuantity ||
+      matchesPrice ||
+      matchesFees ||
+      matchesDate
+    ) && (filterOperation === "all" || op.operation === filterOperation)
   })
 
   const handleDelete = async (operationId: number) => {
@@ -129,9 +152,9 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por ticker..."
-                value={searchTicker}
-                onChange={(e) => setSearchTicker(e.target.value)}
+                placeholder="Buscar..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="pl-10"
               />
             </div>
@@ -174,13 +197,14 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                 <TableHead className="text-right">Preço</TableHead>
                 <TableHead className="text-right">Taxas</TableHead>
                 <TableHead className="text-right">Total</TableHead>
+                <TableHead>Corretora</TableHead>
                 <TableHead className="text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredOperations.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     {operacoes.length === 0
                       ? "Nenhuma operação encontrada. Adicione operações para vê-las aqui."
                       : "Nenhuma operação corresponde aos filtros aplicados."}
@@ -190,6 +214,9 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                 filteredOperations.map((operacao) => {
                   const total = operacao.quantity * operacao.price
                   const totalWithFees = operacao.operation === "buy" ? total + operacao.fees : total - operacao.fees
+
+                  // Busca nome da corretora (cache local)
+                  const corretora = corretoras?.find(c => c.id === operacao.corretora_id)
 
                   return (
                     <TableRow key={operacao.id}>
@@ -206,6 +233,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                       <TableCell className="text-right">{formatCurrency(operacao.price)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(operacao.fees)}</TableCell>
                       <TableCell className="text-right font-medium">{formatCurrency(totalWithFees)}</TableCell>
+                      <TableCell>{operacao.corretora_nome || '-'}</TableCell>
                       <TableCell className="text-center">
                         <Button
                           variant="ghost"
