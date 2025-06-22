@@ -7,7 +7,7 @@ import { api, getResumoProventosAnuaisUsuario, getResumoProventosMensaisUsuario,
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark } from "lucide-react" // Added new icons
+import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy } from "lucide-react" // Added Trophy
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import {
@@ -38,6 +38,7 @@ import { OperationsHistory } from "@/components/OperationsHistory"
 import { TaxResults } from "@/components/TaxResults"
 import OperacoesEncerradasTable from '@/components/OperacoesEncerradasTable';
 import { useToast } from "@/hooks/use-toast"
+import { Tooltip as TooltipUI, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 // Removed DividendTimeline import
 // import { DividendTimeline } from "@/components/DividendTimeline"
 // Added ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario
@@ -299,6 +300,26 @@ function ProventosTabContent() {
 
   }, [proventosDetalhados, anoSelecionado, searchTerm]);
 
+  // Cálculo do total de proventos a receber no ano selecionado
+  const totalAReceberAnoSelecionado = useMemo(() => {
+    if (!proventosDetalhados || !anoSelecionado) return 0;
+    const now = new Date();
+    return proventosDetalhados.filter(p => {
+      let dataPagamento = p.dt_pagamento ? new Date(p.dt_pagamento) : null;
+      let anoEvento = dataPagamento && !isNaN(dataPagamento.getTime()) ? dataPagamento.getFullYear() : null;
+      if (!dataPagamento || isNaN(dataPagamento.getTime())) {
+        if (p.data_ex) {
+          const dataEx = new Date(p.data_ex);
+          if (!isNaN(dataEx.getTime())) {
+            anoEvento = dataEx.getFullYear();
+            dataPagamento = dataEx;
+          }
+        }
+      }
+      return anoEvento === anoSelecionado && dataPagamento && dataPagamento > now;
+    }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0);
+  }, [proventosDetalhados, anoSelecionado]);
+
   return (
     <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8">
       <h1 className="text-3xl font-bold mb-8 text-gray-800 dark:text-white">Meus Proventos</h1>
@@ -346,11 +367,43 @@ function ProventosTabContent() {
           </div>
         ) : resumoDoAnoSelecionado ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <InfoCard title={`Total Recebido (${anoSelecionado})`} value={formatCurrency(totalAnoSelecionado)} icon={DollarSign} description="Soma de todos os proventos no ano."/>
-            <InfoCard title={`Dividendos (${anoSelecionado})`} value={formatCurrency(dividendosAnoSelecionado)} icon={Landmark} description="Total de dividendos recebidos."/>
-            <InfoCard title={`JCP (${anoSelecionado})`} value={formatCurrency(jcpAnoSelecionado)} icon={Briefcase} description="Total de JCP (bruto) recebido."/>
+            <TooltipProvider>
+              <TooltipUI>
+                <TooltipTrigger asChild>
+                  <div>
+                    <InfoCard
+                      title={`Total Recebido (${anoSelecionado})`}
+                      value={formatCurrency(totalAnoSelecionado)}
+                      icon={DollarSign}
+                      description="Proventos recebidos no ano"
+                    />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="text-sm">
+                  <div className="mb-1 font-semibold">Detalhamento:</div>
+                  <div>Dividendos: <span className="font-bold text-blue-700">{formatCurrency(dividendosAnoSelecionado)}</span></div>
+                  <div>JCP: <span className="font-bold text-green-700">{formatCurrency(jcpAnoSelecionado)}</span></div>
+                </TooltipContent>
+              </TooltipUI>
+            </TooltipProvider>
+            <InfoCard
+              title={`A Receber (${anoSelecionado})`}
+              value={formatCurrency(totalAReceberAnoSelecionado)}
+              icon={Landmark}
+              description="Proventos ainda não recebidos"
+            />
             {acaoMaiorPagamentoAno ? (
-              <InfoCard title={`Top Ação (${anoSelecionado})`} value={acaoMaiorPagamentoAno.ticker} description={`Recebido: ${formatCurrency(acaoMaiorPagamentoAno.total_recebido_na_acao)}`} icon={TrendingUp}/>
+              <InfoCard
+                title={`Top Ação (${anoSelecionado})`}
+                value={
+                  <span className="flex items-center gap-2">
+                    <Trophy className="h-6 w-6 text-yellow-400 drop-shadow-sm" fill="#facc15" stroke="#eab308" />
+                    <span>{acaoMaiorPagamentoAno.ticker}</span>
+                  </span>
+                }
+                description={`Recebido: ${formatCurrency(acaoMaiorPagamentoAno.total_recebido_na_acao)}`}
+                icon={TrendingUp}
+              />
             ) : (
               <InfoCard title={`Top Ação (${anoSelecionado})`} value="N/A" description="Sem dados de ações para este ano." icon={TrendingUp}/>
             )}
