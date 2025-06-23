@@ -13,9 +13,12 @@ TEST_DB_FILENAME = "acoes_ir_test.db"
 
 # Now import application modules
 from main import app
-from models import Operacao # Operacao Model Added
+from models import Operacao, OperacaoCreate # Operacao Model Added, OperacaoCreate Added
 import database as db_module  # Use an alias to avoid confusion with local 'database' variables
 import auth as auth_module # Use an alias
+from unittest.mock import patch, MagicMock # For mocking, MagicMock Added
+from io import BytesIO # Added
+from datetime import date # Added
 
 USER_COUNT = 0
 
@@ -1004,4 +1007,231 @@ def test_reset_financial_data_forbidden_non_admin(client: TestClient, auth_token
     response = client.delete("/api/admin/reset-financial-data", headers=user_headers)
     assert response.status_code == 403
     assert "Acesso negado. Permissão de administrador necessária." in response.json()["detail"]
+
+
+# --- /api/upload Endpoint Tests ---
+
+# Helper to create a file-like object for upload
+def create_json_upload_file(data_list: List[Dict[str, Any]]) -> BytesIO:
+    json_str = json.dumps(data_list)
+    return BytesIO(json_str.encode('utf-8'))
+
+@patch('main.get_current_user_data') # Mock authentication for upload endpoint
+@patch('main.processar_operacoes')   # Mock the service call in main.py's upload_operacoes
+def test_upload_operacoes_successful(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
+    # registered_user fixture creates a user and we can use their ID
+    # get_current_user_data in main.py is expected to return a UserResponse like object or dict
+    mock_user_response_data = {
+        "id": registered_user["id"],
+        "username": registered_user["username"],
+        "email": registered_user["email"],
+        "nome_completo": registered_user["nome_completo"],
+        "funcoes": ["usuario"], # Example roles
+        "ativo": True
+    }
+    mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
+
+    valid_data = [
+        {
+            "Data do Negócio": "10/04/2025",
+            "Tipo de Movimentação": "Compra",
+            "Mercado": "Mercado à Vista", # Extra field
+            "Código de Negociação": "VALE3",
+            "Quantidade": 100,
+            "Preço": "R$51,98",
+            "Valor": "R$5.198,00" # Extra field
+        },
+        {
+            "Data do Negócio": "15/01/2025",
+            "Tipo de Movimentação": "Venda",
+            "Código de Negociação": "PETR4 ", # Note trailing space for ticker test
+            "Quantidade": 50,
+            "Preço": "30,00", # No R$, no thousands
+            "Instituição": "XP INVESTIMENTOS CCTVM S/A" # Extra field
+        }
+    ]
+    upload_file = create_json_upload_file(valid_data)
+
+    # We need to use the actual auth token for the client call if the endpoint uses Depends(get_current_active_user)
+    # The current main.py upload endpoint uses: usuario: UserResponse = Depends(get_current_user_data)
+    # So, we don't need to pass auth headers if get_current_user_data is properly mocked.
+    # If it used get_current_active_user which relies on OAuth2PasswordBearer, we'd need headers.
+    # Let's assume the mock of get_current_user_data is sufficient.
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("operacoes.json", upload_file, "application/json")}
+    )
+
+    assert response.status_code == 200
+    response_json = response.json()
+    assert "operações importadas" in response_json["mensagem"]
+    assert "2 operações importadas" in response_json["mensagem"]
+
+    mock_processar_operacoes.assert_called_once()
+    args, kwargs = mock_processar_operacoes.call_args
+
+    operacoes_arg = args[0] # First positional argument
+    db_session_arg = args[1] # Second positional argument (db)
+    usuario_id_arg = kwargs.get('usuario_id')
+
+    assert usuario_id_arg == registered_user["id"] # From mock_get_current_user_data
+    assert len(operacoes_arg) == 2
+
+    op1 = operacoes_arg[0]
+    assert isinstance(op1, OperacaoCreate)
+    assert op1.date == date(2025, 4, 10)
+    assert op1.operation == "buy"
+    assert op1.ticker == "VALE3"
+    assert op1.quantity == 100
+    assert op1.price == 51.98
+    assert op1.fees == 0.0
+
+    op2 = operacoes_arg[1]
+    assert isinstance(op2, OperacaoCreate)
+    assert op2.date == date(2025, 1, 15)
+    assert op2.operation == "sell"
+    assert op2.ticker == "PETR4" # Check stripping and uppercasing
+    assert op2.quantity == 50
+    assert op2.price == 30.0
+    assert op2.fees == 0.0
+
+@patch('main.get_current_user_data')
+def test_upload_operacoes_invalid_json_structure(mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
+    mock_user_response_data = {"id": registered_user["id"]} # Simplified mock
+    mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
+
+    invalid_json_bytes = BytesIO(b"[{'Data do Negócio': '10/04/2025',,}]") # Malformed JSON
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("operacoes.json", invalid_json_bytes, "application/json")}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Formato de arquivo JSON inválido"
+
+@patch('main.get_current_user_data')
+@patch('main.processar_operacoes') # Mock to prevent actual processing if error occurs before
+def test_upload_operacoes_pydantic_validation_error(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
+    mock_user_response_data = {"id": registered_user["id"]}
+    mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
+
+    data_with_invalid_date = [{
+        "Data do Negócio": "30/02/2025", # Invalid date
+        "Tipo de Movimentação": "Compra",
+        "Código de Negociação": "VALE3",
+        "Quantidade": 100,
+        "Preço": "R$51,98"
+    }]
+    upload_file = create_json_upload_file(data_with_invalid_date)
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("operacoes.json", upload_file, "application/json")}
+    )
+
+    # Based on main.py's current exception handling for the /upload endpoint:
+    # except ValidationError as e:
+    #     raise HTTPException(status_code=422, detail=e.errors())
+    # So, we expect a 422 status code.
+    assert response.status_code == 422
+    response_data = response.json()
+    assert "detail" in response_data
+    assert isinstance(response_data["detail"], list)
+    assert len(response_data["detail"]) > 0
+    # Example check for the error content related to the date validation
+    error_detail = response_data["detail"][0] # Assuming one error in the first item
+    assert "Data do Negócio" in error_detail.get("loc", []) or "date" in error_detail.get("loc", []) # field name
+    assert "Formato de data inválido" in error_detail.get("msg", "")
+
+@patch('main.get_current_user_data')
+@patch('main.processar_operacoes')
+def test_upload_operacoes_service_value_error(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
+    mock_user_response_data = {"id": registered_user["id"]}
+    mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
+
+    mock_processar_operacoes.side_effect = ValueError("Ticker XYZ inválido") # Simulate service error
+
+    valid_data = [{
+        "Data do Negócio": "10/04/2025", "Tipo de Movimentação": "Compra",
+        "Código de Negociação": "XYZ", "Quantidade": 100, "Preço": "R$51,98"
+    }]
+    upload_file = create_json_upload_file(valid_data)
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("operacoes.json", upload_file, "application/json")}
+    )
+
+    # Based on main.py:
+    # except ValueError as e:
+    #     raise HTTPException(status_code=400, detail=str(e))
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Ticker XYZ inválido"
+
+@patch('main.get_current_user_data')
+@patch('main.processar_operacoes')
+def test_upload_operacoes_empty_array(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
+    mock_user_response_data = {"id": registered_user["id"]}
+    mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
+
+    upload_file = create_json_upload_file([])
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("operacoes.json", upload_file, "application/json")}
+    )
+
+    assert response.status_code == 200
+    assert "0 operações importadas" in response.json()["mensagem"]
+
+    # Check that processar_operacoes was called with an empty list and the correct user_id
+    mock_processar_operacoes.assert_called_once()
+    args, kwargs = mock_processar_operacoes.call_args
+    operacoes_arg = args[0]
+    usuario_id_arg = kwargs.get('usuario_id')
+
+    assert operacoes_arg == []
+    assert usuario_id_arg == registered_user["id"]
+
+@patch('main.get_current_user_data')
+@patch('main.processar_operacoes')
+def test_upload_operacoes_one_valid_one_invalid(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
+    mock_user_response_data = {"id": registered_user["id"]}
+    mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
+
+    data_mixed_validity = [
+        { # Valid
+            "Data do Negócio": "10/04/2025", "Tipo de Movimentação": "Compra",
+            "Código de Negociação": "VALE3", "Quantidade": 100, "Preço": "R$51,98"
+        },
+        { # Invalid (date)
+            "Data do Negócio": "30/02/2025", "Tipo de Movimentação": "Venda",
+            "Código de Negociação": "PETR4", "Quantidade": 50, "Preço": "R$30,00"
+        }
+    ]
+    upload_file = create_json_upload_file(data_mixed_validity)
+
+    response = client.post(
+        "/api/upload",
+        files={"file": ("operacoes.json", upload_file, "application/json")}
+    )
+
+    # As per current main.py logic, the list comprehension `[OperacaoCreate(**op) for op in operacoes_json]`
+    # will fail on the first invalid item, raising ValidationError.
+    # This is caught and re-raised as HTTPException 422.
+    assert response.status_code == 422
+    response_data = response.json()
+    assert "detail" in response_data
+    assert isinstance(response_data["detail"], list)
+    error_detail = response_data["detail"][0] # Pydantic returns a list of errors
+    # The error should point to the second item (index 1) and the 'Data do Negócio' field.
+    # Example: {'loc': [1, 'Data do Negócio'], 'msg': '...', 'type': 'value_error.date'}
+    # Note: Pydantic v2 error loc might be like ('__root__', 1, 'date') or similar
+    # depending on how it reports errors in lists of models.
+    # For now, just check that there's an error message related to the date.
+    assert any("Formato de data inválido" in err.get("msg", "") for err in response_data["detail"])
+    # And processar_operacoes should not have been called
+    mock_processar_operacoes.assert_not_called()
 ```
