@@ -4,20 +4,21 @@ import json
 from typing import List, Dict, Any
 import uvicorn
 import logging # Added logging import
+from datetime import datetime, date # Added for date handling
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
 
-import models # Import the entire models module to use models.UsuarioProventoRecebidoDB
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
-    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo, # Changed StockInfo to AcaoInfo
-    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo, # Added EventoCorporativo models
-    ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, # ProventoRecebidoUsuario removed as it's no longer the response_model here
-    UsuarioProventoRecebidoDB, # Explicitly import UsuarioProventoRecebidoDB
-    # Modelos de autenticação
-    UsuarioCreate, UsuarioUpdate, UsuarioResponse, LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
-    BaseModel # Ensure BaseModel is available for DARFStatusUpdate
+    DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo,
+    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo,
+    ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao,
+    UsuarioProventoRecebidoDB, UsuarioCreate, UsuarioUpdate, UsuarioResponse,
+    LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
+    Corretora # Added Corretora model
 )
+from pydantic import BaseModel
+
 
 # Pydantic model for DARF status update
 class DARFStatusUpdate(BaseModel):
@@ -209,7 +210,7 @@ async def listar_todos_os_eventos_corporativos_api( # Renamed to avoid conflict 
 
 # Endpoints de Proventos do Usuário
 
-@app.get("/api/usuario/proventos/", response_model=List[models.UsuarioProventoRecebidoDB], tags=["Proventos Usuário"])
+@app.get("/api/usuario/proventos/", response_model=List[UsuarioProventoRecebidoDB], tags=["Proventos Usuário"])
 async def listar_proventos_usuario_detalhado(
     usuario: UsuarioResponse = Depends(get_current_user)
 ):
@@ -587,7 +588,6 @@ async def atualizar_funcao_existente(
                  raise HTTPException(status_code=404, detail=f"Função com ID {funcao_id} não encontrada.")
             # Se chegou aqui, a atualização falhou por um motivo não de "não encontrado" que não levantou ValueError
             # Isso pode indicar um problema lógico em auth.atualizar_funcao se não houver conflito de nome
-            # Para agora, vamos assumir que o nome pode ser o problema se não for ValueError
             raise HTTPException(status_code=409, detail=f"Não foi possível atualizar a função com ID {funcao_id}. Verifique se o novo nome já está em uso.")
 
 
@@ -635,6 +635,10 @@ async def deletar_funcao_existente(
 async def listar_operacoes(usuario: UsuarioResponse = Depends(get_current_user)):
     try:
         operacoes = listar_operacoes_service(usuario_id=usuario.id)
+        # Ajusta datas para string e inclui corretora_nome
+        for op in operacoes:
+            if isinstance(op["date"], (datetime, date)):
+                op["date"] = op["date"].isoformat()
         return operacoes
     except Exception as e:
         user_id_for_log = usuario.id if usuario else "Unknown"
@@ -968,6 +972,22 @@ async def deletar_todas_operacoes(
         user_id_for_log = usuario.id if usuario else "Unknown" # Use .id
         logging.error(f"Error in /api/bulk-ops/operacoes/delete-all for user {user_id_for_log}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro ao deletar todas as operações: {str(e)}")
+
+# Novo endpoint para listar todas as corretoras cadastradas
+@app.get("/api/corretoras", response_model=List[Corretora], tags=["Corretoras"])
+async def listar_corretoras():
+    """
+    Lista todas as corretoras cadastradas no sistema.
+    """
+    try:
+        from database import get_db
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, nome, cnpj FROM corretoras ORDER BY nome ASC")
+            corretoras = cursor.fetchall()
+            return [Corretora(id=row["id"], nome=row["nome"], cnpj=row["cnpj"]) for row in corretoras]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao listar corretoras: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

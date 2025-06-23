@@ -62,6 +62,7 @@ class OperacaoBase(BaseModel):
     quantity: int
     price: float
     fees: Optional[float] = 0.0
+    corretora_id: Optional[int] = None  # Novo campo opcional para vincular corretora
 
 class OperacaoCreate(OperacaoBase):
     pass
@@ -69,6 +70,7 @@ class OperacaoCreate(OperacaoBase):
 class Operacao(OperacaoBase):
     id: int
     usuario_id: Optional[int] = None
+    corretora_nome: Optional[str] = None  # Nome da corretora para exibição
 
 class ResultadoMensal(BaseModel):
     mes: str  # Formato: YYYY-MM
@@ -419,3 +421,9 @@ class UsuarioProventoRecebidoDB(BaseModel):
             datetime: lambda dt: dt.isoformat() if dt else None
         }
     )
+
+class Corretora(BaseModel):
+    id: int | None = None
+    nome: str
+    cnpj: str
+    model_config = ConfigDict(from_attributes=True)

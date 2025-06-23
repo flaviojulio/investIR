@@ -4,7 +4,7 @@ import { LucideProps } from 'lucide-react';
 
 interface InfoCardProps {
   title: string;
-  value: string | number;
+  value: string | number | React.ReactNode;
   description?: string;
   icon?: React.ComponentType<LucideProps>; // Aceita ícones do lucide-react
 }

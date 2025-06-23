@@ -414,6 +414,21 @@ def criar_tabelas():
         cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_usr_prov_rec_usr_prov_glob ON usuario_proventos_recebidos(usuario_id, provento_global_id);')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_uid_dtpag_dataex ON usuario_proventos_recebidos(usuario_id, dt_pagamento DESC, data_ex DESC);') # New composite index
         
+        # Tabela de corretoras
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS corretoras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome TEXT NOT NULL,
+            cnpj TEXT NOT NULL UNIQUE
+        )
+        ''')
+
+        # Adicionar coluna corretora_id em operacoes, se não existir
+        cursor.execute("PRAGMA table_info(operacoes)")
+        colunas_operacoes = [info[1] for info in cursor.fetchall()]
+        if 'corretora_id' not in colunas_operacoes:
+            cursor.execute('ALTER TABLE operacoes ADD COLUMN corretora_id INTEGER REFERENCES corretoras(id)')
+
         conn.commit()
     
     # Inicializa o sistema de autenticação
@@ -448,16 +463,14 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
         
         # Verifica se o ticker existe na tabela acoes
         ticker_value = operacao["ticker"]
-        # Modificado para consultar a nova tabela 'acoes'
         cursor.execute("SELECT 1 FROM acoes WHERE ticker = ?", (ticker_value,))
         if cursor.fetchone() is None:
-            # Mensagem de erro atualizada para refletir o nome da nova tabela
             raise ValueError(f"Ticker {ticker_value} não encontrado na tabela de ações (acoes).")
 
-        # Adiciona usuario_id ao INSERT
+        # Adiciona usuario_id e corretora_id ao INSERT
         cursor.execute('''
-        INSERT INTO operacoes (date, ticker, operation, quantity, price, fees, usuario_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO operacoes (date, ticker, operation, quantity, price, fees, usuario_id, corretora_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             operacao["date"].isoformat() if isinstance(operacao["date"], (datetime, date)) else operacao["date"],
             operacao["ticker"],
@@ -465,7 +478,8 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
             operacao["quantity"],
             operacao["price"],
             operacao.get("fees", 0.0),
-            usuario_id # Garante que usuario_id seja passado
+            usuario_id, # Garante que usuario_id seja passado
+            operacao.get("corretora_id") # Pode ser None
         ))
         
         conn.commit()
@@ -509,7 +523,7 @@ def obter_operacao_por_id(operacao_id: int, usuario_id: int) -> Optional[Dict[st
 
 def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
     """
-    Obtém todas as operações de um usuário específico.
+    Obtém todas as operações de um usuário específico, incluindo o nome da corretora.
     
     Args:
         usuario_id: ID do usuário para filtrar operações.
@@ -519,30 +533,29 @@ def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
     """
     with get_db() as conn:
         cursor = conn.cursor()
-        
-        # Filtra estritamente por usuario_id
+        # Agora faz join com corretoras
         query = '''
-        SELECT id, date, ticker, operation, quantity, price, fees, usuario_id
-        FROM operacoes
-        WHERE usuario_id = ?
-        ORDER BY date
+        SELECT o.id, o.date, o.ticker, o.operation, o.quantity, o.price, o.fees, o.usuario_id, o.corretora_id, c.nome as corretora_nome
+        FROM operacoes o
+        LEFT JOIN corretoras c ON o.corretora_id = c.id
+        WHERE o.usuario_id = ?
+        ORDER BY o.date
         '''
-        
         cursor.execute(query, (usuario_id,))
-        
         operacoes = []
         for operacao in cursor.fetchall():
             operacoes.append({
                 "id": operacao["id"],
-                "date": datetime.fromisoformat(operacao["date"].split("T")[0]).date() if isinstance(operacao["date"], str) else operacao["date"], # Standardize to date object
+                "date": datetime.fromisoformat(operacao["date"].split("T")[0]).date() if isinstance(operacao["date"], str) else operacao["date"],
                 "ticker": operacao["ticker"],
                 "operation": operacao["operation"],
                 "quantity": operacao["quantity"],
                 "price": operacao["price"],
                 "fees": operacao["fees"],
-                "usuario_id": operacao["usuario_id"]
+                "usuario_id": operacao["usuario_id"],
+                "corretora_id": operacao["corretora_id"],
+                "corretora_nome": operacao["corretora_nome"]
             })
-        
         return operacoes
 
 def obter_tickers_operados_por_usuario(usuario_id: int) -> List[str]:
