@@ -5,7 +5,8 @@ from typing import Dict, List, Any, Optional
 # Unused imports json, Union, defaultdict removed
 
 # Caminho para o banco de dados SQLite
-DATABASE_FILE = "acoes_ir.db"
+DATABASE_FILE = "C:/Projeto Fortuna/investIR/backend/acoes_ir.db"
+
 
 # Convert datetime.date objects to ISO format string (YYYY-MM-DD) when writing to DB
 sqlite3.register_adapter(date, lambda val: val.isoformat())
@@ -70,6 +71,49 @@ def criar_tabelas():
         # Adicionar a coluna usuario_id se ela não existir
         if 'usuario_id' not in colunas:
             cursor.execute('ALTER TABLE operacoes ADD COLUMN usuario_id INTEGER DEFAULT NULL')
+        
+        # MIGRATION: Alterar campo date de TEXT para DATE na tabela operacoes
+        cursor.execute("PRAGMA table_info(operacoes)")
+        colunas_operacoes = [info[1] for info in cursor.fetchall()]
+        tipos_operacoes = {info[1]: info[2] for info in cursor.fetchall()}
+        cursor.execute("PRAGMA table_info(operacoes)")
+        tipos_operacoes = {info[1]: info[2] for info in cursor.fetchall()}
+        if 'date' in tipos_operacoes and tipos_operacoes['date'].upper() != 'DATE':
+            print("INFO: Migrating 'operacoes' table: changing 'date' from TEXT to DATE...")
+            cursor.execute('''
+                CREATE TABLE operacoes_temp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date DATE NOT NULL,
+                    ticker TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    price REAL NOT NULL,
+                    fees REAL NOT NULL DEFAULT 0.0,
+                    usuario_id INTEGER DEFAULT NULL,
+                    corretora_id INTEGER REFERENCES corretoras(id)
+                )
+            ''')
+            cursor.execute('SELECT * FROM operacoes')
+            rows = cursor.fetchall()
+            for row in rows:
+                # Converte date para ISO se necessário
+                date_val = row['date']
+                try:
+                    date_iso = datetime.strptime(date_val.split('T')[0], '%Y-%m-%d').date().isoformat()
+                except Exception:
+                    try:
+                        date_iso = datetime.strptime(date_val, '%d/%m/%Y').date().isoformat()
+                    except Exception:
+                        date_iso = None
+                cursor.execute('''
+                    INSERT INTO operacoes_temp (id, date, ticker, operation, quantity, price, fees, usuario_id, corretora_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (row['id'], date_iso, row['ticker'], row['operation'], row['quantity'], row['price'], row['fees'], row['usuario_id'], row['corretora_id']))
+            cursor.execute('DROP TABLE operacoes')
+            cursor.execute('ALTER TABLE operacoes_temp RENAME TO operacoes')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_date ON operacoes(date)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_ticker ON operacoes(ticker)')
+            print("INFO: 'operacoes' table migration complete. Field 'date' is now DATE.")
         
         # Tabela de resultados mensais
         cursor.execute('''
@@ -419,7 +463,7 @@ def criar_tabelas():
         CREATE TABLE IF NOT EXISTS corretoras (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             nome TEXT NOT NULL,
-            cnpj TEXT NOT NULL UNIQUE
+            cnpj TEXT UNIQUE
         )
         ''')
 
@@ -429,6 +473,27 @@ def criar_tabelas():
         if 'corretora_id' not in colunas_operacoes:
             cursor.execute('ALTER TABLE operacoes ADD COLUMN corretora_id INTEGER REFERENCES corretoras(id)')
 
+        # --- MIGRATION: Adicionar colunas ausentes em usuario_proventos_recebidos ---
+        cursor.execute("PRAGMA table_info(usuario_proventos_recebidos)")
+        colunas_usr_prov = [info[1] for info in cursor.fetchall()]
+        if 'ticker_acao' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN ticker_acao TEXT')
+        if 'nome_acao' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN nome_acao TEXT')
+        if 'tipo_provento' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN tipo_provento TEXT')
+        if 'data_ex' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN data_ex DATE')
+        if 'dt_pagamento' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN dt_pagamento DATE')
+        if 'valor_unitario_provento' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN valor_unitario_provento REAL')
+        if 'quantidade_possuida_na_data_ex' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN quantidade_possuida_na_data_ex INTEGER')
+        if 'valor_total_recebido' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN valor_total_recebido REAL')
+        if 'data_calculo' not in colunas_usr_prov:
+            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN data_calculo DATETIME')
         conn.commit()
     
     # Inicializa o sistema de autenticação
@@ -1161,34 +1226,47 @@ def limpar_usuario_proventos_recebidos_db(usuario_id: int) -> None:
             # Para esta operação, pode ser aceitável não levantar uma exceção.
             pass # Silenciosamente continua, mas idealmente logaria.
 
-def inserir_usuario_provento_recebido_db(dados: Dict[str, Any]) -> int:
+def inserir_usuario_provento_recebido_db(usuario_id: int, provento_global_id: int, quantidade: float, valor_total: float) -> int:
     """
     Insere um registro de provento recebido por um usuário no banco de dados.
-    Espera que 'dados' contenha todas as chaves necessárias e que as datas/datetimes
-    já estejam formatadas como strings ISO.
     """
+    from datetime import datetime as dt
     with get_db() as conn:
         cursor = conn.cursor()
 
-        # Certifique-se de que a ordem dos campos corresponde à ordem dos placeholders
+        # Buscar informações do provento global para preencher os campos necessários
+        cursor.execute('''SELECT id_acao, tipo, data_ex, dt_pagamento, valor as valor_unitario FROM proventos WHERE id = ?''', (provento_global_id,))
+        prov = cursor.fetchone()
+        if not prov:
+            raise ValueError(f"Provento global com id {provento_global_id} não encontrado.")
+
+        # Buscar ticker e nome da ação na tabela acoes
+        cursor.execute('SELECT ticker, nome FROM acoes WHERE id = ?', (prov['id_acao'],))
+        acao = cursor.fetchone()
+        if not acao:
+            raise ValueError(f"Ação com id {prov['id_acao']} não encontrada.")
+
         campos = [
             'usuario_id', 'provento_global_id', 'id_acao', 'ticker_acao',
             'nome_acao', 'tipo_provento', 'data_ex', 'dt_pagamento',
             'valor_unitario_provento', 'quantidade_possuida_na_data_ex',
             'valor_total_recebido', 'data_calculo'
         ]
-
+        valores = [
+            usuario_id,
+            provento_global_id,
+            prov['id_acao'],
+            acao['ticker'],
+            acao['nome'],
+            prov['tipo'],
+            prov['data_ex'],
+            prov['dt_pagamento'],
+            prov['valor_unitario'],
+            quantidade,
+            valor_total,
+            dt.now().isoformat()
+        ]
         placeholders = ', '.join(['?'] * len(campos))
-        valores = [dados.get(campo) for campo in campos]
-
-        # Assegura que dt_pagamento seja None se não fornecido, e não uma string vazia.
-        # A tabela permite NULL para dt_pagamento.
-        if 'dt_pagamento' in dados and dados['dt_pagamento'] == '':
-            valores[campos.index('dt_pagamento')] = None
-
-        # data_calculo é esperado como string YYYY-MM-DD HH:MM:SS
-        # data_ex e dt_pagamento como YYYY-MM-DD
-
         try:
             cursor.execute(f'''
                 INSERT INTO usuario_proventos_recebidos ({', '.join(campos)})
@@ -1197,14 +1275,13 @@ def inserir_usuario_provento_recebido_db(dados: Dict[str, Any]) -> int:
             conn.commit()
             return cursor.lastrowid
         except sqlite3.IntegrityError as e:
-            # Isso pode acontecer devido à restrição UNIQUE (usuario_id, provento_global_id)
-            # Logar o erro ou tratar conforme necessário.
-            # print(f"Erro de integridade ao inserir provento recebido: {e}. Dados: {dados}")
-            raise # Re-lança a exceção para ser tratada pela camada de serviço
+            raise
         except Exception as e:
-            # print(f"Erro inesperado ao inserir provento recebido: {e}. Dados: {dados}")
             raise
 
+# Mantém a versão antiga para compatibilidade, mas recomenda-se migrar para a nova assinatura
+# def inserir_usuario_provento_recebido_db(dados: Dict[str, Any]) -> int:
+#     ...
 def obter_proventos_recebidos_por_usuario_db(usuario_id: int) -> List[Dict[str, Any]]:
     """
     Obtém todos os proventos recebidos por um usuário, ordenados por data de pagamento e data ex.
@@ -1360,6 +1437,22 @@ def obter_proventos_por_ticker(ticker: str) -> List[Dict[str, Any]]:
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
+def obter_primeira_data_operacao_usuario(usuario_id: int, ticker: str) -> date | None:
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            '''
+            SELECT MIN(date) as primeira_data
+            FROM operacoes
+            WHERE usuario_id = ? AND (ticker = ? OR ticker = ? || 'F')
+            ''',
+            (usuario_id, ticker, ticker)
+        )
+        row = cursor.fetchone()
+        if row and row["primeira_data"]:
+            return date.fromisoformat(row["primeira_data"])
+        return None
+
 # Funções para Eventos Corporativos
 
 def inserir_evento_corporativo(evento_data: Dict[str, Any]) -> int:
@@ -1457,3 +1550,36 @@ def obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao: int, da
         cursor.execute(query, (id_acao, data_limite_str))
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
+
+def inserir_corretora_se_nao_existir(nome: str) -> int:
+    """
+    Insere uma corretora apenas com o nome, se não existir. Retorna o id.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM corretoras WHERE nome = ?", (nome,))
+        row = cursor.fetchone()
+        if row:
+            return row["id"]
+        cursor.execute("INSERT INTO corretoras (nome) VALUES (?)", (nome,))
+        conn.commit()
+        return cursor.lastrowid
+
+def obter_data_primeira_operacao_usuario_ticker(usuario_id: int, ticker: str) -> Optional[date]:
+    """
+    Retorna a data da primeira operação do usuário para o ticker informado.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT MIN(date) as primeira_data
+            FROM operacoes
+            WHERE usuario_id = ? AND ticker = ?
+        ''', (usuario_id, ticker))
+        row = cursor.fetchone()
+        if row and row['primeira_data']:
+            # Pode vir como string ou date, garantir date
+            if isinstance(row['primeira_data'], str):
+                return datetime.strptime(row['primeira_data'].split('T')[0], '%Y-%m-%d').date()
+            return row['primeira_data']
+        return None

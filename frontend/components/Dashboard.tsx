@@ -113,7 +113,7 @@ function ProventosTabContent() {
 
         console.log("API Response (proventosDetalhados raw):", JSON.stringify(detalhadosData, null, 2));
         setResumoAnualData(anuaisData);
-        setProventosDetalhados(detalhadosData);
+        setProventosDetalhados(detalhadosData.map(mapProventoRecebidoBackendToFrontend));
 
         if (anuaisData.length > 0) {
           const anos = anuaisData.map(item => item.ano).sort((a, b) => b - a);
@@ -579,6 +579,23 @@ function ProventosTabContent() {
       </div> */}
     </div>
   );
+}
+
+// Função utilitária para mapear campos do backend para o padrão do frontend
+function mapProventoRecebidoBackendToFrontend(p: any): ProventoRecebidoUsuario {
+  return {
+    id: p.id,
+    id_acao: p.id_acao,
+    tipo: p.tipo_provento, // backend: tipo_provento, frontend: tipo
+    valor_unitario_provento: p.valor_unitario_provento,
+    data_registro: p.data_registro || '',
+    data_ex: p.data_ex || '',
+    dt_pagamento: p.dt_pagamento || null,
+    ticker_acao: p.ticker_acao,
+    nome_acao: p.nome_acao,
+    quantidade_na_data_ex: p.quantidade_possuida_na_data_ex, // backend: quantidade_possuida_na_data_ex
+    valor_total_recebido: p.valor_total_recebido,
+  };
 }
 
 export function Dashboard() {

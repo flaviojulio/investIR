@@ -7,7 +7,9 @@ export interface Operacao {
   quantity: number;
   price: number;
   fees: number;
+  usuario_id?: number;
   corretora_id?: number | null;
+  corretora_nome?: string | null; // Adicionado para refletir o backend
 }
 
 export interface CarteiraItem {

@@ -4,7 +4,7 @@ from decimal import Decimal # Kept for specific calculations in recalcular_resul
 import calendar
 from collections import defaultdict
 from fastapi import HTTPException # Added HTTPException
-import logging # Added logging import
+import logging
 
 from models import (
     OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
@@ -19,6 +19,7 @@ import sqlite3 # For sqlite3.IntegrityError
 
 from database import (
     inserir_operacao,
+    inserir_corretora_se_nao_existir,  # Importada para uso na importação
     obter_todas_operacoes, # Comment removed
     atualizar_carteira,
     obter_carteira_atual,
@@ -57,6 +58,7 @@ from database import (
     inserir_usuario_provento_recebido_db,
     obter_tickers_operados_por_usuario, # Added for recalcular_proventos_recebidos_rapido
     obter_proventos_por_ticker,      # Added for recalcular_proventos_recebidos_rapido
+    obter_primeira_data_operacao_usuario, # Added for recalcular_proventos_recebidos_rapido
     # Novas funções de consulta para resumos
     obter_proventos_recebidos_por_usuario_db,
     obter_resumo_anual_proventos_recebidos_db,
@@ -147,19 +149,17 @@ def processar_operacoes(operacoes: List[OperacaoCreate], usuario_id: int) -> Non
         operacoes: Lista de operações a serem processadas.
         usuario_id: ID do usuário.
     """
-    # Salva as operações no banco de dados
     for op in operacoes:
-        try:
-            inserir_operacao(op.model_dump(), usuario_id=usuario_id) # Use model_dump() for Pydantic v2
-        except ValueError as e:
-            # If any operation fails due to invalid ticker, stop processing and raise error.
-            # Note: Operations inserted before this error are not rolled back with current DB interaction pattern.
-            raise ValueError(f"Erro ao processar lote: Ticker {op.ticker} inválido. Nenhuma operação adicional foi salva.")
-    
-    # Recalcula a carteira atual
+        # Conversão automática do campo date
+        if hasattr(op, 'date'):
+            op.date = parse_date_to_iso(op.date)
+        # Se vier nome de corretora e não vier id, insere se não existir
+        corretora_nome = getattr(op, 'corretora_nome', None) or (op.dict().get('corretora_nome') if hasattr(op, 'dict') else None)
+        if not getattr(op, 'corretora_id', None) and corretora_nome:
+            corretora_id = inserir_corretora_se_nao_existir(corretora_nome)
+            op.corretora_id = corretora_id
+        inserir_operacao(op.model_dump(), usuario_id=usuario_id)
     recalcular_carteira(usuario_id=usuario_id)
-    
-    # Recalcula os resultados mensais
     recalcular_resultados(usuario_id=usuario_id)
 
 def _eh_day_trade(operacoes_dia: List[Dict[str, Any]], ticker: str) -> bool:
@@ -933,15 +933,14 @@ def recalcular_resultados(usuario_id: int) -> None:
                 quantidade_vendida_a_descoberto = quantidade_venda_total - quantidade_vendida_de_posicao_comprada
                 
                 if quantidade_vendida_a_descoberto > 0:
-                    valor_desta_venda_descoberto_bruto = quantidade_vendida_a_descoberto * preco_venda_unitario
-                    # Corrige nome da variável para fees_desta_venda_descoberto
-                    fees_desta_venda_descoberto = (fees_total_venda / quantidade_venda_total) * quantidade_vendida_a_descoberto if quantidade_venda_total > 0 else 0
-                    valor_liquido_desta_venda_descoberto = valor_desta_venda_descoberto_bruto - fees_desta_venda_descoberto
+                    valor_desta_venda_descoberta_bruto = quantidade_vendida_a_descoberto * preco_venda_unitario
+                    fees_desta_venda_descoberta = (fees_total_venda / quantidade_venda_total) * quantidade_vendida_a_descoberto if quantidade_venda_total > 0 else 0
+                    valor_liquido_desta_venda_descoberta = valor_desta_venda_descoberta_bruto - fees_desta_venda_descoberta
 
-                    resultado_mes_swing["vendas"] += valor_liquido_desta_venda_descoberto
+                    resultado_mes_swing["vendas"] += valor_liquido_desta_venda_descoberta
                     # O custo da venda a descoberto será apurado na recompra.
 
-                    posicoes_vendidas_estado_atual[ticker]["valor_total_venda"] += valor_desta_venda_descoberto_bruto # Acumula valor bruto para PM de venda
+                    posicoes_vendidas_estado_atual[ticker]["valor_total_venda"] += valor_desta_venda_descoberta_bruto # Acumula valor bruto para PM de venda
                     posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"] += quantidade_vendida_a_descoberto
                     
                     if posicoes_vendidas_estado_atual[ticker]["quantidade_vendida"] > 0:
@@ -1157,19 +1156,20 @@ def gerar_resumo_operacoes_fechadas(usuario_id: int) -> Dict[str, Any]:
 
 def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
     """
-    Serviço para deletar todas as operações de um usuário e recalcular
-    a carteira e os resultados.
+    Serviço para deletar todas as operações de um usuário e limpar todos os dados relacionados (proventos, carteira, resultados, resumos).
     """
     deleted_count = remover_todas_operacoes_usuario(usuario_id=usuario_id)
-    
-    # Após remover as operações, é crucial recalcular a carteira e os resultados.
-    # A carteira ficará vazia, e os resultados mensais serão zerados ou recalculados para refletir
-    # a ausência de operações.
-    recalcular_carteira(usuario_id=usuario_id)
-    recalcular_resultados(usuario_id=usuario_id) # Isso também limpará os resultados mensais no DB
-                                               # se não houver operações.
-    
-    return {"mensagem": f"{deleted_count} operações foram removidas com sucesso.", "deleted_count": deleted_count}
+
+    # Limpa proventos recebidos e resumos de proventos
+    limpar_usuario_proventos_recebidos_db(usuario_id=usuario_id)
+    limpar_carteira_usuario_db(usuario_id=usuario_id)
+    limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
+    # Se existirem funções para limpar resumos de proventos, chame aqui
+    # limpar_resumo_anual_proventos_usuario_db(usuario_id=usuario_id)
+    # limpar_resumo_mensal_proventos_usuario_db(usuario_id=usuario_id)
+    # limpar_resumo_por_acao_proventos_usuario_db(usuario_id=usuario_id)
+
+    return {"mensagem": f"{deleted_count} operações e todos os dados relacionados foram removidos com sucesso.", "deleted_count": deleted_count}
 
 def atualizar_status_darf_service(usuario_id: int, year_month: str, darf_type: str, new_status: str) -> Dict[str, str]:
     """
@@ -1189,7 +1189,7 @@ def atualizar_status_darf_service(usuario_id: int, year_month: str, darf_type: s
         return {"mensagem": "Status do DARF atualizado com sucesso."}
     else:
         # Isso pode significar que o registro para o mês/usuário não existe,
-        # ou o tipo de darf era inválido (já verificado), ou o status já era o novo_status.
+        # ou o tipo de darf era inválido (já verificado), ou o status já era o new_status.
         # Para o cliente, "não encontrado ou status não alterado" pode ser uma mensagem razoável.
         return {"mensagem": "DARF não encontrado ou status não necessitou alteração."}
 
@@ -1223,7 +1223,7 @@ def calcular_resultados_por_ticker_service(usuario_id: int, ticker: str) -> Resu
 
     if item_carteira_atual:
         quantidade_atual = item_carteira_atual.get("quantidade", 0)
-        preco_medio_atual = item_carteira_atual.get("preco_medio", 0.0)
+        preco_medio_atual = item_carterio_atual.get("preco_medio", 0.0)
         custo_total_atual = item_carteira_atual.get("custo_total", 0.0)
 
     # 2. Historical Aggregates from Operations
@@ -1236,12 +1236,11 @@ def calcular_resultados_por_ticker_service(usuario_id: int, ticker: str) -> Resu
     operacoes_venda_total_quantidade = 0
 
     for op in operacoes_ticker:
-        valor_operacao = op.quantity * op.price
         if op.operation == "buy":
-            total_investido_historico += valor_operacao + op.fees
+            total_investido_historico += op.quantity * op.price + op.fees
             operacoes_compra_total_quantidade += op.quantity
         elif op.operation == "sell":
-            total_vendido_historico += valor_operacao - op.fees
+            total_vendido_historico += op.quantity * op.price - op.fees
             operacoes_venda_total_quantidade += op.quantity
             
     # 3. Realized Profit/Loss from Closed Operations
@@ -1363,18 +1362,23 @@ def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Usu
     Lista os proventos que um usuário recebeu, buscando da tabela persistida.
     """
     proventos_db_dicts = obter_proventos_recebidos_por_usuario_db(usuario_id)
+    logging.warning(f"[DEBUG] usuario_id={usuario_id} - proventos_db_dicts (raw): {proventos_db_dicts}")
 
     proventos_validados = []
     for p_db_dict in proventos_db_dicts:
         try:
-            # Pydantic V2 model_validate deve converter strings ISO para date/datetime
-            # e valores numéricos para float/int, conforme definido no modelo UsuarioProventoRecebidoDB.
+            # Corrigir valor_unitario_provento se vier como string com vírgula
+            v = p_db_dict.get('valor_unitario_provento')
+            if isinstance(v, str):
+                v = v.replace(',', '.')
+                try:
+                    v = float(v)
+                except Exception:
+                    v = 0.0
+                p_db_dict['valor_unitario_provento'] = v
             proventos_validados.append(UsuarioProventoRecebidoDB.model_validate(p_db_dict))
         except Exception as e:
-            # import logging
-            # logging.error(f"Erro ao validar provento recebido do DB ID {p_db_dict.get('id')} para usuario {usuario_id}: {e}", exc_info=True)
-            # Decide-se pular o registro problemático ou levantar o erro.
-            # Por ora, pulamos para não quebrar toda a listagem.
+            logging.error(f"Erro ao validar provento recebido do DB ID {p_db_dict.get('id')} para usuario {usuario_id}: {e}", exc_info=True)
             continue
 
     return proventos_validados
@@ -1504,7 +1508,7 @@ def gerar_resumo_proventos_mensais_usuario_service(usuario_id: int, ano_filtro: 
             ]
             acoes_detalhadas_list.append({
                 "ticker": ticker,
-                "nome_acao": dados_acao["nome_acao"],
+                "nome_acao": dados_acao["nome_acao"] or None,
                 "total_recebido_na_acao": dados_acao["total_recebido_na_acao"],
                 "detalhes_por_tipo": detalhes_por_tipo_list
             })
@@ -1617,126 +1621,76 @@ def listar_eventos_corporativos_por_acao_service(id_acao: int) -> List[EventoCor
 
 # --- Serviço de Recálculo de Proventos Recebidos pelo Usuário (Rápido) ---
 def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
-    """
-    Limpa e recalcula todos os proventos que um usuário teria recebido,
-    de forma otimizada, buscando apenas tickers operados pelo usuário.
-    Armazena os resultados na tabela usuario_proventos_recebidos.
-    """
-    logging.info(f"[Proventos Rápido] Iniciando recálculo para usuário ID: {usuario_id}")
-    # 1. Limpar registros existentes para o usuário
-    try:
-        limpar_usuario_proventos_recebidos_db(usuario_id)
-        logging.info(f"[Proventos Rápido] Registros antigos de proventos limpos para usuário ID: {usuario_id}")
-    except Exception as e_clean:
-        logging.error(f"[Proventos Rápido] Erro ao limpar proventos para usuário ID {usuario_id}: {e_clean}", exc_info=True)
-        # Decide if this error is critical enough to stop the process
-        # For now, we'll log and continue, but this might leave the DB in an inconsistent state if not handled.
-        # raise HTTPException(status_code=500, detail=f"Erro ao limpar dados de proventos existentes: {e_clean}")
+    print(f"[Proventos Rápido] Iniciando recálculo para usuário ID: {usuario_id}")
 
-    total_proventos_verificados = 0
-    total_calculados = 0
-    erros_calculo_ou_db = 0
+    limpar_usuario_proventos_recebidos_db(usuario_id)
+    print(f"[Proventos Rápido] Registros antigos de proventos limpos para usuário ID: {usuario_id}")
 
-    # 2. Fetch tickers operados pelo usuário
-    try:
-        tickers_operados = obter_tickers_operados_por_usuario(usuario_id)
-        logging.info(f"[Proventos Rápido] Tickers operados por usuário {usuario_id}: {tickers_operados}")
-        if not tickers_operados:
-            logging.info(f"[Proventos Rápido] Usuário {usuario_id} não possui tickers operados. Nenhum provento a calcular.")
-            return {
-                "mensagem": "Nenhum ticker operado pelo usuário. Nenhum provento a calcular.",
-                "proventos_verificados": 0,
-                "proventos_calculados": 0,
-                "erros": 0
-            }
-    except Exception as e_fetch_tickers:
-        logging.error(f"[Proventos Rápido] Erro ao obter tickers operados por usuário {usuario_id}: {e_fetch_tickers}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Erro ao buscar tickers operados: {e_fetch_tickers}")
+    tickers = obter_tickers_operados_por_usuario(usuario_id)
+    print(f"[Proventos Rápido] Tickers operados por usuário {usuario_id}: {tickers}")
 
-    # 3. Loop through each operated ticker
-    for ticker in tickers_operados:
-        logging.debug(f"[Proventos Rápido] Processando ticker: {ticker} para usuário {usuario_id}")
+    verificados = 0
+    calculados = 0
+    erros = 0
+
+    for ticker in tickers:
+        print(f"[Proventos Rápido] Processando ticker: {ticker} para usuário {usuario_id}")
         try:
-            proventos_do_ticker = obter_proventos_por_ticker(ticker)
-            logging.debug(f"[Proventos Rápido] {len(proventos_do_ticker)} proventos encontrados para o ticker {ticker}.")
-        except Exception as e_fetch_prov_ticker:
-            logging.error(f"[Proventos Rápido] Erro ao obter proventos para o ticker {ticker}: {e_fetch_prov_ticker}", exc_info=True)
-            erros_calculo_ou_db += 1 # Consider this an error in the process
-            continue # Skip to the next ticker
+            primeira_data = obter_primeira_data_operacao_usuario(usuario_id, ticker)
+            if not primeira_data:
+                print(f"[Proventos Rápido] Nenhuma operação encontrada para {ticker}. Pulando.")
+                continue
 
-        for prov in proventos_do_ticker:
-            total_proventos_verificados += 1
+            proventos = obter_proventos_por_ticker(ticker)
+            proventos = [p for p in proventos if p.get("data_ex") and p["data_ex"] >= primeira_data]
+        except Exception as e:
+            print(f"[Proventos Rápido] Erro ao obter proventos para o ticker {ticker}: {e}")
+            erros += 1
+            continue
 
-            data_ex_str = prov.get("data_ex")
-            # Com os conversores de data do SQLite, prov.get("data_ex") deve retornar um objeto date ou None.
-            data_ex_obj = prov.get("data_ex")
-
+        for prov in proventos:
             try:
-                if not isinstance(data_ex_obj, date): # Verifica se é um objeto date
-                    # Se não for date (pode ser None ou outro tipo inesperado), trata como inválido/ausente.
-                    # Se data_ex_obj for None, a mensagem de log refletirá isso.
-                    original_data_ex_val = prov.get("data_ex") # Para logar o valor original
-                    logging.warning(f"[Proventos Rápido] data_ex inválida ou ausente (tipo: {type(original_data_ex_val)}, valor: '{original_data_ex_val}') para provento ID {prov.get('id')}, ticker {ticker}. Pulando.")
-                    erros_calculo_ou_db += 1
+                verificados += 1
+                data_ex = prov.get("data_ex")
+                if not data_ex:
+                    print(f"[Proventos Rápido] Provento ID {prov['id']} sem data_ex. Pulando.")
                     continue
 
-                data_para_saldo = data_ex_obj - timedelta(days=1)
+                if isinstance(data_ex, str):
+                    data_ex = date.fromisoformat(data_ex)
 
-                # obter_saldo_acao_em_data já é um service function
-                qtd = obter_saldo_acao_em_data(usuario_id, ticker, data_para_saldo)
-                logging.debug(f"[Proventos Rápido] Saldo para {ticker} em {data_para_saldo}: {qtd} ações.")
+                operacoes = obter_operacoes_por_ticker_ate_data_db(usuario_id, ticker, data_ex.isoformat())
+                quantidade = 0
+                for op in operacoes:
+                    if op["operation"].lower() == "buy":
+                        quantidade += op["quantity"]
+                    elif op["operation"].lower() == "sell":
+                        quantidade -= op["quantity"]
 
-                if qtd > 0:
-                    valor_unitario = prov.get("valor")
-                    if valor_unitario is None: # Checa explicitamente por None
-                        logging.warning(f"[Proventos Rápido] Provento ID {prov.get('id')} para ticker {ticker} não possui 'valor'. Assumindo 0.0.")
-                        valor_unitario = 0.0
-
-                    # Garante que valor_unitario seja float
+                if quantidade > 0:
+                    valor_str = str(prov["valor"]).replace(",", ".")
                     try:
-                        valor_unitario = float(str(valor_unitario).replace(',', '.'))
-                    except (ValueError, TypeError):
-                        logging.warning(f"[Proventos Rápido] Valor unitário ('{prov.get('valor')}') inválido para provento ID {prov.get('id')}, ticker {ticker}. Assumindo 0.0.")
-                        valor_unitario = 0.0
+                        valor_unitario = float(valor_str)
+                    except ValueError:
+                        print(f"[Proventos Rápido] valor inválido no provento ID {prov['id']} do ticker {ticker}: {prov['valor']}")
+                        erros += 1
+                        continue
 
-                    valor_total = qtd * valor_unitario
+                    valor_total = round(quantidade * valor_unitario, 2)
+                    inserir_usuario_provento_recebido_db(usuario_id, prov["id"], quantidade, valor_total)
+                    calculados += 1
 
-                    dt_pagamento_obj = prov.get("dt_pagamento") # Deve ser date object ou None
 
-                    dados = {
-                        'usuario_id': usuario_id,
-                        'provento_global_id': prov["id"],
-                        'id_acao': prov["id_acao"],
-                        'ticker_acao': ticker,
-                        'nome_acao': prov.get("nome_acao") or ticker,
-                        'tipo_provento': prov["tipo"],
-                        'data_ex': data_ex_obj.isoformat(), # data_ex_obj é garantido ser um date object aqui
-                        'dt_pagamento': dt_pagamento_obj.isoformat() if isinstance(dt_pagamento_obj, date) else None,
-                        'valor_unitario_provento': valor_unitario,
-                        'quantidade_possuida_na_data_ex': qtd,
-                        'valor_total_recebido': valor_total,
-                        'data_calculo': dt.now().isoformat() # dt é o alias para datetime
-                    }
+            except Exception as e:
+                print(f"[Proventos Rápido] Erro ao processar provento ID {prov.get('id')} do ticker {ticker}: {e}")
+                erros += 1
 
-                    inserir_usuario_provento_recebido_db(dados)
-                    total_calculados += 1
-                    logging.debug(f"[Proventos Rápido] Provento ID {prov['id']} para {ticker} calculado e inserido. Valor: {valor_total}")
-
-            except Exception as e_inner:
-                logging.warning(f"[Proventos Rápido] Falha no cálculo do provento ID {prov.get('id')} para o ticker {ticker} (usuário {usuario_id}): {e_inner}", exc_info=True)
-                erros_calculo_ou_db += 1 # Ensure error is counted in the general exception block
-
-    logging.info(f"[Proventos Rápido] Recálculo concluído para usuário {usuario_id}. Verificados: {total_proventos_verificados}, Calculados: {total_calculados}, Erros: {erros_calculo_ou_db}")
+    print(f"[Proventos Rápido] Fim do recálculo. Verificados: {verificados}, Calculados: {calculados}, Erros: {erros}")
     return {
-        "mensagem": "Recálculo rápido de proventos concluído.",
-        "proventos_verificados": total_proventos_verificados,
-        "proventos_calculados": total_calculados,
-        "erros": erros_calculo_ou_db
+        "verificados": verificados,
+        "calculados": calculados,
+        "erros": erros
     }
-
-# --- Serviço de Recálculo de Proventos Recebidos pelo Usuário ---
-
-
 # --- Serviço de Recálculo de Proventos Recebidos pelo Usuário ---
 
 def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict[str, Any]:
@@ -1850,3 +1804,19 @@ def listar_todos_eventos_corporativos_service() -> List[EventoCorporativoInfo]:
     eventos_db = obter_todos_eventos_corporativos()
     # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
     return [EventoCorporativoInfo.model_validate(e) for e in eventos_db]
+
+
+def parse_date_to_iso(date_val):
+    if not date_val:
+        return None
+    if isinstance(date_val, date):
+        return date_val.isoformat()
+    if isinstance(date_val, datetime):
+        return date_val.date().isoformat()
+    try:
+        return datetime.strptime(str(date_val).split('T')[0], '%Y-%m-%d').date().isoformat()
+    except Exception:
+        try:
+            return datetime.strptime(str(date_val), '%d/%m/%Y').date().isoformat()
+        except Exception:
+            return None

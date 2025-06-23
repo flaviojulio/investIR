@@ -690,11 +690,14 @@ async def upload_operacoes(
         operacoes_json = json.loads(conteudo)
         
         # Valida e processa as operações
-        operacoes = [OperacaoCreate(**op) for op in operacoes_json]
+        operacoes = [OperacaoCreate(**preprocess_imported_operation(op)) for op in operacoes_json]
         
         # Salva as operações no banco de dados com o ID do usuário
         try:
             processar_operacoes(operacoes, usuario_id=usuario.id) # Use .id
+            # Recalcula proventos após importar operações
+            from services import recalcular_proventos_recebidos_rapido
+            recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         
@@ -988,6 +991,44 @@ async def listar_corretoras():
             return [Corretora(id=row["id"], nome=row["nome"], cnpj=row["cnpj"]) for row in corretoras]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar corretoras: {str(e)}")
+
+def preprocess_imported_operation(op: dict) -> dict:
+    # Mapeamento de campos
+    field_map = {
+        "Data do Negócio": "date",
+        "Código de Negociação": "ticker",
+        "Tipo de Movimentação": "operation",
+        "Quantidade": "quantity",
+        "Preço": "price",
+        "Instituição": "corretora_nome",
+        # Outros campos podem ser mapeados conforme necessário
+    }
+    new_op = {}
+    for k, v in op.items():
+        key = field_map.get(k, k)
+        new_op[key] = v
+    # Conversão de valores
+    if "price" in new_op and isinstance(new_op["price"], str):
+        new_op["price"] = float(new_op["price"].replace("R$", "").replace(",", "."))
+    if "quantity" in new_op:
+        new_op["quantity"] = int(new_op["quantity"])
+    if "operation" in new_op:
+        if new_op["operation"].lower().startswith("compra"):
+            new_op["operation"] = "buy"
+        elif new_op["operation"].lower().startswith("venda"):
+            new_op["operation"] = "sell"
+    if "ticker" in new_op:
+        new_op["ticker"] = str(new_op["ticker"]).replace("F", "")
+    if "date" in new_op:
+        # Converte para ISO
+        try:
+            new_op["date"] = datetime.strptime(new_op["date"], "%d/%m/%Y").date().isoformat()
+        except Exception:
+            pass
+    # Taxas e fees default
+    if "fees" not in new_op:
+        new_op["fees"] = 0.0
+    return new_op
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

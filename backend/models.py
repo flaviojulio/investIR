@@ -135,7 +135,11 @@ class OperacaoBase(BaseModel):
     def ticker_uppercase_and_strip(cls, v: str) -> str:
         if not isinstance(v, str): # Should be string due to type hint, but good practice
             raise TypeError("Ticker ('Código de Negociação') deve ser uma string.")
-        return v.upper().strip()
+        v = v.upper().strip()
+        # Remove 'F' final se houver (ex: VALE3F -> VALE3)
+        if v.endswith('F') and len(v) > 1:
+            v = v[:-1]
+        return v
 
     @field_validator('quantity') # Applied to the field after aliasing
     @classmethod
@@ -515,5 +519,5 @@ class UsuarioProventoRecebidoDB(BaseModel):
 class Corretora(BaseModel):
     id: int | None = None
     nome: str
-    cnpj: str
+    cnpj: str | None = None  # Agora opcional
     model_config = ConfigDict(from_attributes=True)

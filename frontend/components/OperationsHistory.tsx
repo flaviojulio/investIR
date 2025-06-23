@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Trash2, Search } from "lucide-react"
+import { Trash2, Search, ArrowDown, ArrowUp } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import type { Operacao, Corretora } from "@/lib/types"
@@ -31,16 +31,41 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       .catch(() => setCorretoras([]))
   }, [])
 
-  const filteredOperations = operacoes.filter((op) => {
-    const lowerSearch = searchTerm.toLowerCase()
-    const matchesTicker = op.ticker.toLowerCase().includes(lowerSearch)
-    const matchesCorretora = (op.corretora_nome || "").toLowerCase().includes(lowerSearch)
-    const matchesOperation = op.operation === "buy" ? "compra".includes(lowerSearch) : "venda".includes(lowerSearch) || op.operation.toLowerCase().includes(lowerSearch)
-    const matchesQuantity = String(op.quantity).includes(lowerSearch)
-    const matchesPrice = String(op.price).includes(lowerSearch)
-    const matchesFees = String(op.fees).includes(lowerSearch)
+  // Função para mapear campos em português para o padrão esperado
+  function mapOperacaoCampos(operacao: any): Operacao {
+    return {
+      id: operacao.id,
+      date: operacao.date || operacao["Data do Negócio"],
+      ticker: operacao.ticker || operacao["Código de Negociação"],
+      operation: operacao.operation || operacao["Tipo de Movimentação"],
+      quantity: operacao.quantity ?? operacao["Quantidade"],
+      price: operacao.price ?? operacao["Preço"],
+      fees: operacao.fees ?? operacao["Taxas"] ?? 0,
+      corretora_id: operacao.corretora_id ?? null,
+      corretora_nome: operacao.corretora_nome ?? null,
+      usuario_id: operacao.usuario_id ?? null,
+    };
+  }
+
+  // Mapeia todas as operações recebidas
+  const operacoesPadronizadas = operacoes.map(mapOperacaoCampos);
+  console.log('Operacoes padronizadas:', operacoesPadronizadas);
+
+  const filteredOperations = operacoesPadronizadas.filter((op) => {
+    const lowerSearch = (searchTerm || "").toLowerCase();
+    const ticker = typeof op.ticker === "string" ? op.ticker : "";
+    const corretoraNome = typeof op.corretora_nome === "string" ? op.corretora_nome : "";
+    const operation = typeof op.operation === "string" ? op.operation : "";
+    const matchesTicker = ticker.toLowerCase().includes(lowerSearch);
+    const matchesCorretora = corretoraNome.toLowerCase().includes(lowerSearch);
+    const matchesOperation = operation === "buy"
+      ? "compra".includes(lowerSearch)
+      : "venda".includes(lowerSearch) || operation.toLowerCase().includes(lowerSearch);
+    const matchesQuantity = String(op.quantity).includes(lowerSearch);
+    const matchesPrice = String(op.price).includes(lowerSearch);
+    const matchesFees = String(op.fees).includes(lowerSearch);
     // Permite busca por data (formato brasileiro)
-    const matchesDate = op.date && new Date(op.date).toLocaleDateString("pt-BR").includes(lowerSearch)
+    const matchesDate = op.date && new Date(op.date).toLocaleDateString("pt-BR").includes(lowerSearch);
     return (
       !searchTerm ||
       matchesTicker ||
@@ -50,8 +75,11 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       matchesPrice ||
       matchesFees ||
       matchesDate
-    ) && (filterOperation === "all" || op.operation === filterOperation)
+    ) && (filterOperation === "all" || operation === filterOperation);
   })
+
+  console.log('Operacoes recebidas (props):', operacoes);
+  console.log('Operacoes filtradas:', filteredOperations);
 
   const handleDelete = async (operationId: number) => {
     if (!confirm("Tem certeza que deseja excluir esta operação?")) return
@@ -128,6 +156,34 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
     }
   };
 
+  // Estado para ordenação
+  const [sortField, setSortField] = useState<'date' | 'total'>("date");
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>("desc");
+
+  // Função para alternar ordenação
+  function handleSort(field: 'date' | 'total') {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection(field === "date" ? "desc" : "asc"); // Data começa desc, total asc
+    }
+  }
+
+  // Ordena operações filtradas
+  const sortedOperations = [...filteredOperations].sort((a, b) => {
+    if (sortField === "date") {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return sortDirection === "asc" ? dateA - dateB : dateB - dateA;
+    } else {
+      // total = quantity * price (+/- fees)
+      const totalA = a.quantity * a.price + (a.operation === "buy" ? a.fees : -a.fees);
+      const totalB = b.quantity * b.price + (b.operation === "buy" ? b.fees : -b.fees);
+      return sortDirection === "asc" ? totalA - totalB : totalB - totalA;
+    }
+  });
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
@@ -190,19 +246,23 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Data</TableHead>
+                <TableHead onClick={() => handleSort('date')} className="cursor-pointer select-none">
+                  Data {sortField === 'date' && (sortDirection === 'asc' ? <ArrowUp className="inline w-3 h-3" /> : <ArrowDown className="inline w-3 h-3" />)}
+                </TableHead>
                 <TableHead>Ticker</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead className="text-right">Quantidade</TableHead>
                 <TableHead className="text-right">Preço</TableHead>
                 <TableHead className="text-right">Taxas</TableHead>
-                <TableHead className="text-right">Total</TableHead>
+                <TableHead onClick={() => handleSort('total')} className="text-right cursor-pointer select-none">
+                  Total {sortField === 'total' && (sortDirection === 'asc' ? <ArrowUp className="inline w-3 h-3" /> : <ArrowDown className="inline w-3 h-3" />)}
+                </TableHead>
                 <TableHead>Corretora</TableHead>
                 <TableHead className="text-center">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredOperations.length === 0 ? (
+              {sortedOperations.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     {operacoes.length === 0
@@ -211,7 +271,8 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                   </TableCell>
                 </TableRow>
               ) : (
-                filteredOperations.map((operacao) => {
+                sortedOperations.map((operacao) => {
+                  console.log('Renderizando operacao:', operacao);
                   const total = operacao.quantity * operacao.price
                   const totalWithFees = operacao.operation === "buy" ? total + operacao.fees : total - operacao.fees
 
@@ -229,7 +290,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                           {operacao.operation === "buy" ? "Compra" : "Venda"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right">{operacao.quantity.toLocaleString("pt-BR")}</TableCell>
+                      <TableCell className="text-right">{typeof operacao.quantity === "number" ? operacao.quantity.toLocaleString("pt-BR") : (operacao.quantity ?? "-")}</TableCell>
                       <TableCell className="text-right">{formatCurrency(operacao.price)}</TableCell>
                       <TableCell className="text-right">{formatCurrency(operacao.fees)}</TableCell>
                       <TableCell className="text-right font-medium">{formatCurrency(totalWithFees)}</TableCell>
