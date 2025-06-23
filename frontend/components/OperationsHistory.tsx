@@ -11,6 +11,8 @@ import { Trash2, Search, ArrowDown, ArrowUp } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import type { Operacao, Corretora } from "@/lib/types"
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { AlertTriangle } from "lucide-react"
 
 interface OperationsHistoryProps {
   operacoes: Operacao[]
@@ -22,6 +24,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
   const [filterOperation, setFilterOperation] = useState("all")
   const [loading, setLoading] = useState<number | null>(null)
   const [bulkDeleting, setBulkDeleting] = useState(false); // State for bulk delete
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
   const [corretoras, setCorretoras] = useState<Corretora[]>([])
   const { toast } = useToast()
 
@@ -104,51 +107,20 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
   }
 
   const handleBulkDelete = async () => {
-    if (!confirm("Tem certeza que deseja excluir TODAS as operações? Esta ação não pode ser desfeita.")) {
-      return;
-    }
-
+    setShowBulkDeleteModal(false);
     setBulkDeleting(true);
     try {
-      const response = await api.delete("/bulk-ops/operacoes/delete-all"); // Changed path to new prefix
+      const response = await api.delete("/bulk-ops/operacoes/delete-all");
       toast({
         title: "Sucesso!",
         description: response.data.mensagem || "Todas as operações foram excluídas.",
       });
-      onUpdate(); // Refresh data
+      onUpdate();
     } catch (error: any) {
       const errorDetail = error.response?.data?.detail;
-      let errorMessage = "Erro ao excluir todas as operações."; // Default message
-
-      if (typeof errorDetail === 'string') {
-        errorMessage = errorDetail;
-      } else if (Array.isArray(errorDetail) && errorDetail.length > 0) {
-        // Handle array of error objects (e.g., FastAPI validation errors)
-        const firstError = errorDetail[0];
-        if (typeof firstError.msg === 'string') {
-          errorMessage = firstError.msg;
-        } else if (typeof firstError.message === 'string') {
-          errorMessage = firstError.message;
-        } else {
-          errorMessage = "Não foi possível extrair uma mensagem específica do erro retornado pelo servidor (array).";
-          console.error("Unknown error array item structure:", firstError);
-        }
-      } else if (typeof errorDetail === 'object' && errorDetail !== null) {
-        // Handle single error object
-        if (typeof errorDetail.msg === 'string') {
-          errorMessage = errorDetail.msg;
-        } else if (typeof errorDetail.message === 'string') {
-          errorMessage = errorDetail.message;
-        } else {
-          errorMessage = "Não foi possível extrair uma mensagem específica do erro retornado pelo servidor (objeto).";
-          console.error("Unknown error object structure:", errorDetail);
-        }
-      }
-      // If errorDetail is none of the above (e.g. undefined), errorMessage remains the default.
-
       toast({
         title: "Erro",
-        description: errorMessage,
+        description: errorDetail || "Erro ao excluir operações.",
         variant: "destructive",
       });
     } finally {
@@ -231,14 +203,38 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
 
         {/* Bulk Delete Button */}
         <div className="mt-4">
-          <Button
-            variant="destructive"
-            onClick={handleBulkDelete}
-            disabled={bulkDeleting || operacoes.length === 0}
-            className="w-full sm:w-auto" // Full width on small screens, auto on larger
-          >
-            {bulkDeleting ? "Excluindo..." : "Excluir Todas as Operações"}
-          </Button>
+          <Dialog open={showBulkDeleteModal} onOpenChange={setShowBulkDeleteModal}>
+            <DialogTrigger asChild>
+              <Button
+                variant="destructive"
+                disabled={bulkDeleting || operacoes.length === 0}
+                className="w-full sm:w-auto"
+              >
+                Excluir Todas as Operações
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <div className="flex items-center gap-3 mb-2">
+                  <AlertTriangle className="h-6 w-6 text-red-500" />
+                  <DialogTitle className="text-red-700">Excluir todas as operações?</DialogTitle>
+                </div>
+                <DialogDescription>
+                  Esta ação <span className="font-bold text-red-600">não pode ser desfeita</span>.<br />
+                  Todas as operações, proventos e resultados relacionados serão removidos permanentemente.
+                  Tem certeza que deseja continuar?
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => setShowBulkDeleteModal(false)} disabled={bulkDeleting}>
+                  Cancelar
+                </Button>
+                <Button variant="destructive" onClick={handleBulkDelete} disabled={bulkDeleting}>
+                  {bulkDeleting ? "Excluindo..." : "Excluir tudo"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Tabela */}
