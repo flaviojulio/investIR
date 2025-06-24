@@ -1,37 +1,129 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { BensDireitosAcoesTable } from "@/components/BensDireitosAcoesTable"; // Import the new component
+import { api } from "@/lib/api"; // For API calls
+import { useToast } from "@/hooks/use-toast"; // For notifications
+import { Skeleton } from "@/components/ui/skeleton"; // For loading state
+
+// Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
+interface BemDireitoAcao {
+  ticker: string;
+  nome_empresa?: string | null;
+  cnpj?: string | null;
+  quantidade: number;
+  preco_medio: number;
+  valor_total_data_base: number;
+}
 
 export default function ImpostoRendaPage() {
+  const currentYear = new Date().getFullYear();
+  const [selectedYear, setSelectedYear] = useState<number>(currentYear - 1);
+  const [bensDireitosData, setBensDireitosData] = useState<BemDireitoAcao[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
+
+  // Generate year options for the select dropdown
+  const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 1 - i);
+
+  useEffect(() => {
+    const fetchBensDireitosData = async () => {
+      if (!selectedYear) return;
+
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await api.get(`/analysis/bens-e-direitos/acoes`, {
+          params: { year: selectedYear },
+        });
+        setBensDireitosData(response.data);
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.detail || "Erro ao buscar dados de Bens e Direitos.";
+        setError(errorMessage);
+        toast({
+          title: "Erro",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        setBensDireitosData([]); // Clear data on error
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchBensDireitosData();
+  }, [selectedYear, toast]);
+
+  const handleYearChange = (value: string) => {
+    setSelectedYear(Number(value));
+  };
+
   return (
     <div className="container mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">
         Declaração Anual de Imposto de Renda
       </h1>
       <Tabs defaultValue="bens-e-direitos">
-        <TabsList>
+        <TabsList className="mb-4">
           <TabsTrigger value="bens-e-direitos">Bens e Direitos</TabsTrigger>
           <TabsTrigger value="rendimentos-isentos">
-            Rendimentos Isentos e Não tributáveis
+            Rendimentos Isentos e Não Tributáveis
           </TabsTrigger>
           <TabsTrigger value="rendimentos-tributacao-exclusiva">
             Rendimentos Sujeitos a Tributação Exclusiva
           </TabsTrigger>
           <TabsTrigger value="renda-variavel">Renda Variável</TabsTrigger>
         </TabsList>
+
         <TabsContent value="bens-e-direitos">
-          <p>Conteúdo da aba Bens e Direitos.</p>
+          <div className="mb-6">
+            <label htmlFor="year-select" className="block text-sm font-medium text-gray-700 mb-1">
+              Ano de Referência:
+            </label>
+            <Select value={String(selectedYear)} onValueChange={handleYearChange}>
+              <SelectTrigger className="w-[180px]" id="year-select">
+                <SelectValue placeholder="Selecione o ano" />
+              </SelectTrigger>
+              <SelectContent>
+                {yearOptions.map((year) => (
+                  <SelectItem key={year} value={String(year)}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {isLoading && (
+            <div>
+              <Skeleton className="h-8 w-1/2 mb-4" />
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          )}
+          {error && !isLoading && (
+            <div className="text-red-600 bg-red-100 p-4 rounded-md">
+              <p><strong>Erro:</strong> {error}</p>
+            </div>
+          )}
+          {!isLoading && !error && (
+            <BensDireitosAcoesTable data={bensDireitosData} year={selectedYear} />
+          )}
         </TabsContent>
+
         <TabsContent value="rendimentos-isentos">
-          <p>Conteúdo da aba Rendimentos Isentos e Não tributáveis.</p>
+          <p className="text-muted-foreground">Conteúdo da aba Rendimentos Isentos e Não Tributáveis.</p>
         </TabsContent>
         <TabsContent value="rendimentos-tributacao-exclusiva">
-          <p>
+          <p className="text-muted-foreground">
             Conteúdo da aba Rendimentos Sujeitos a Tributação Exclusiva.
           </p>
         </TabsContent>
         <TabsContent value="renda-variavel">
-          <p>Conteúdo da aba Renda Variável.</p>
+          <p className="text-muted-foreground">Conteúdo da aba Renda Variável.</p>
         </TabsContent>
       </Tabs>
     </div>

@@ -25,3 +25,14 @@ class PortfolioHistoryResponseSchema(BaseModel):
 # Re-exporting Operacao from models if it's used directly in request/response bodies
 # For now, this endpoint fetches operations internally.
 # from backend.models import Operacao as OperacaoModel # Example if needed elsewhere
+
+class BemDireitoAcaoSchema(BaseModel):
+    """
+    Schema for representing an equity asset for "Bens e Direitos" declaration.
+    """
+    ticker: str
+    nome_empresa: Optional[str] = None # Changed to Optional as it might not always be available initially
+    cnpj: Optional[str] = None # Changed to Optional for the same reason
+    quantidade: int
+    preco_medio: float
+    valor_total_data_base: float

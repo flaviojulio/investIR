@@ -7,6 +7,17 @@ from typing import Dict, List, Any, Optional
 # Caminho para o banco de dados SQLite
 DATABASE_FILE = "C:/Projeto Fortuna/investIR/backend/acoes_ir.db"
 
+def obter_acao_info_por_ticker(ticker: str) -> Optional[Dict[str, Any]]:
+    """
+    Obtém informações de uma ação (ticker, nome, cnpj) pelo ticker.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Seleciona ticker, nome, cnpj da tabela acoes
+        cursor.execute("SELECT ticker, nome, cnpj FROM acoes WHERE ticker = ?", (ticker,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
 
 # Convert datetime.date objects to ISO format string (YYYY-MM-DD) when writing to DB
 sqlite3.register_adapter(date, lambda val: val.isoformat())
