@@ -73,3 +73,14 @@ export const formatMonthYear = (dateString: string | null | undefined, placehold
     return placeholder;
   }
 };
+
+export const formatInteger = (value: number | null | undefined, placeholder: string = "0"): string => {
+  if (value == null || isNaN(Number(value))) {
+    return placeholder;
+  }
+  // Ensure it's an integer by rounding, then format.
+  // Using maximumFractionDigits: 0 ensures no decimal part.
+  return new Intl.NumberFormat("pt-BR", {
+    maximumFractionDigits: 0,
+  }).format(Math.round(Number(value))); // Round to nearest integer before formatting
+};

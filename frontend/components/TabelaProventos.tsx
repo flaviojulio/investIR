@@ -116,8 +116,16 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
                 <TableCell className="text-xs sm:text-sm">{formatDate(provento.dt_pagamento)}</TableCell>
                 <TableCell className="font-medium text-xs sm:text-sm">{provento.ticker_acao}</TableCell>
                 <TableCell className="hidden lg:table-cell text-xs sm:text-sm">{provento.nome_acao || '-'}</TableCell>
-                <TableCell className="text-xs sm:text-sm">{provento.tipo_provento}</TableCell>
-                <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{formatNumber(provento.quantidade_possuida_na_data_ex)}</TableCell>
+                <TableCell className="text-xs sm:text-sm">
+                  <span className={
+                    provento.tipo === 'Dividendo' ? 'inline-block px-2 py-1 rounded bg-purple-100 text-purple-700 text-xs' :
+                    provento.tipo === 'JCP' ? 'inline-block px-2 py-1 rounded bg-blue-100 text-blue-700 text-xs' :
+                    'inline-block px-2 py-1 rounded bg-yellow-100 text-yellow-700 text-xs'
+                  }>
+                    {provento.tipo}
+                  </span>
+                </TableCell>
+                <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{formatNumber(provento.quantidade_na_data_ex)}</TableCell>
                 <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor_unitario_provento)}</TableCell>
                 <TableCell className="text-right font-semibold text-xs sm:text-sm">{formatCurrency(provento.valor_total_recebido)}</TableCell>
                 <TableCell className="text-center text-xs sm:text-sm">

@@ -1,7 +1,7 @@
-from pydantic import BaseModel, Field, EmailStr, field_validator
-from pydantic import ConfigDict
-from typing import List, Optional, Dict, Any # Added Dict, Any
 from datetime import date, datetime
+import re # Added
+from pydantic import BaseModel, Field, field_validator, ConfigDict, EmailStr # Ensured ConfigDict and added field_validator
+from typing import Optional, Any, List, Dict # Ensured Any, List, Dict
 
 # Modelos para autenticação
 
@@ -56,13 +56,107 @@ class FuncaoUpdate(BaseModel):
     descricao: Optional[str] = None
 
 class OperacaoBase(BaseModel):
-    date: date
-    ticker: str
-    operation: str
-    quantity: int
-    price: float
+    date: Any = Field(..., alias='Data do Negócio')
+    ticker: str = Field(..., alias='Código de Negociação')
+    operation: str = Field(..., alias='Tipo de Movimentação')
+    quantity: int = Field(..., alias='Quantidade')
+    price: Any = Field(..., alias='Preço')
+
     fees: Optional[float] = 0.0
-    corretora_id: Optional[int] = None  # Novo campo opcional para vincular corretora
+    corretora_id: Optional[int] = None
+
+    model_config = ConfigDict(populate_by_name=True, extra='ignore')
+
+    @field_validator('date', mode='before')
+    @classmethod
+    def validate_date_format_and_type(cls, v):
+        if isinstance(v, date): # Python's date type
+            return v
+        if isinstance(v, datetime): # Python's datetime type
+            return v.date()
+        if isinstance(v, str):
+            try:
+                # Try "dd/mm/yyyy" first
+                return datetime.strptime(v, "%d/%m/%Y").date()
+            except ValueError:
+                try:
+                    # Try "yyyy-mm-dd" next
+                    return datetime.strptime(v, "%Y-%m-%d").date()
+                except ValueError:
+                    raise ValueError("Formato de data inválido para 'Data do Negócio'. Use DD/MM/YYYY ou YYYY-MM-DD.")
+        raise TypeError("Tipo inválido para 'Data do Negócio'. Deve ser uma string de data, objeto date ou datetime.")
+
+    @field_validator('operation', mode='before')
+    @classmethod
+    def validate_operation_type(cls, v):
+        if not isinstance(v, str):
+            raise TypeError("'Tipo de Movimentação' deve ser uma string.")
+        v_lower = v.lower().strip()
+        if v_lower == 'compra':
+            return 'buy'
+        elif v_lower == 'venda':
+            return 'sell'
+        # Allow 'buy' or 'sell' directly if that's what's passed (e.g. from other system parts)
+        elif v_lower in ['buy', 'sell']:
+            return v_lower
+        raise ValueError("Valor inválido para 'Tipo de Movimentação'. Use 'Compra' ou 'Venda'.")
+
+    @field_validator('price', mode='before')
+    @classmethod
+    def validate_and_clean_price(cls, v):
+        if isinstance(v, (float, int)):
+            if v < 0:
+                raise ValueError("Preço ('Preço') não pode ser negativo.")
+            return float(v)
+        if isinstance(v, str):
+            price_str = v.strip()
+            if price_str.lower().startswith('r$'):
+                price_str = price_str[2:].strip()
+
+            # Remove thousands separators (dots in pt-BR)
+            # This regex handles cases like "1.234,56" or "1234,56"
+            # It removes dots that are followed by at least one digit and then a comma or end of string.
+            price_str = re.sub(r'\.(?=\d{3}(?:,|$))', '', price_str)
+
+            # Replace decimal comma with a dot
+            price_str = price_str.replace(',', '.')
+
+            try:
+                price_float = float(price_str)
+                if price_float < 0:
+                    raise ValueError("Preço ('Preço') não pode ser negativo após o parse.")
+                return price_float
+            except ValueError:
+                raise ValueError("Formato de preço inválido para 'Preço'. Não foi possível converter para float.")
+        raise TypeError("Tipo inválido para 'Preço'. Deve ser string, float ou int.")
+
+    @field_validator('ticker') # Applied to the field after aliasing
+    @classmethod
+    def ticker_uppercase_and_strip(cls, v: str) -> str:
+        if not isinstance(v, str): # Should be string due to type hint, but good practice
+            raise TypeError("Ticker ('Código de Negociação') deve ser uma string.")
+        v = v.upper().strip()
+        # Remove 'F' final se houver (ex: VALE3F -> VALE3)
+        if v.endswith('F') and len(v) > 1:
+            v = v[:-1]
+        return v
+
+    @field_validator('quantity') # Applied to the field after aliasing
+    @classmethod
+    def quantity_positive(cls, v: Any) -> int: # Input can be Any if from JSON
+        if isinstance(v, str):
+            try:
+                v_int = int(v)
+            except ValueError:
+                raise ValueError("Quantidade ('Quantidade') deve ser um número inteiro.")
+        elif isinstance(v, int):
+            v_int = v
+        else:
+            raise TypeError("Quantidade ('Quantidade') deve ser um inteiro ou uma string que possa ser convertida para inteiro.")
+
+        if v_int <= 0:
+            raise ValueError("Quantidade ('Quantidade') deve ser um número positivo.")
+        return v_int
 
 class OperacaoCreate(OperacaoBase):
     pass
@@ -425,5 +519,5 @@ class UsuarioProventoRecebidoDB(BaseModel):
 class Corretora(BaseModel):
     id: int | None = None
     nome: str
-    cnpj: str
+    cnpj: str | None = None  # Agora opcional
     model_config = ConfigDict(from_attributes=True)

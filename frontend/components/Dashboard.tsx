@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/chart";
 import { TaxMeter } from "@/components/TaxMeter"
 import { PortfolioEquityChart } from "@/components/PortfolioEquityChart"
+import Last12MonthsEarningsChart from "@/components/Last12MonthsEarningsChart"; // Changed to default import
 import { UploadOperations } from "@/components/UploadOperations"
 import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"
@@ -41,6 +42,7 @@ import { useToast } from "@/hooks/use-toast"
 import { Tooltip as TooltipUI, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 // Removed DividendTimeline import
 // import { DividendTimeline } from "@/components/DividendTimeline"
+import Link from "next/link";
 // Added ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario
 import type { Operacao, CarteiraItem, ResultadoMensal, OperacaoFechada, ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario } from "@/lib/types"
 
@@ -113,7 +115,7 @@ function ProventosTabContent() {
 
         console.log("API Response (proventosDetalhados raw):", JSON.stringify(detalhadosData, null, 2));
         setResumoAnualData(anuaisData);
-        setProventosDetalhados(detalhadosData);
+        setProventosDetalhados(detalhadosData.map(mapProventoRecebidoBackendToFrontend));
 
         if (anuaisData.length > 0) {
           const anos = anuaisData.map(item => item.ano).sort((a, b) => b - a);
@@ -581,6 +583,23 @@ function ProventosTabContent() {
   );
 }
 
+// Função utilitária para mapear campos do backend para o padrão do frontend
+function mapProventoRecebidoBackendToFrontend(p: any): ProventoRecebidoUsuario {
+  return {
+    id: p.id,
+    id_acao: p.id_acao,
+    tipo: p.tipo_provento, // backend: tipo_provento, frontend: tipo
+    valor_unitario_provento: p.valor_unitario_provento,
+    data_registro: p.data_registro || '',
+    data_ex: p.data_ex || '',
+    dt_pagamento: p.dt_pagamento || null,
+    ticker_acao: p.ticker_acao,
+    nome_acao: p.nome_acao,
+    quantidade_na_data_ex: p.quantidade_possuida_na_data_ex, // backend: quantidade_possuida_na_data_ex
+    valor_total_recebido: p.valor_total_recebido,
+  };
+}
+
 export function Dashboard() {
   const { user, logout } = useAuth()
   const { toast } = useToast()
@@ -730,20 +749,30 @@ export function Dashboard() {
           }}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-5 md:grid-cols-8 lg:grid-cols-11 xl:grid-cols-11">
+          <TabsList className="flex flex-wrap w-full gap-2">
             <TabsTrigger value="overview">Dashboard</TabsTrigger>
             <TabsTrigger value="proventos">Proventos</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
+            <span className="w-2 md:w-4 lg:w-8 xl:w-12" />
             <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
+            <Link href="/imposto-renda" className="px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-150 border-transparent text-gray-500 dark:text-gray-400 hover:text-primary hover:border-primary flex items-center h-full whitespace-nowrap">
+              Declaração Anual
+            </Link>
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
             <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} totalDividendosRecebidos={totalDividendosRecebidos} />
+
+            {/* TaxMeter moved here, should take full width */}
+            <TaxMeter resultados={data.resultados} />
+
+            {/* Grid for charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <PortfolioEquityChart />
-              <TaxMeter resultados={data.resultados} />
+              <Last12MonthsEarningsChart /> {/* New chart here */}
             </div>
+
             <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
             <OperacoesEncerradasTable 
               operacoesFechadas={data.operacoes_fechadas} 
@@ -762,18 +791,6 @@ export function Dashboard() {
 
           <TabsContent value="history">
             <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="prejuizo_acumulado" className="space-y-6">
-            <div className="container mx-auto py-8">
-              <h2 className="text-2xl font-bold mb-4">Prejuízo Acumulado</h2>
-              <p>Conteúdo da seção de Prejuízo Acumulado será implementado aqui.</p>
-              {/* TODO: Implementar visualização de prejuízos acumulados (swing e daytrade) */}
-              {/* Exemplo: um card ou uma pequena tabela com os valores de prejuízo acumulado swing e daytrade */}
-              {/* Pode-se buscar de data.resultados, o último mês com dados, e exibir os campos: */}
-              {/* data.resultados[data.resultados.length - 1]?.prejuizo_acumulado_swing */}
-              {/* data.resultados[data.resultados.length - 1]?.prejuizo_acumulado_day */}
-            </div>
           </TabsContent>
         </Tabs>
       </main>

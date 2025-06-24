@@ -7,7 +7,9 @@ export interface Operacao {
   quantity: number;
   price: number;
   fees: number;
+  usuario_id?: number;
   corretora_id?: number | null;
+  corretora_nome?: string | null; // Adicionado para refletir o backend
 }
 
 export interface CarteiraItem {
@@ -183,4 +185,19 @@ export interface Corretora {
   id: number;
   nome: string;
   cnpj: string;
+}
+
+export interface MonthlyEarnings {
+  month: string; // Format: YYYY-MM
+  total_earnings: number;
+}
+
+export interface BemDireitoAcao {
+  ticker: string;
+  nome_empresa?: string | null;
+  cnpj?: string | null;
+  quantidade: number;
+  preco_medio: number;
+  valor_total_data_base: number;
+  valor_total_ano_anterior?: number; // Novo campo: valor total em 31/12 do ano anterior
 }

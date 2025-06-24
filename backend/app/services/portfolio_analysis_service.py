@@ -725,3 +725,331 @@ if __name__ == '__main__':
     else:
         print("Failed to get 'date objects' history or empty result.")
         print(f"Result: {history_date_obj}")
+
+
+# --- Bens e Direitos ---
+
+from schemas import BemDireitoAcaoSchema # Corrected import path
+from database import obter_operacoes_por_usuario_ticker_ate_data, obter_acao_info_por_ticker # Corrected import path
+from models import Operacao as OperacaoModel # Import from models.py for consistency
+
+def calculate_average_price_up_to_date(
+    user_id: int,
+    ticker: str,
+    target_date: datetime_date,
+    operations_for_ticker: Optional[List[Operacao]] = None
+) -> float:
+    """
+    Calculates the average purchase price of a stock for a user up to a target date.
+    This function needs to be robust and handle corporate actions if they affect cost basis.
+    The provided `get_holdings_on_date` already adjusts quantity for splits/bonuses.
+    This average price calculation should ideally reflect the cost basis for the *adjusted* quantity.
+
+    Args:
+        user_id (int): The ID of the user.
+        ticker (str): The stock ticker.
+        target_date (datetime_date): The date up to which to calculate the average price.
+        operations_for_ticker (Optional[List[OperacaoModel]]): Pre-fetched operations for the ticker.
+
+    Returns:
+        float: The average price, or 0.0 if no purchase operations are found or quantity becomes zero.
+    """
+    if operations_for_ticker is None:
+        # Fetch operations if not provided. Ensure these are raw dicts that OperacaoModel can parse.
+        # The database function should return data that can be parsed by OperacaoModel.
+        # Let's assume obter_operacoes_por_usuario_ticker_ate_data returns list of dicts.
+        raw_ops = obter_operacoes_por_usuario_ticker_ate_data(user_id, ticker, target_date.isoformat())
+        # Parse into OperacaoModel instances. Note: OperacaoModel is from `models.py`
+        # The Operacao model in this file is for yfinance and portfolio history.
+        # We need to be careful about which Operacao model we are using.
+        # For consistency, let's use the one from `models.py` if it's suitable.
+        # The main `Operacao` model from `models.py` has aliases like 'Data do Negócio'.
+        # The `Operacao` model in `portfolio_analysis_service.py` is simpler.
+        # Let's use the local Operacao model for this service internal calculations for now,
+        # assuming operations_for_ticker would conform to it if passed.
+        # If fetching from DB, ensure transformation matches this service's Operacao.
+
+        # Correct approach: Use the Operacao model defined in *this* service file,
+        # and ensure data fetched from DB is transformed to match it if necessary.
+        # The `obter_operacoes_por_usuario_ticker_ate_data` in `database.py` likely returns
+        # dicts that might need transformation.
+        # For now, this part is a placeholder for actual data fetching and parsing.
+        # Placeholder:
+        # ops_data_dicts = get_operations_for_ticker_up_to_date(user_id, ticker, target_date)
+        # operations = [Operacao(**op_data) for op_data in ops_data_dicts]
+
+        # Given the current structure, it's better if the caller (get_bens_e_direitos_acoes)
+        # fetches all user operations once and filters them.
+        # This function will then receive the filtered list.
+        # This avoids repeated DB calls if this function is called for multiple tickers.
+        # So, if operations_for_ticker is None, it's an issue or requires a different strategy.
+        # For now, let's assume operations_for_ticker will always be provided.
+        if operations_for_ticker is None:
+             # This path should ideally not be taken if called from get_bens_e_direitos_acoes
+             # which should pre-fetch and pass operations.
+             # If direct use is intended, a DB call would be here.
+             # For now, returning 0.0 if not provided to avoid error.
+             print(f"Warning: operations_for_ticker not provided for {ticker} on {target_date}. Avg price calc might be incorrect.")
+             return 0.0
+
+
+    # Sort operations by date to process them chronologically
+    # The Operacao model in this service uses 'date' as datetime_date after validation.
+    sorted_ops = sorted(operations_for_ticker, key=lambda op: op.date)
+
+    current_quantity = 0
+    total_cost = 0.0
+
+    # --- Incorporate Corporate Event Adjustments for Average Price ---
+    # This logic needs to be similar to how get_holdings_on_date adjusts quantities.
+    # If get_holdings_on_date already provides the *final adjusted quantity* for target_date,
+    # then this average price calculation must also account for how splits/bonuses affect cost basis.
+    #
+    # A common way:
+    # - Splits (e.g., 2-for-1): quantity doubles, price halves. Total cost remains same.
+    # - Bonus (e.g., 10%): quantity increases by 10%, price dilutes. Total cost remains same.
+    #
+    # The `get_holdings_on_date` in this service already has logic to apply events
+    # to operations using `_apply_events_to_operation`. We should leverage that.
+    # The operations passed to `calculate_average_price_up_to_date` should ideally be
+    # *already adjusted* up to the `target_date` if we want the average price to match
+    # the adjusted quantity from `get_holdings_on_date`.
+
+    # Let's assume `operations_for_ticker` ARE *NOT* pre-adjusted by corporate events here.
+    # We need to apply adjustments as we calculate the average price.
+    # This makes the function self-contained for price calculation.
+
+    id_acao = obter_id_acao_por_ticker(ticker) # Fetch from DB
+    raw_events_data = []
+    if id_acao:
+        raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, target_date)
+
+    ticker_events: List[EventoCorporativoInfo] = []
+    if raw_events_data:
+        ticker_events = [EventoCorporativoInfo(**event_data) for event_data in raw_events_data]
+
+    # Sort events by date_ex (already sorted from DB function)
+    # ticker_events.sort(key=lambda ev: ev.data_ex if ev.data_ex else datetime_date.min)
+
+
+    # Helper to apply events to a running quantity and average price
+    # This is complex. A simpler way for average price is to track total_cost and total_quantity.
+    # Corporate events that don't change total cost (splits, bonus) mean new_avg_price = total_cost / new_total_quantity.
+
+    processed_ops_for_avg_price: List[Operacao] = []
+    for op_original in sorted_ops:
+        if op_original.date > target_date: # Ensure op is within target_date
+            continue
+
+        adjusted_op = op_original
+        # Apply events that occurred *before or on* this operation's date,
+        # but *after* the previous operation's date if we were iterating through time.
+        # Simpler: apply all events *up to the operation's date* to this single operation's quantity and price.
+        # This is what _apply_events_to_operation in get_holdings_on_date does.
+
+        # We need to adjust the *historical* operations themselves based on subsequent events
+        # if we are calculating a historical average price that reflects future splits.
+        # Example: Buy 10 AAPL @ $100. Split 2:1. Now have 20 AAPL @ $50. Avg price is $50.
+        # If calculating avg price *for Dec 31st*, and split happened in June, then ops before June
+        # need to be seen as adjusted.
+
+        # The `_apply_events_to_operation` adjusts an op based on events *after* op.date but *before* target_date (implicit).
+        # Let's use it here:
+
+        # Filter events relevant for *this specific operation op_original*
+        # These are events whose ex-date is AFTER op_original.date but BEFORE or ON target_date
+        relevant_events_for_op = [
+            ev for ev in ticker_events
+            if ev.data_ex and op_original.date < ev.data_ex <= target_date
+        ]
+        # Sort these relevant events by their ex-date
+        relevant_events_for_op.sort(key=lambda ev: ev.data_ex if ev.data_ex else datetime_date.min)
+
+
+        # Apply these relevant events to the op_original
+        op_to_process = op_original
+        for event_info in relevant_events_for_op:
+            # This logic is from _apply_events_to_operation
+            if event_info.evento and event_info.evento.lower().startswith("bonific"):
+                bonus_increase = event_info.get_bonus_quantity_increase(float(op_to_process.quantity))
+                new_quantity = float(op_to_process.quantity) + bonus_increase
+                if new_quantity > 0:
+                    new_price = float(op_to_process.price) * float(op_to_process.quantity) / new_quantity
+                else:
+                    new_price = float(op_to_process.price)
+                op_to_process = op_to_process.copy(update={'quantity': int(round(new_quantity)), 'price': new_price})
+                continue
+
+            factor = event_info.get_adjustment_factor()
+            if factor != 1.0:
+                new_quantity_float = float(op_to_process.quantity) * factor
+                new_price_float = float(op_to_process.price) / factor if factor != 0 else float(op_to_process.price)
+                op_to_process = op_to_process.copy(update={
+                    'quantity': int(round(new_quantity_float)),
+                    'price': new_price_float
+                })
+
+        # Now use op_to_process for avg price calculation
+        if op_to_process.operation_type == 'buy':
+            total_cost += op_to_process.quantity * op_to_process.price
+            current_quantity += op_to_process.quantity
+        elif op_to_process.operation_type == 'sell':
+            # For FIFO/average cost, selling reduces quantity at the current average cost.
+            # The cost of goods sold (COGS) would be sell_quantity * current_avg_price.
+            # total_cost is then reduced by this COGS.
+            if current_quantity > 0: # Cannot sell if quantity is zero
+                avg_price_before_sell = total_cost / current_quantity if current_quantity > 0 else 0
+                cost_of_sold_shares = op_to_process.quantity * avg_price_before_sell
+                total_cost -= cost_of_sold_shares
+            current_quantity -= op_to_process.quantity
+
+            if current_quantity < 0: # Should not happen with proper sell logic if not shorting
+                current_quantity = 0 # Or handle as error
+                total_cost = 0 # Reset cost if quantity goes to or below zero through selling
+
+        # Ensure total_cost doesn't go negative if sells are valued higher than avg cost (profit)
+        # or if quantity becomes zero.
+        if current_quantity == 0:
+            total_cost = 0.0
+
+    if current_quantity <= 0:
+        return 0.0
+
+    return total_cost / current_quantity
+
+
+def get_bens_e_direitos_acoes(
+    user_id: int,
+    target_date_str: str
+) -> List[BemDireitoAcaoSchema]:
+    """
+    Retrieves the list of stock assets (ações) held by the user on a specific date,
+    formatted for "Bens e Direitos" tax declaration.
+    Now also returns valor_total_ano_anterior (valor total em 31/12 do ano anterior ao filtrado).
+    """
+    try:
+        target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+    except ValueError:
+        raise ValueError("Invalid target_date_str format. Expected YYYY-MM-DD.")
+
+    # Calcular data de 31/12 do ano anterior
+    ano_anterior = target_date.year - 1
+    data_ano_anterior = datetime.strptime(f"{ano_anterior}-12-31", "%Y-%m-%d").date()
+    data_ano_anterior_str = f"{ano_anterior}-12-31"
+
+    from services import listar_operacoes_service
+    user_operations_raw_dicts: List[Dict[str, Any]] = listar_operacoes_service(usuario_id=user_id)
+
+    operations_for_service: List[Operacao] = []
+    for op_raw in user_operations_raw_dicts:
+        try:
+            transformed_op_data = {
+                'ticker': op_raw['ticker'],
+                'date': op_raw['date'],
+                'operation_type': op_raw['operation'],
+                'quantity': op_raw['quantity'],
+                'price': op_raw['price'],
+                'fees': op_raw.get('fees', 0.0)
+            }
+            operations_for_service.append(Operacao(**transformed_op_data))
+        except Exception as e:
+            print(f"Skipping operation due to parsing error: {op_raw}. Error: {e}")
+            continue
+
+    # Holdings em target_date
+    ops_up_to_target_date = [op for op in operations_for_service if op.date <= target_date]
+    holdings_on_target_date: Dict[str, int] = get_holdings_on_date(ops_up_to_target_date, target_date_str)
+
+    # Holdings em 31/12 do ano anterior
+    ops_up_to_ano_anterior = [op for op in operations_for_service if op.date <= data_ano_anterior]
+    holdings_on_ano_anterior: Dict[str, int] = get_holdings_on_date(ops_up_to_ano_anterior, data_ano_anterior_str)
+
+    bens_e_direitos_list: List[BemDireitoAcaoSchema] = []
+
+    for ticker, quantity in holdings_on_target_date.items():
+        if quantity <= 0:
+            continue
+        acao_info_dict = obter_acao_info_por_ticker(ticker)
+        nome_empresa = acao_info_dict.get('nome') if acao_info_dict else None
+        cnpj = acao_info_dict.get('cnpj') if acao_info_dict else None
+        ops_for_ticker_up_to_target_date = [op for op in operations_for_service if op.ticker == ticker and op.date <= target_date]
+        preco_medio = calculate_average_price_up_to_date(user_id, ticker, target_date, operations_for_ticker=ops_for_ticker_up_to_target_date)
+        valor_total_data_base = round(quantity * preco_medio, 2)
+
+        # Calcular valor total em 31/12 do ano anterior
+        quantidade_ano_anterior = holdings_on_ano_anterior.get(ticker, 0)
+        if quantidade_ano_anterior > 0:
+            ops_for_ticker_up_to_ano_anterior = [op for op in operations_for_service if op.ticker == ticker and op.date <= data_ano_anterior]
+            preco_medio_ano_anterior = calculate_average_price_up_to_date(user_id, ticker, data_ano_anterior, operations_for_ticker=ops_for_ticker_up_to_ano_anterior)
+            valor_total_ano_anterior = round(quantidade_ano_anterior * preco_medio_ano_anterior, 2)
+        else:
+            valor_total_ano_anterior = 0.0
+
+        bens_e_direitos_list.append(
+            BemDireitoAcaoSchema(
+                ticker=ticker,
+                nome_empresa=nome_empresa,
+                cnpj=cnpj,
+                quantidade=quantity,
+                preco_medio=round(preco_medio, 2),
+                valor_total_data_base=valor_total_data_base,
+                valor_total_ano_anterior=valor_total_ano_anterior,
+            )
+        )
+
+    return bens_e_direitos_list
+
+if __name__ == '__main__':
+    # (Previous example usage for get_historical_prices, get_holdings_on_date, calculate_portfolio_history remains)
+
+    print("\n--- Testing calculate_average_price_up_to_date ---")
+    # Mock data for calculate_average_price_up_to_date
+    # This requires mocking database interactions (obter_id_acao_por_ticker, obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a)
+    # and operations data.
+    # For simplicity, assume events are handled and focus on buy/sell logic.
+
+    mock_ops_for_avg_price = [
+        Operacao(ticker='TEST', date='2023-01-01', operation_type='buy', quantity=10, price=10.0, fees=0), # Cost 100, Qty 10, Avg 10
+        Operacao(ticker='TEST', date='2023-01-05', operation_type='buy', quantity=10, price=12.0, fees=0), # Cost 120, Qty 20, TotalCost 220, Avg 11
+        Operacao(ticker='TEST', date='2023-01-10', operation_type='sell', quantity=5, price=15.0, fees=0), # Sell 5. CostOfSold = 5*11=55. TotalCost 220-55=165. Qty 15. Avg 11.
+        Operacao(ticker='TEST', date='2023-01-15', operation_type='buy', quantity=10, price=9.0, fees=0),  # Cost 90. Qty 25. TotalCost 165+90=255. Avg 10.2
+    ]
+
+    # Mocking obter_id_acao_por_ticker and obter_eventos_corporativos...
+    # This is complex to do inline. For a real test, use unittest.mock.
+    # Assuming no corporate events for this simple test:
+
+    # Monkey patch (not ideal for production code, but for simple __main__ test)
+    _original_obter_id_acao = obter_id_acao_por_ticker
+    _original_obter_eventos = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a
+
+    def mock_obter_id_acao_por_ticker(ticker: str): return 1 if ticker == 'TEST' else None
+    def mock_obter_eventos_corporativos(id_acao: int, data_limite: datetime_date): return []
+
+    obter_id_acao_por_ticker = mock_obter_id_acao_por_ticker
+    obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a = mock_obter_eventos_corporativos
+
+    avg_price1 = calculate_average_price_up_to_date(1, 'TEST', datetime_date(2023,1,1), mock_ops_for_avg_price[0:1])
+    print(f"Avg price on 2023-01-01 (after 1st buy): {avg_price1}") # Expected: 10.0
+
+    avg_price2 = calculate_average_price_up_to_date(1, 'TEST', datetime_date(2023,1,5), mock_ops_for_avg_price[0:2])
+    print(f"Avg price on 2023-01-05 (after 2nd buy): {avg_price2}") # Expected: 11.0
+
+    avg_price3 = calculate_average_price_up_to_date(1, 'TEST', datetime_date(2023,1,10), mock_ops_for_avg_price[0:3])
+    print(f"Avg price on 2023-01-10 (after 1st sell): {avg_price3}") # Expected: 11.0
+
+    avg_price4 = calculate_average_price_up_to_date(1, 'TEST', datetime_date(2023,1,15), mock_ops_for_avg_price[0:4])
+    print(f"Avg price on 2023-01-15 (after 3rd buy): {avg_price4}") # Expected: 10.2
+
+    # Restore original functions
+    obter_id_acao_por_ticker = _original_obter_id_acao
+    obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a = _original_obter_eventos
+
+    # Test get_bens_e_direitos_acoes would require more extensive mocking of DB and services.
+    # Example structure:
+    # print("\n--- Testing get_bens_e_direitos_acoes ---")
+    # Mock listar_operacoes_service
+    # Mock obter_acao_info_por_ticker
+    # bens_list = get_bens_e_direitos_acoes(user_id=1, target_date_str="2023-12-31")
+    # print(f"Bens e Direitos List for 2023-12-31: {bens_list}")
+    pass # End of __main__

@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional, Any, Dict
-from datetime import date
+from datetime import date, datetime # Added datetime
+import schemas # Imported schemas directly
 
 from app.services.portfolio_analysis_service import calculate_portfolio_history # Corrected
-from schemas import PortfolioHistoryResponseSchema, EquityPointSchema, ProfitabilityDetailsSchema # Corrected
+# from schemas import PortfolioHistoryResponseSchema, EquityPointSchema, ProfitabilityDetailsSchema # Will use schemas.<Name>
 from models import UsuarioResponse # Corrected
 from dependencies import get_current_user # Corrected import path
 from services import listar_operacoes_service # Corrected
@@ -14,7 +15,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.get("/portfolio/equity-history", response_model=PortfolioHistoryResponseSchema)
+@router.get("/portfolio/equity-history", response_model=schemas.PortfolioHistoryResponseSchema) # Prefixed with schemas.
 async def get_portfolio_equity_history(
     start_date: date,
     end_date: date,
@@ -76,3 +77,33 @@ async def get_portfolio_equity_history(
         # Log the exception e for server-side debugging
         print(f"Unexpected error in get_portfolio_equity_history: {e}") # Basic logging
         raise HTTPException(status_code=500, detail="An unexpected error occurred while calculating portfolio history.")
+
+@router.get("/bens-e-direitos/acoes", response_model=List[schemas.BemDireitoAcaoSchema]) # Corrected schema import
+async def get_bens_e_direitos_acoes_endpoint(
+    year: int = Query(..., description="The year for which to retrieve the assets and rights information (e.g., 2023). Value will be as of December 31st of this year."),
+    current_user: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Retrieves the list of stock assets (ações) held by the user on December 31st
+    of the specified year, formatted for "Bens e Direitos" tax declaration.
+    """
+    try:
+        if year < 1900 or year > datetime.now().year + 5: # Basic year validation
+            raise ValueError("Year is out of a reasonable range.")
+
+        target_date_str = f"{year}-12-31"
+
+        # Correctly import and call the service function
+        from app.services.portfolio_analysis_service import get_bens_e_direitos_acoes as service_get_bens_e_direitos_acoes # Corrected import
+
+        bens_e_direitos_data = service_get_bens_e_direitos_acoes(
+            user_id=current_user.id,
+            target_date_str=target_date_str
+        )
+        return bens_e_direitos_data
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        print(f"Unexpected error in get_bens_e_direitos_acoes_endpoint: {e}") # Basic logging
+        # Consider more specific error handling or logging here
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while retrieving assets and rights information.")
