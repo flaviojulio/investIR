@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/chart";
 import { TaxMeter } from "@/components/TaxMeter"
 import { PortfolioEquityChart } from "@/components/PortfolioEquityChart"
-import { Last12MonthsEarningsChart } from "@/components/Last12MonthsEarningsChart"; // Added import
+import Last12MonthsEarningsChart from "@/components/Last12MonthsEarningsChart"; // Changed to default import
 import { UploadOperations } from "@/components/UploadOperations"
 import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"

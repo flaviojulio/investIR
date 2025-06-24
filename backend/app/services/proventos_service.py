@@ -6,9 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session # Keep for type hint consistency if routers expect it
 
 # Corrected model import based on file structure
-from backend.models import UsuarioProventoRecebidoDB # This model is for reference if needed, not directly queried here.
+from models import UsuarioProventoRecebidoDB # This model is for reference if needed, not directly queried here.
 # Import the new database function
-from backend.database import get_sum_proventos_by_month_for_user
+from database import get_sum_proventos_by_month_for_user
 
 
 class MonthlyEarnings(BaseModel):

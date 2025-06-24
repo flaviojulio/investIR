@@ -2,11 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Optional # Optional might be needed if db session becomes truly optional
 
 # Service function and Pydantic schema
-from backend.app.services.proventos_service import get_sum_earnings_last_12_months, MonthlyEarnings
+from app.services.proventos_service import get_sum_earnings_last_12_months, MonthlyEarnings
 
 # User model and authentication dependency
-from backend.models import UsuarioResponse
-from backend.dependencies import get_current_user
+from models import UsuarioResponse
+from dependencies import get_current_user
 
 # Regarding database session:
 # The service get_sum_earnings_last_12_months has `db: Session` in its signature.

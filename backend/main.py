@@ -72,7 +72,7 @@ import auth # Keep this for other auth functions
 
 # Import the new router
 from routers import analysis_router
-from backend.routers import proventos_router # Added proventos_router import
+from routers import proventos_router # Added proventos_router import
 from dependencies import get_current_user, oauth2_scheme # Import from dependencies
 
 # Inicialização do banco de dados

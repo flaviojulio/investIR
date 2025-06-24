@@ -25,7 +25,7 @@ import { ptBR } from 'date-fns/locale';
 
 const chartConfig = {
   portfolioValue: {
-    label: "Valor da Carteira",
+    label: " Valor da Carteira",
     color: "hsl(var(--chart-1))",
   },
 } satisfies ChartConfig // Using the ChartConfig type from ui/chart
@@ -258,7 +258,7 @@ export function PortfolioEquityChart() {
                       }}
                     />}
                   />
-                  <Bar dataKey="value" fill="var(--color-portfolioValue)" radius={4} name="Valor da Carteira" />
+                  <Bar dataKey="value" fill="#2563eb" radius={4} name=" Valor da Carteira" />
                 </BarChart>
               </ChartContainer>
             </div>
