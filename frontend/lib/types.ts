@@ -191,3 +191,13 @@ export interface MonthlyEarnings {
   month: string; // Format: YYYY-MM
   total_earnings: number;
 }
+
+export interface BemDireitoAcao {
+  ticker: string;
+  nome_empresa?: string | null;
+  cnpj?: string | null;
+  quantidade: number;
+  preco_medio: number;
+  valor_total_data_base: number;
+  valor_total_ano_anterior?: number; // Novo campo: valor total em 31/12 do ano anterior
+}

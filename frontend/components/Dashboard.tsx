@@ -756,7 +756,7 @@ export function Dashboard() {
             <span className="w-2 md:w-4 lg:w-8 xl:w-12" />
             <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
-            <Link href="/declaracao-anual" className="px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-150 border-transparent text-gray-500 dark:text-gray-400 hover:text-primary hover:border-primary flex items-center h-full whitespace-nowrap">
+            <Link href="/imposto-renda" className="px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-150 border-transparent text-gray-500 dark:text-gray-400 hover:text-primary hover:border-primary flex items-center h-full whitespace-nowrap">
               Declaração Anual
             </Link>
           </TabsList>

@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BensDireitosAcoesTable } from "@/components/BensDireitosAcoesTable"; // Import the new component
 import { api } from "@/lib/api"; // For API calls
 import { useToast } from "@/hooks/use-toast"; // For notifications
 import { Skeleton } from "@/components/ui/skeleton"; // For loading state
+
 
 // Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -19,6 +21,7 @@ interface BemDireitoAcao {
 }
 
 export default function ImpostoRendaPage() {
+  const router = useRouter();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear - 1);
   const [bensDireitosData, setBensDireitosData] = useState<BemDireitoAcao[]>([]);
@@ -62,7 +65,14 @@ export default function ImpostoRendaPage() {
   };
 
   return (
-    <div className="container mx-auto p-4">
+    <div className="container mx-auto p-4 relative">
+      <button
+        className="absolute top-4 right-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded shadow"
+        onClick={() => router.push("/")}
+        title="Voltar para Dashboard"
+      >
+        Voltar para Dashboard
+      </button>
       <h1 className="text-2xl font-bold mb-4">
         Declaração Anual de Imposto de Renda
       </h1>

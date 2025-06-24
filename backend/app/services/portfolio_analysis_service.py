@@ -773,13 +773,6 @@ def calculate_average_price_up_to_date(
         # and ensure data fetched from DB is transformed to match it if necessary.
         # The `obter_operacoes_por_usuario_ticker_ate_data` in `database.py` likely returns
         # dicts that might need transformation.
-        # For now, let's assume it returns data compatible with this service's Operacao model
-        # or that such transformation happens before calling this.
-        # Better: Fetch raw and parse here.
-
-        # The function `obter_operacoes_por_usuario_ticker_ate_data` is not defined in the provided database.py
-        # Let's assume a generic function `get_operations_for_ticker_up_to_date` that returns
-        # list of dicts compatible with this service's Operacao model.
         # For now, this part is a placeholder for actual data fetching and parsing.
         # Placeholder:
         # ops_data_dicts = get_operations_for_ticker_up_to_date(user_id, ticker, target_date)
@@ -932,52 +925,28 @@ def get_bens_e_direitos_acoes(
     """
     Retrieves the list of stock assets (ações) held by the user on a specific date,
     formatted for "Bens e Direitos" tax declaration.
-
-    Args:
-        user_id (int): The ID of the user.
-        target_date_str (str): The target date in "YYYY-MM-DD" format (e.g., "2023-12-31").
-
-    Returns:
-        List[BemDireitoAcaoSchema]: A list of stock assets held by the user.
+    Now also returns valor_total_ano_anterior (valor total em 31/12 do ano anterior ao filtrado).
     """
     try:
         target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
     except ValueError:
         raise ValueError("Invalid target_date_str format. Expected YYYY-MM-DD.")
 
-    # 1. Fetch all user operations up to the target_date
-    # This requires a function that fetches all operations for a user.
-    # Let's assume `listar_operacoes_service` from `services.py` (root level) does this.
-    # We need to ensure it's available or use a direct DB call.
-    # For now, assuming a local helper or direct DB call if not easily importable.
+    # Calcular data de 31/12 do ano anterior
+    ano_anterior = target_date.year - 1
+    data_ano_anterior = datetime.strptime(f"{ano_anterior}-12-31", "%Y-%m-%d").date()
+    data_ano_anterior_str = f"{ano_anterior}-12-31"
 
-    # Placeholder for fetching all operations for the user:
-    # raw_user_ops = some_function_to_get_all_user_ops(user_id)
-    # This should ideally come from a shared service or direct DB access.
-    # The `analysis_router` uses `listar_operacoes_service` from the main `services.py`.
-    # We might need to structure dependencies better if this service needs that.
-
-    # Let's use a direct import if allowed by project structure, or a DB call.
-    # For now, assuming we get raw operation data:
-    from services import listar_operacoes_service # Main services.py
-
+    from services import listar_operacoes_service
     user_operations_raw_dicts: List[Dict[str, Any]] = listar_operacoes_service(usuario_id=user_id)
-
-    # Transform raw dicts to this service's Operacao model
-    # This service's Operacao model expects 'operation_type', 'date', 'ticker', 'quantity', 'price', 'fees'.
-    # The main Operacao model in `models.py` has different field names/aliases.
-    # This transformation step is CRUCIAL.
 
     operations_for_service: List[Operacao] = []
     for op_raw in user_operations_raw_dicts:
-        # Example transformation (adapt based on actual structure of op_raw from listar_operacoes_service)
-        # The Operacao model in this service has a validator for 'date' (str or date obj)
-        # and 'operation_type' ('buy' or 'sell').
         try:
             transformed_op_data = {
                 'ticker': op_raw['ticker'],
-                'date': op_raw['date'], # Assumes 'date' is already date object or "YYYY-MM-DD" str
-                'operation_type': op_raw['operation'], # Assumes 'operation' is 'buy'/'sell'
+                'date': op_raw['date'],
+                'operation_type': op_raw['operation'],
                 'quantity': op_raw['quantity'],
                 'price': op_raw['price'],
                 'fees': op_raw.get('fees', 0.0)
@@ -987,42 +956,34 @@ def get_bens_e_direitos_acoes(
             print(f"Skipping operation due to parsing error: {op_raw}. Error: {e}")
             continue
 
-    # Filter operations up to target_date (inclusive) for holdings calculation
+    # Holdings em target_date
     ops_up_to_target_date = [op for op in operations_for_service if op.date <= target_date]
-
-
-    # 2. Get holdings (ticker and quantity) on the target_date
-    # `get_holdings_on_date` applies corporate actions to quantities.
     holdings_on_target_date: Dict[str, int] = get_holdings_on_date(ops_up_to_target_date, target_date_str)
+
+    # Holdings em 31/12 do ano anterior
+    ops_up_to_ano_anterior = [op for op in operations_for_service if op.date <= data_ano_anterior]
+    holdings_on_ano_anterior: Dict[str, int] = get_holdings_on_date(ops_up_to_ano_anterior, data_ano_anterior_str)
 
     bens_e_direitos_list: List[BemDireitoAcaoSchema] = []
 
     for ticker, quantity in holdings_on_target_date.items():
-        if quantity <= 0: # Should already be filtered by get_holdings_on_date
+        if quantity <= 0:
             continue
-
-        # 3. Fetch company name and CNPJ
-        acao_info_dict = obter_acao_info_por_ticker(ticker) # Needs to be created in database.py
+        acao_info_dict = obter_acao_info_por_ticker(ticker)
         nome_empresa = acao_info_dict.get('nome') if acao_info_dict else None
         cnpj = acao_info_dict.get('cnpj') if acao_info_dict else None
-
-        # Filter operations for the current ticker up to target_date for avg price calculation
-        ops_for_ticker_up_to_target_date = [
-            op for op in operations_for_service
-            if op.ticker == ticker and op.date <= target_date
-        ]
-
-        # 4. Calculate average price for this ticker up to target_date
-        # This average price must be consistent with the quantity adjusted by corporate actions.
-        preco_medio = calculate_average_price_up_to_date(
-            user_id,
-            ticker,
-            target_date,
-            operations_for_ticker=ops_for_ticker_up_to_target_date # Pass the pre-filtered, service-parsed ops
-        )
-
-        # 5. Calculate total value
+        ops_for_ticker_up_to_target_date = [op for op in operations_for_service if op.ticker == ticker and op.date <= target_date]
+        preco_medio = calculate_average_price_up_to_date(user_id, ticker, target_date, operations_for_ticker=ops_for_ticker_up_to_target_date)
         valor_total_data_base = round(quantity * preco_medio, 2)
+
+        # Calcular valor total em 31/12 do ano anterior
+        quantidade_ano_anterior = holdings_on_ano_anterior.get(ticker, 0)
+        if quantidade_ano_anterior > 0:
+            ops_for_ticker_up_to_ano_anterior = [op for op in operations_for_service if op.ticker == ticker and op.date <= data_ano_anterior]
+            preco_medio_ano_anterior = calculate_average_price_up_to_date(user_id, ticker, data_ano_anterior, operations_for_ticker=ops_for_ticker_up_to_ano_anterior)
+            valor_total_ano_anterior = round(quantidade_ano_anterior * preco_medio_ano_anterior, 2)
+        else:
+            valor_total_ano_anterior = 0.0
 
         bens_e_direitos_list.append(
             BemDireitoAcaoSchema(
@@ -1030,8 +991,9 @@ def get_bens_e_direitos_acoes(
                 nome_empresa=nome_empresa,
                 cnpj=cnpj,
                 quantidade=quantity,
-                preco_medio=round(preco_medio, 2), # Round preco_medio for storage/display
+                preco_medio=round(preco_medio, 2),
                 valor_total_data_base=valor_total_data_base,
+                valor_total_ano_anterior=valor_total_ano_anterior,
             )
         )
 

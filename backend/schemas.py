@@ -36,3 +36,4 @@ class BemDireitoAcaoSchema(BaseModel):
     quantidade: int
     preco_medio: float
     valor_total_data_base: float
+    valor_total_ano_anterior: float = 0.0  # Novo campo: valor total em 31/12 do ano anterior

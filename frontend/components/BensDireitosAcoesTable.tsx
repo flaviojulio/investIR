@@ -20,6 +20,7 @@ interface BemDireitoAcao {
   quantidade: number;
   preco_medio: number;
   valor_total_data_base: number;
+  valor_total_ano_anterior?: number; // Novo campo: valor total em 31/12 do ano anterior
 }
 
 interface BensDireitosAcoesTableProps {
@@ -80,6 +81,7 @@ export function BensDireitosAcoesTable({ data, year }: BensDireitosAcoesTablePro
               <TableHead className="text-right">Quantidade</TableHead>
               <TableHead className="text-right">Preço Médio (R$)</TableHead>
               <TableHead className="text-right">Valor Total em 31/12/{year} (R$)</TableHead>
+              <TableHead className="text-right">Valor Total em 31/12/{year - 1} (R$)</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -96,6 +98,9 @@ export function BensDireitosAcoesTable({ data, year }: BensDireitosAcoesTablePro
                 </TableCell>
                 <TableCell className="text-right">
                   {formatCurrency(item.valor_total_data_base)}
+                </TableCell>
+                <TableCell className="text-right">
+                  {formatCurrency(item.valor_total_ano_anterior ?? 0)}
                 </TableCell>
               </TableRow>
             ))}
