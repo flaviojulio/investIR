@@ -1583,3 +1583,37 @@ def obter_data_primeira_operacao_usuario_ticker(usuario_id: int, ticker: str) ->
                 return datetime.strptime(row['primeira_data'].split('T')[0], '%Y-%m-%d').date()
             return row['primeira_data']
         return None
+
+def get_sum_proventos_by_month_for_user(user_id: int, start_date: date, end_date: date) -> List[Dict[str, Any]]:
+    """
+    Calcula a soma total de proventos recebidos por mês para um usuário dentro de um período.
+
+    Args:
+        user_id: ID do usuário.
+        start_date: Data de início do período (inclusive).
+        end_date: Data de fim do período (inclusive).
+
+    Returns:
+        List[Dict[str, Any]]: Lista de dicionários, cada um contendo 'month' (YYYY-MM) e 'total' (float).
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        query = """
+            SELECT
+                strftime('%Y-%m', dt_pagamento) as month,
+                SUM(valor_total_recebido) as total
+            FROM usuario_proventos_recebidos
+            WHERE usuario_id = ?
+              AND dt_pagamento >= ?
+              AND dt_pagamento <= ?
+              AND dt_pagamento IS NOT NULL
+            GROUP BY month
+            ORDER BY month ASC;
+        """
+        # Convert date objects to ISO format strings for the query
+        start_date_str = start_date.isoformat()
+        end_date_str = end_date.isoformat()
+
+        cursor.execute(query, (user_id, start_date_str, end_date_str))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]

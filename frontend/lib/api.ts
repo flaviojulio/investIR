@@ -5,6 +5,7 @@ import type {
   ResumoProventoAnualAPI,
   ResumoProventoMensalAPI,
   ResumoProventoPorAcaoAPI,
+  MonthlyEarnings, // Added MonthlyEarnings
 } from "./types" // Import the new types
 
 export const api = axios.create({
@@ -118,5 +119,20 @@ export const getResumoProventosPorAcaoUsuario = async (): Promise<ResumoProvento
       throw new Error(error.response.data.detail || "Falha ao buscar resumo de proventos por ação.");
     }
     throw new Error("Erro inesperado ao buscar resumo de proventos por ação.");
+  }
+};
+
+export const getSumEarningsLast12Months = async (): Promise<MonthlyEarnings[]> => {
+  try {
+    // The endpoint is /api/proventos/resumo/ultimos-12-meses
+    // The existing `api` instance has baseURL: "http://localhost:8000/api"
+    // So, the path for the get request should be "/proventos/resumo/ultimos-12-meses"
+    const response = await api.get<MonthlyEarnings[]>("/proventos/resumo/ultimos-12-meses");
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      throw new Error(error.response.data.detail || "Falha ao buscar o resumo de proventos dos últimos 12 meses.");
+    }
+    throw new Error("Erro inesperado ao buscar o resumo de proventos dos últimos 12 meses.");
   }
 };

@@ -186,3 +186,8 @@ export interface Corretora {
   nome: string;
   cnpj: string;
 }
+
+export interface MonthlyEarnings {
+  month: string; // Format: YYYY-MM
+  total_earnings: number;
+}

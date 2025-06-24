@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/chart";
 import { TaxMeter } from "@/components/TaxMeter"
 import { PortfolioEquityChart } from "@/components/PortfolioEquityChart"
+import { Last12MonthsEarningsChart } from "@/components/Last12MonthsEarningsChart"; // Added import
 import { UploadOperations } from "@/components/UploadOperations"
 import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"
@@ -757,10 +758,16 @@ export function Dashboard() {
 
           <TabsContent value="overview" className="space-y-6">
             <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} totalDividendosRecebidos={totalDividendosRecebidos} />
+
+            {/* TaxMeter moved here, should take full width */}
+            <TaxMeter resultados={data.resultados} />
+
+            {/* Grid for charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <PortfolioEquityChart />
-              <TaxMeter resultados={data.resultados} />
+              <Last12MonthsEarningsChart /> {/* New chart here */}
             </div>
+
             <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
             <OperacoesEncerradasTable 
               operacoesFechadas={data.operacoes_fechadas} 
