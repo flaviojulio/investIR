@@ -1163,6 +1163,34 @@ def obter_operacoes_por_ticker_db(usuario_id: int, ticker: str) -> List[Dict[str
             operacoes.append(operacao_dict)
         return operacoes
 
+def obter_operacoes_por_usuario_ticker_ate_data(usuario_id: int, ticker: str, data_ate_str: str) -> List[Dict[str, Any]]: # Renamed function and param
+    """
+    Obtém todas as operações de um usuário para um ticker específico até uma data específica (inclusive).
+    Retorna todos os campos relevantes da operação para que possam ser parseados pelo modelo Operacao do serviço.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Adicionado fees e price, operation, date, quantity, id
+        # data_ate_str deve estar no formato 'YYYY-MM-DD'
+        cursor.execute('''
+            SELECT id, date, ticker, operation, quantity, price, fees
+            FROM operacoes
+            WHERE usuario_id = ? AND ticker = ? AND date <= ?
+            ORDER BY date, id
+        ''', (usuario_id, ticker, data_ate_str)) # Use data_ate_str directly
+        rows = cursor.fetchall()
+
+        operacoes_list = []
+        for row in rows:
+            op_dict = dict(row)
+            # Assegura que 'date' é um objeto date, não string, antes de retornar.
+            # O conversor do SQLite já deve fazer isso se a coluna é DATE e detect_types está ativo.
+            # Mas uma verificação/conversão explícita pode ser mais robusta se a coluna for TEXT.
+            if isinstance(op_dict['date'], str):
+                op_dict['date'] = datetime.strptime(op_dict['date'], '%Y-%m-%d').date()
+            operacoes_list.append(op_dict)
+        return operacoes_list
+
 def obter_operacoes_por_ticker_ate_data_db(usuario_id: int, ticker: str, data_ate: str) -> List[Dict[str, Any]]:
     """
     Obtém operações de um ticker específico para um usuário até uma data específica.
