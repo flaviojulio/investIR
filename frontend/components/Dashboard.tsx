@@ -626,6 +626,8 @@ export function Dashboard() {
       setActiveTab("overview");
     } else if (pathname === "/proventos") {
       setActiveTab("proventos");
+    } else if (pathname === "/imposto-renda") {
+      setActiveTab("imposto-renda");
     }
     // "taxes", "history", "prejuizo_acumulado" are local tabs
   }, [pathname]);
@@ -742,16 +744,20 @@ export function Dashboard() {
             if (value === "overview") {
               setActiveTab("overview");
               router.push("/");
+            } else if (value === "imposto-renda") {
+              setActiveTab("imposto-renda");
+              router.push("/imposto-renda");
             } else {
               setActiveTab(value);
             }
           }}
           className="space-y-6"
         >
-          <TabsList className="grid w-full grid-cols-5 md:grid-cols-8 lg:grid-cols-11 xl:grid-cols-11">
+          <TabsList className="grid w-full grid-cols-6 md:grid-cols-8 lg:grid-cols-11 xl:grid-cols-11">
             <TabsTrigger value="overview">Dashboard</TabsTrigger>
             <TabsTrigger value="proventos">Proventos</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
+            <TabsTrigger value="imposto-renda">Imposto de Renda</TabsTrigger>
             <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
             <TabsTrigger value="history">Histórico</TabsTrigger>
           </TabsList>
