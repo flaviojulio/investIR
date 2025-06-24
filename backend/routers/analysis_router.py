@@ -15,7 +15,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.get("/portfolio/equity-history", response_model=PortfolioHistoryResponseSchema)
+@router.get("/portfolio/equity-history", response_model=schemas.PortfolioHistoryResponseSchema) # Prefixed with schemas.
 async def get_portfolio_equity_history(
     start_date: date,
     end_date: date,
