@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional
 # Unused imports json, Union, defaultdict removed
 
 # Caminho para o banco de dados SQLite
-DATABASE_FILE = "C:/Projeto Fortuna/investIR/backend/acoes_ir.db"
+DATABASE_FILE = "backend/acoes_ir.db" # Changed to relative path
 
 def obter_acao_info_por_ticker(ticker: str) -> Optional[Dict[str, Any]]:
     """
