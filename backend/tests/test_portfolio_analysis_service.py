@@ -2,9 +2,16 @@ import pytest
 from unittest.mock import patch, MagicMock
 from datetime import date, datetime
 
+# Adjust import paths for testing environment
+import sys
+import os
+# Add the backend directory to sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
+
+
 # Imports from your project
-from backend.app.services.portfolio_analysis_service import get_holdings_on_date, calculate_portfolio_history, Operacao as ServiceOperacao
-from backend.models import EventoCorporativoInfo # For testing get_adjustment_factor
+from app.services.portfolio_analysis_service import get_holdings_on_date, calculate_portfolio_history, Operacao as ServiceOperacao, get_rendimentos_isentos_por_ano, RendimentoIsento
+from models import EventoCorporativoInfo # For testing get_adjustment_factor
 
 # --- Tests for EventoCorporativoInfo.get_adjustment_factor ---
 # Added dummy id to EventoCorporativoInfo calls
@@ -63,8 +70,9 @@ def sample_operations():
 @pytest.fixture
 def mock_db_calls():
     # Using a dictionary to hold multiple mocks if needed, or just return a tuple
-    with patch('backend.app.services.portfolio_analysis_service.obter_id_acao_por_ticker') as mock_get_id, \
-         patch('backend.app.services.portfolio_analysis_service.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a') as mock_get_events:
+    # Corrected patch paths to target 'database' module directly as used by the service
+    with patch('database.obter_id_acao_por_ticker') as mock_get_id, \
+         patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a') as mock_get_events:
         yield mock_get_id, mock_get_events
 
 
@@ -88,8 +96,10 @@ def test_get_holdings_no_events(mock_db_calls, sample_operations):
     mock_get_id_acao.assert_any_call("VALE3")
 
 
-def test_get_holdings_with_split(mock_db_calls):
-    mock_get_id_acao, mock_get_events = mock_db_calls
+@patch('database.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
+def test_get_holdings_with_split(mock_get_events, mock_get_id_acao): # Order of args matters for patch
+    # mock_get_id_acao, mock_get_events = mock_db_calls # Not using fixture directly
 
     operations = [
         ServiceOperacao(ticker="TICK1", date=date(2023, 1, 1), operation_type="buy", quantity=10, price=100.0, fees=0)
@@ -111,8 +121,10 @@ def test_get_holdings_with_split(mock_db_calls):
     mock_get_events.assert_called_once_with(1, target_date_obj)
 
 
-def test_get_holdings_with_reverse_split(mock_db_calls):
-    mock_get_id_acao, mock_get_events = mock_db_calls
+@patch('database.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
+def test_get_holdings_with_reverse_split(mock_get_events, mock_get_id_acao):
+    # mock_get_id_acao, mock_get_events = mock_db_calls
 
     operations = [
         ServiceOperacao(ticker="TICK2", date=date(2023, 1, 1), operation_type="buy", quantity=20, price=50.0, fees=0)
@@ -133,8 +145,10 @@ def test_get_holdings_with_reverse_split(mock_db_calls):
     mock_get_events.assert_called_once_with(2, target_date_obj)
 
 
-def test_get_holdings_multiple_events_split_then_reverse(mock_db_calls):
-    mock_get_id_acao, mock_get_events = mock_db_calls
+@patch('database.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
+def test_get_holdings_multiple_events_split_then_reverse(mock_get_events, mock_get_id_acao):
+    # mock_get_id_acao, mock_get_events = mock_db_calls
 
     operations = [
         ServiceOperacao(ticker="TICK3", date=date(2023, 1, 1), operation_type="buy", quantity=10, price=100.0, fees=0)
@@ -161,8 +175,10 @@ def test_get_holdings_multiple_events_split_then_reverse(mock_db_calls):
     mock_get_events.assert_called_once_with(3, target_date_obj)
 
 
-def test_get_holdings_event_data_ex_after_target_date(mock_db_calls):
-    mock_get_id_acao, mock_get_events = mock_db_calls
+@patch('database.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
+def test_get_holdings_event_data_ex_after_target_date(mock_get_events, mock_get_id_acao):
+    # mock_get_id_acao, mock_get_events = mock_db_calls
 
     operations = [
         ServiceOperacao(ticker="TICK4", date=date(2023, 1, 1), operation_type="buy", quantity=10, price=100.0, fees=0)
@@ -178,8 +194,10 @@ def test_get_holdings_event_data_ex_after_target_date(mock_db_calls):
     mock_get_events.assert_called_once_with(4, target_date_obj)
 
 
-def test_get_holdings_operation_after_event_data_ex(mock_db_calls):
-    mock_get_id_acao, mock_get_events = mock_db_calls
+@patch('database.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
+def test_get_holdings_operation_after_event_data_ex(mock_get_events, mock_get_id_acao):
+    # mock_get_id_acao, mock_get_events = mock_db_calls
 
     operations = [
         ServiceOperacao(ticker="TICK5", date=date(2023, 1, 10), operation_type="buy", quantity=10, price=100.0, fees=0)
@@ -200,8 +218,10 @@ def test_get_holdings_operation_after_event_data_ex(mock_db_calls):
     mock_get_events.assert_called_once_with(5, target_date_obj)
 
 
-def test_get_holdings_operation_date_equals_event_data_ex(mock_db_calls):
-    mock_get_id_acao, mock_get_events = mock_db_calls
+@patch('database.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
+def test_get_holdings_operation_date_equals_event_data_ex(mock_get_events, mock_get_id_acao):
+    # mock_get_id_acao, mock_get_events = mock_db_calls
 
     operations = [
         ServiceOperacao(ticker="TICK6", date=date(2023, 1, 5), operation_type="buy", quantity=10, price=100.0, fees=0)
@@ -223,9 +243,9 @@ def test_get_holdings_operation_date_equals_event_data_ex(mock_db_calls):
 
 # --- Basic Tests for calculate_portfolio_history ---
 
-@patch('backend.app.services.portfolio_analysis_service.get_historical_prices')
-@patch('backend.app.services.portfolio_analysis_service.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
-@patch('backend.app.services.portfolio_analysis_service.obter_id_acao_por_ticker')
+@patch('app.services.portfolio_analysis_service.get_historical_prices') # Corrected patch path
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
+@patch('database.obter_id_acao_por_ticker')
 def test_calculate_portfolio_history_with_split(
     mock_get_id_acao,
     mock_get_events,
@@ -287,8 +307,8 @@ def test_get_holdings_invalid_target_date_str_format():
     holdings = get_holdings_on_date(operations, "invalid-date-format")
     assert holdings == {}
 
-@patch('backend.app.services.portfolio_analysis_service.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
-@patch('backend.app.services.portfolio_analysis_service.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a') # Corrected patch path
+@patch('database.obter_id_acao_por_ticker') # Corrected patch path
 def test_get_holdings_bbas3_split_scenario(mock_obter_id_acao_por_ticker, mock_obter_eventos_corporativos):
     """Test BBAS3 split scenario: 1000 shares bought, then 1:2 split."""
     bbas3_ticker = "BBAS3"
@@ -332,8 +352,8 @@ def test_get_holdings_bbas3_split_scenario(mock_obter_id_acao_por_ticker, mock_o
     mock_obter_eventos_corporativos.assert_called_once_with(bbas3_id_acao, target_date_obj)
 
 
-@patch('backend.app.services.portfolio_analysis_service.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
-@patch('backend.app.services.portfolio_analysis_service.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a') # Corrected
+@patch('database.obter_id_acao_por_ticker') # Corrected
 def test_get_holdings_parses_raw_operations_data(mock_get_id_acao, mock_get_events):
     mock_get_id_acao.return_value = 1
     mock_get_events.return_value = []
@@ -344,8 +364,8 @@ def test_get_holdings_parses_raw_operations_data(mock_get_id_acao, mock_get_even
     holdings = get_holdings_on_date(raw_operations_data, "2024-01-05")
     assert holdings.get("RAW") == 10
 
-@patch('backend.app.services.portfolio_analysis_service.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
-@patch('backend.app.services.portfolio_analysis_service.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a') # Corrected
+@patch('database.obter_id_acao_por_ticker') # Corrected
 def test_get_holdings_ticker_id_not_found(mock_get_id_acao, mock_get_events):
     mock_get_id_acao.return_value = None
 
@@ -359,8 +379,8 @@ def test_get_holdings_ticker_id_not_found(mock_get_id_acao, mock_get_events):
     mock_get_id_acao.assert_called_once_with("UNKNOWN")
     mock_get_events.assert_not_called()
 
-@patch('backend.app.services.portfolio_analysis_service.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a')
-@patch('backend.app.services.portfolio_analysis_service.obter_id_acao_por_ticker')
+@patch('database.obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a') # Corrected
+@patch('database.obter_id_acao_por_ticker') # Corrected
 def test_get_holdings_quantity_rounding(mock_get_id_acao, mock_get_events):
     mock_get_id_acao.return_value = 1 # For ticker "ROUND"
 
@@ -406,3 +426,110 @@ def test_get_holdings_quantity_rounding(mock_get_id_acao, mock_get_events):
     target_date_ru = date(2023,1,30)
     holdings_ru = get_holdings_on_date(operations_round_up, target_date_ru.isoformat())
     assert holdings_ru.get("ROUNDUP") == 17
+
+
+# --- Tests for get_rendimentos_isentos_por_ano ---
+
+# from backend.app.services.portfolio_analysis_service import get_rendimentos_isentos_por_ano, RendimentoIsento # Already imported
+
+@patch('app.services.portfolio_analysis_service.get_db') # Corrected patch path
+def test_get_rendimentos_isentos_por_ano_success(mock_get_db):
+    # Mock database connection and cursor
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_get_db.return_value.__enter__.return_value = mock_conn
+    mock_conn.cursor.return_value = mock_cursor
+
+    # Sample data returned by the database query
+    db_rows = [
+        {"ticker_acao": "ITSA4", "nome_empresa": "ITAUSA S.A.", "cnpj": "61.532.644/0001-15", "total_valor_ano": 150.75},
+        {"ticker_acao": "PETR4", "nome_empresa": "PETROBRAS", "cnpj": "33.000.167/0001-01", "total_valor_ano": 300.50},
+        {"ticker_acao": "VALE3", "nome_empresa": "VALE S.A.", "cnpj": "33.592.510/0001-54", "total_valor_ano": 0.0}, # Test case with zero value
+    ]
+    mock_cursor.fetchall.return_value = db_rows
+
+    user_id = 1
+    year = 2023
+    result = get_rendimentos_isentos_por_ano(user_id, year)
+
+    # Assertions
+    assert len(result) == 3
+    assert isinstance(result[0], RendimentoIsento)
+    assert result[0].ticker == "ITSA4"
+    assert result[0].empresa == "ITAUSA S.A."
+    assert result[0].cnpj == "61.532.644/0001-15"
+    assert result[0].valor_total_recebido_no_ano == 150.75
+
+    assert result[1].ticker == "PETR4"
+    assert result[1].valor_total_recebido_no_ano == 300.50
+
+    assert result[2].ticker == "VALE3"
+    assert result[2].valor_total_recebido_no_ano == 0.0
+
+    # Verify the SQL query
+    expected_query = """
+            SELECT
+                upr.ticker_acao,
+                a.nome as nome_empresa,
+                a.cnpj,
+                SUM(upr.valor_total_recebido) as total_valor_ano
+            FROM usuario_proventos_recebidos upr
+            JOIN acoes a ON upr.id_acao = a.id
+            WHERE upr.usuario_id = ?
+              AND strftime('%Y', upr.dt_pagamento) = ?
+              AND upr.tipo_provento IN ('Dividendo', 'Rendimento')
+              AND upr.dt_pagamento IS NOT NULL
+            GROUP BY upr.ticker_acao, a.nome, a.cnpj
+            ORDER BY upr.ticker_acao;
+        """
+    mock_cursor.execute.assert_called_once_with(expected_query, (user_id, str(year)))
+
+@patch('app.services.portfolio_analysis_service.get_db') # Corrected patch path
+def test_get_rendimentos_isentos_por_ano_no_data(mock_get_db):
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_get_db.return_value.__enter__.return_value = mock_conn
+    mock_conn.cursor.return_value = mock_cursor
+    mock_cursor.fetchall.return_value = [] # No data from DB
+
+    user_id = 2
+    year = 2022
+    result = get_rendimentos_isentos_por_ano(user_id, year)
+
+    assert len(result) == 0
+    mock_cursor.execute.assert_called_once()
+
+@patch('app.services.portfolio_analysis_service.get_db') # Corrected patch path
+def test_get_rendimentos_isentos_por_ano_db_error(mock_get_db):
+    # Simulate a database error during context management or query execution
+    mock_get_db.return_value.__enter__.side_effect = Exception("DB connection error")
+
+    user_id = 3
+    year = 2021
+    with pytest.raises(Exception, match="DB connection error"):
+        get_rendimentos_isentos_por_ano(user_id, year)
+
+@patch('app.services.portfolio_analysis_service.get_db') # Corrected patch path
+def test_get_rendimentos_isentos_por_ano_includes_only_dividendos_rendimentos(mock_get_db):
+    mock_conn = MagicMock()
+    mock_cursor = MagicMock()
+    mock_get_db.return_value.__enter__.return_value = mock_conn
+    mock_conn.cursor.return_value = mock_cursor
+
+    # Query from the function:
+    # AND upr.tipo_provento IN ('Dividendo', 'Rendimento')
+    # This is implicitly tested by the expected_query check in test_get_rendimentos_isentos_por_ano_success.
+    # We can explicitly check the args of the execute call again if needed.
+
+    mock_cursor.fetchall.return_value = [
+        {"ticker_acao": "JCPTICKER", "nome_empresa": "JCP Corp", "cnpj": "123", "total_valor_ano": 50.0},
+    ] # Simulate if DB somehow returned JCP despite the query (it shouldn't)
+      # More accurately, the query itself should filter.
+
+    get_rendimentos_isentos_por_ano(1, 2023)
+
+    args, _ = mock_cursor.execute.call_args
+    query_string = args[0]
+
+    assert "AND upr.tipo_provento IN ('Dividendo', 'Rendimento')" in query_string.replace("\n", " ")
+    # This confirms the SQL query itself is constructed to filter correctly.

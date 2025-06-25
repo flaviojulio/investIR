@@ -20,14 +20,24 @@ interface BemDireitoAcao {
   valor_total_data_base: number;
 }
 
+// Define the type for RendimentoIsento based on the backend response
+interface RendimentoIsento {
+  ticker: string;
+  empresa?: string | null;
+  cnpj?: string | null;
+  valor_total_recebido_no_ano: number;
+}
+
 export default function ImpostoRendaPage() {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear - 1);
   const [bensDireitosData, setBensDireitosData] = useState<BemDireitoAcao[]>([]);
-  const [dividendos, setDividendos] = useState<{ ticker: string; empresa: string; cnpj: string; valor: number }[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [rendimentosIsentos, setRendimentosIsentos] = useState<RendimentoIsento[]>([]); // Changed state name and type
+  const [isLoadingBensDireitos, setIsLoadingBensDireitos] = useState<boolean>(false); // Specific loading state
+  const [isLoadingRendimentos, setIsLoadingRendimentos] = useState<boolean>(false); // Specific loading state
+  const [errorBensDireitos, setErrorBensDireitos] = useState<string | null>(null); // Specific error state
+  const [errorRendimentos, setErrorRendimentos] = useState<string | null>(null); // Specific error state
   const [userYears, setUserYears] = useState<number[]>([]);
   const { toast } = useToast();
 
@@ -47,8 +57,8 @@ export default function ImpostoRendaPage() {
     const fetchBensDireitosData = async () => {
       if (!selectedYear) return;
 
-      setIsLoading(true);
-      setError(null);
+      setIsLoadingBensDireitos(true);
+      setErrorBensDireitos(null);
       try {
         const response = await api.get(`/analysis/bens-e-direitos/acoes`, {
           params: { year: selectedYear },
@@ -56,27 +66,45 @@ export default function ImpostoRendaPage() {
         setBensDireitosData(response.data);
       } catch (err: any) {
         const errorMessage = err.response?.data?.detail || "Erro ao buscar dados de Bens e Direitos.";
-        setError(errorMessage);
+        setErrorBensDireitos(errorMessage);
         toast({
-          title: "Erro",
+          title: "Erro em Bens e Direitos",
           description: errorMessage,
           variant: "destructive",
         });
         setBensDireitosData([]); // Clear data on error
       } finally {
-        setIsLoading(false);
+        setIsLoadingBensDireitos(false);
+      }
+    };
+
+    const fetchRendimentosIsentosData = async () => {
+      if (!selectedYear) return;
+
+      setIsLoadingRendimentos(true);
+      setErrorRendimentos(null);
+      try {
+        const response = await api.get('/analysis/rendimentos-isentos', {
+          params: { year: selectedYear },
+        });
+        setRendimentosIsentos(response.data);
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.detail || "Erro ao buscar Rendimentos Isentos.";
+        setErrorRendimentos(errorMessage);
+        toast({
+          title: "Erro em Rendimentos Isentos",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        setRendimentosIsentos([]); // Clear data on error
+      } finally {
+        setIsLoadingRendimentos(false);
       }
     };
 
     fetchBensDireitosData();
+    fetchRendimentosIsentosData();
   }, [selectedYear, toast]);
-
-  useEffect(() => {
-    if (!selectedYear) return;
-    api.get('/analysis/dividendos', { params: { year: selectedYear } })
-      .then(res => setDividendos(res.data))
-      .catch(() => setDividendos([]));
-  }, [selectedYear]);
 
   const handleYearChange = (value: string) => {
     setSelectedYear(Number(value));
@@ -127,52 +155,66 @@ export default function ImpostoRendaPage() {
         </TabsList>
 
         <TabsContent value="bens-e-direitos">
-          {isLoading && (
+          {isLoadingBensDireitos && (
             <div>
               <Skeleton className="h-8 w-1/2 mb-4" />
               <Skeleton className="h-4 w-3/4 mb-2" />
               <Skeleton className="h-32 w-full" />
             </div>
           )}
-          {error && !isLoading && (
+          {errorBensDireitos && !isLoadingBensDireitos && (
             <div className="text-red-600 bg-red-100 p-4 rounded-md">
-              <p><strong>Erro:</strong> {error}</p>
+              <p><strong>Erro ao carregar Bens e Direitos:</strong> {errorBensDireitos}</p>
             </div>
           )}
-          {!isLoading && !error && (
+          {!isLoadingBensDireitos && !errorBensDireitos && (
             <BensDireitosAcoesTable data={bensDireitosData} year={selectedYear} />
           )}
         </TabsContent>
 
         <TabsContent value="rendimentos-isentos">
-          <div className="overflow-x-auto">
-            <table className="min-w-full border border-gray-300 rounded">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="px-4 py-2 border-b text-left">Ticker</th>
-                  <th className="px-4 py-2 border-b text-left">Empresa</th>
-                  <th className="px-4 py-2 border-b text-left">CNPJ</th>
-                  <th className="px-4 py-2 border-b text-left">Total Dividendos (R$)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {dividendos.length === 0 ? (
+          {isLoadingRendimentos && (
+            <div>
+              <Skeleton className="h-8 w-1/2 mb-4" />
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          )}
+          {errorRendimentos && !isLoadingRendimentos && (
+            <div className="text-red-600 bg-red-100 p-4 rounded-md">
+              <p><strong>Erro ao carregar Rendimentos Isentos:</strong> {errorRendimentos}</p>
+            </div>
+          )}
+          {!isLoadingRendimentos && !errorRendimentos && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full border border-gray-300 rounded">
+                <thead className="bg-gray-100">
                   <tr>
-                    <td colSpan={4} className="text-center py-4 text-muted-foreground">Nenhum dividendo encontrado para o ano selecionado.</td>
+                    <th className="px-4 py-2 border-b text-left">Ticker</th>
+                    <th className="px-4 py-2 border-b text-left">Empresa</th>
+                    <th className="px-4 py-2 border-b text-left">CNPJ</th>
+                    <th className="px-4 py-2 border-b text-left">Total Recebido (R$)</th>
                   </tr>
-                ) : (
-                  dividendos.map((item, idx) => (
-                    <tr key={idx}>
-                      <td className="px-4 py-2 border-b">{item.ticker}</td>
-                      <td className="px-4 py-2 border-b">{item.empresa}</td>
-                      <td className="px-4 py-2 border-b">{item.cnpj}</td>
-                      <td className="px-4 py-2 border-b">{item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                </thead>
+                <tbody>
+                  {rendimentosIsentos.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="text-center py-4 text-muted-foreground">Nenhum rendimento isento encontrado para o ano selecionado.</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    rendimentosIsentos.map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="px-4 py-2 border-b">{item.ticker}</td>
+                        <td className="px-4 py-2 border-b">{item.empresa || "N/A"}</td>
+                        <td className="px-4 py-2 border-b">{item.cnpj || "N/A"}</td>
+                        <td className="px-4 py-2 border-b">{item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="rendimentos-tributacao-exclusiva">
           <p className="text-muted-foreground">
