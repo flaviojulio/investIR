@@ -25,6 +25,7 @@ export default function ImpostoRendaPage() {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear - 1);
   const [bensDireitosData, setBensDireitosData] = useState<BemDireitoAcao[]>([]);
+  const [dividendos, setDividendos] = useState<{ ticker: string; empresa: string; cnpj: string; valor: number }[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [userYears, setUserYears] = useState<number[]>([]);
@@ -69,6 +70,13 @@ export default function ImpostoRendaPage() {
 
     fetchBensDireitosData();
   }, [selectedYear, toast]);
+
+  useEffect(() => {
+    if (!selectedYear) return;
+    api.get('/analysis/dividendos', { params: { year: selectedYear } })
+      .then(res => setDividendos(res.data))
+      .catch(() => setDividendos([]));
+  }, [selectedYear]);
 
   const handleYearChange = (value: string) => {
     setSelectedYear(Number(value));
@@ -137,7 +145,34 @@ export default function ImpostoRendaPage() {
         </TabsContent>
 
         <TabsContent value="rendimentos-isentos">
-          <p className="text-muted-foreground">Conteúdo da aba Rendimentos Isentos e Não Tributáveis.</p>
+          <div className="overflow-x-auto">
+            <table className="min-w-full border border-gray-300 rounded">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-4 py-2 border-b text-left">Ticker</th>
+                  <th className="px-4 py-2 border-b text-left">Empresa</th>
+                  <th className="px-4 py-2 border-b text-left">CNPJ</th>
+                  <th className="px-4 py-2 border-b text-left">Total Dividendos (R$)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dividendos.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="text-center py-4 text-muted-foreground">Nenhum dividendo encontrado para o ano selecionado.</td>
+                  </tr>
+                ) : (
+                  dividendos.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="px-4 py-2 border-b">{item.ticker}</td>
+                      <td className="px-4 py-2 border-b">{item.empresa}</td>
+                      <td className="px-4 py-2 border-b">{item.cnpj}</td>
+                      <td className="px-4 py-2 border-b">{item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </TabsContent>
         <TabsContent value="rendimentos-tributacao-exclusiva">
           <p className="text-muted-foreground">
