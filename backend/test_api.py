@@ -866,8 +866,7 @@ def test_deletar_funcao_forbidden_non_admin(client: TestClient, admin_auth_token
 # TODO: Add tests for expired tokens if feasible without overcomplicating.
 # This might require mocking time or auth.verificar_token's internals.
 
-# TODO: Add tests for other protected endpoints following the same data scoping pattern:
-# (No more remaining from the list, good)
+# TODO: Add tests for other protected endpoints following the same data scoping pattern.
 
 # TODO: Add tests for admin functionalities if time permits,
 # ensuring only admin can access them. The `get_admin_user` fixture would need
@@ -895,6 +894,83 @@ def test_deletar_funcao_forbidden_non_admin(client: TestClient, admin_auth_token
 # The `upload` and `carteira` tests build on potentially existing state for that user from other tests,
 # which is generally okay if the user is unique to that test function or fixture chain.
 # The use of `get_unique_user_payload` and `registered_user` (function-scoped) helps.
+
+
+# --- /api/analysis/rendimentos-isentos Endpoint Tests ---
+
+@patch('routers.analysis_router.get_rendimentos_isentos_por_ano') # Corrected patch path
+def test_get_rendimentos_isentos_success(mock_get_service_func, client: TestClient, auth_token: str, registered_user: Dict[str, Any]):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    year = 2023
+
+    # Mock the service function's return value
+    mock_data = [
+        {"ticker": "ITSA4", "empresa": "ITAUSA S.A.", "cnpj": "61.532.644/0001-15", "valor_total_recebido_no_ano": 150.75},
+        {"ticker": "PETR4", "empresa": "PETROBRAS", "cnpj": "33.000.167/0001-01", "valor_total_recebido_no_ano": 300.50},
+    ]
+    mock_get_service_func.return_value = mock_data
+
+    response = client.get(f"/api/analysis/rendimentos-isentos?year={year}", headers=headers)
+
+    assert response.status_code == 200
+    response_data = response.json()
+    assert len(response_data) == 2
+    assert response_data[0]["ticker"] == "ITSA4"
+    assert response_data[0]["valor_total_recebido_no_ano"] == 150.75
+    assert response_data[1]["ticker"] == "PETR4"
+
+    mock_get_service_func.assert_called_once_with(user_id=registered_user["id"], year=year)
+
+@patch('routers.analysis_router.get_rendimentos_isentos_por_ano') # Corrected patch path
+def test_get_rendimentos_isentos_no_data(mock_get_service_func, client: TestClient, auth_token: str, registered_user: Dict[str, Any]):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    year = 2022
+    mock_get_service_func.return_value = [] # Service returns empty list
+
+    response = client.get(f"/api/analysis/rendimentos-isentos?year={year}", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json() == []
+    mock_get_service_func.assert_called_once_with(user_id=registered_user["id"], year=year)
+
+def test_get_rendimentos_isentos_invalid_year(client: TestClient, auth_token: str):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    response_future_year = client.get("/api/analysis/rendimentos-isentos?year=3000", headers=headers)
+    assert response_future_year.status_code == 400 # Or 422 if Pydantic handles Query validation first
+    assert "Ano fora de um intervalo razoável" in response_future_year.json()["detail"]
+
+    response_past_year = client.get("/api/analysis/rendimentos-isentos?year=1800", headers=headers)
+    assert response_past_year.status_code == 400
+    assert "Ano fora de um intervalo razoável" in response_past_year.json()["detail"]
+
+def test_get_rendimentos_isentos_missing_year(client: TestClient, auth_token: str):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    response = client.get("/api/analysis/rendimentos-isentos", headers=headers) # Missing year query param
+    assert response.status_code == 422 # FastAPI's handling of missing required query parameters
+    # Expected detail from FastAPI for missing query param:
+    # {'detail': [{'loc': ['query', 'year'], 'msg': 'field required', 'type': 'value_error.missing'}]}
+    error_detail = response.json()["detail"][0]
+    assert error_detail["loc"] == ["query", "year"]
+    assert error_detail["msg"] == "field required"
+
+
+@patch('routers.analysis_router.get_rendimentos_isentos_por_ano') # Corrected patch path
+def test_get_rendimentos_isentos_service_error(mock_get_service_func, client: TestClient, auth_token: str, registered_user: Dict[str, Any]):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    year = 2023
+    mock_get_service_func.side_effect = Exception("Service layer database error")
+
+    response = client.get(f"/api/analysis/rendimentos-isentos?year={year}", headers=headers)
+
+    assert response.status_code == 500
+    assert "Erro inesperado ao buscar rendimentos isentos" in response.json()["detail"]
+    mock_get_service_func.assert_called_once_with(user_id=registered_user["id"], year=year)
+
+def test_get_rendimentos_isentos_unauthenticated(client: TestClient):
+    response = client.get("/api/analysis/rendimentos-isentos?year=2023")
+    assert response.status_code == 401 # Depends(get_current_user)
+    assert response.json()["detail"] == "Not authenticated"
+
 
 def test_operacoes_fechadas_short_sell(client: TestClient, auth_token: str, registered_user: Dict[str, Any]):
     headers = {"Authorization": f"Bearer {auth_token}"}
@@ -1017,7 +1093,7 @@ def create_json_upload_file(data_list: List[Dict[str, Any]]) -> BytesIO:
     return BytesIO(json_str.encode('utf-8'))
 
 @patch('main.get_current_user_data') # Mock authentication for upload endpoint
-@patch('main.processar_operacoes')   # Mock the service call in main.py's upload_operacoes
+@patch('main.processar_operacoes_service')   # Mock the service call in main.py's upload_operacoes
 def test_upload_operacoes_successful(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
     # registered_user fixture creates a user and we can use their ID
     # get_current_user_data in main.py is expected to return a UserResponse like object or dict
@@ -1101,7 +1177,10 @@ def test_upload_operacoes_invalid_json_structure(mock_get_current_user_data: Mag
     mock_user_response_data = {"id": registered_user["id"]} # Simplified mock
     mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
 
-    invalid_json_bytes = BytesIO(b"[{'Data do Negócio': '10/04/2025',,}]") # Malformed JSON
+    # Use a valid byte string for BytesIO, the error is in the JSON content not the byte string itself
+    invalid_json_content_str = "[{'Data do Negócio': '10/04/2025',,}]" # Malformed JSON
+    invalid_json_bytes = BytesIO(invalid_json_content_str.encode('utf-8'))
+
 
     response = client.post(
         "/api/upload",
@@ -1112,7 +1191,7 @@ def test_upload_operacoes_invalid_json_structure(mock_get_current_user_data: Mag
     assert response.json()["detail"] == "Formato de arquivo JSON inválido"
 
 @patch('main.get_current_user_data')
-@patch('main.processar_operacoes') # Mock to prevent actual processing if error occurs before
+@patch('main.processar_operacoes_service') # Mock to prevent actual processing if error occurs before
 def test_upload_operacoes_pydantic_validation_error(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
     mock_user_response_data = {"id": registered_user["id"]}
     mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
@@ -1171,7 +1250,7 @@ def test_upload_operacoes_service_value_error(mock_processar_operacoes: MagicMoc
     assert response.json()["detail"] == "Ticker XYZ inválido"
 
 @patch('main.get_current_user_data')
-@patch('main.processar_operacoes')
+@patch('main.processar_operacoes_service')
 def test_upload_operacoes_empty_array(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
     mock_user_response_data = {"id": registered_user["id"]}
     mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
@@ -1196,7 +1275,7 @@ def test_upload_operacoes_empty_array(mock_processar_operacoes: MagicMock, mock_
     assert usuario_id_arg == registered_user["id"]
 
 @patch('main.get_current_user_data')
-@patch('main.processar_operacoes')
+@patch('main.processar_operacoes_service')
 def test_upload_operacoes_one_valid_one_invalid(mock_processar_operacoes: MagicMock, mock_get_current_user_data: MagicMock, client: TestClient, registered_user: Dict[str, Any]):
     mock_user_response_data = {"id": registered_user["id"]}
     mock_get_current_user_data.return_value = MagicMock(**mock_user_response_data)
@@ -1232,6 +1311,5 @@ def test_upload_operacoes_one_valid_one_invalid(mock_processar_operacoes: MagicM
     # depending on how it reports errors in lists of models.
     # For now, just check that there's an error message related to the date.
     assert any("Formato de data inválido" in err.get("msg", "") for err in response_data["detail"])
-    # And processar_operacoes should not have been called
+    # And processar_operacoes_service should not have been called
     mock_processar_operacoes.assert_not_called()
-```

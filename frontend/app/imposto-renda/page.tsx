@@ -8,7 +8,7 @@ import { BensDireitosAcoesTable } from "@/components/BensDireitosAcoesTable"; //
 import { api } from "@/lib/api"; // For API calls
 import { useToast } from "@/hooks/use-toast"; // For notifications
 import { Skeleton } from "@/components/ui/skeleton"; // For loading state
-
+import { getUserOperatedYears } from "@/lib/userYears";
 
 // Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -20,14 +20,35 @@ interface BemDireitoAcao {
   valor_total_data_base: number;
 }
 
+// Define the type for RendimentoIsento based on the backend response
+interface RendimentoIsento {
+  ticker: string;
+  empresa?: string | null;
+  cnpj?: string | null;
+  valor_total_recebido_no_ano: number;
+}
+
 export default function ImpostoRendaPage() {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear - 1);
   const [bensDireitosData, setBensDireitosData] = useState<BemDireitoAcao[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [rendimentosIsentos, setRendimentosIsentos] = useState<RendimentoIsento[]>([]); // Changed state name and type
+  const [isLoadingBensDireitos, setIsLoadingBensDireitos] = useState<boolean>(false); // Specific loading state
+  const [isLoadingRendimentos, setIsLoadingRendimentos] = useState<boolean>(false); // Specific loading state
+  const [errorBensDireitos, setErrorBensDireitos] = useState<string | null>(null); // Specific error state
+  const [errorRendimentos, setErrorRendimentos] = useState<string | null>(null); // Specific error state
+  const [userYears, setUserYears] = useState<number[]>([]);
   const { toast } = useToast();
+
+  useEffect(() => {
+    getUserOperatedYears()
+      .then((years) => {
+        const filteredYears = years.filter((year) => year < currentYear); // Exclui o ano atual
+        setUserYears(filteredYears);
+      })
+      .catch(() => setUserYears([]));
+  }, []);
 
   // Generate year options for the select dropdown
   const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 1 - i);
@@ -36,8 +57,8 @@ export default function ImpostoRendaPage() {
     const fetchBensDireitosData = async () => {
       if (!selectedYear) return;
 
-      setIsLoading(true);
-      setError(null);
+      setIsLoadingBensDireitos(true);
+      setErrorBensDireitos(null);
       try {
         const response = await api.get(`/analysis/bens-e-direitos/acoes`, {
           params: { year: selectedYear },
@@ -45,19 +66,44 @@ export default function ImpostoRendaPage() {
         setBensDireitosData(response.data);
       } catch (err: any) {
         const errorMessage = err.response?.data?.detail || "Erro ao buscar dados de Bens e Direitos.";
-        setError(errorMessage);
+        setErrorBensDireitos(errorMessage);
         toast({
-          title: "Erro",
+          title: "Erro em Bens e Direitos",
           description: errorMessage,
           variant: "destructive",
         });
         setBensDireitosData([]); // Clear data on error
       } finally {
-        setIsLoading(false);
+        setIsLoadingBensDireitos(false);
+      }
+    };
+
+    const fetchRendimentosIsentosData = async () => {
+      if (!selectedYear) return;
+
+      setIsLoadingRendimentos(true);
+      setErrorRendimentos(null);
+      try {
+        const response = await api.get('/analysis/rendimentos-isentos', {
+          params: { year: selectedYear },
+        });
+        setRendimentosIsentos(response.data);
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.detail || "Erro ao buscar Rendimentos Isentos.";
+        setErrorRendimentos(errorMessage);
+        toast({
+          title: "Erro em Rendimentos Isentos",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        setRendimentosIsentos([]); // Clear data on error
+      } finally {
+        setIsLoadingRendimentos(false);
       }
     };
 
     fetchBensDireitosData();
+    fetchRendimentosIsentosData();
   }, [selectedYear, toast]);
 
   const handleYearChange = (value: string) => {
@@ -76,6 +122,26 @@ export default function ImpostoRendaPage() {
       <h1 className="text-2xl font-bold mb-4">
         Declaração Anual de Imposto de Renda
       </h1>
+
+      {/* Filtro Ano Base no topo */}
+      <div className="mb-6 flex flex-col items-center">
+        <label htmlFor="year-select" className="block text-lg font-medium text-gray-700 mb-1">
+          Ano Base
+        </label>
+        <Select value={String(selectedYear)} onValueChange={handleYearChange}>
+          <SelectTrigger className="w-[100px] text-lg" id="year-select">
+            <SelectValue placeholder="Selecione o ano" />
+          </SelectTrigger>
+          <SelectContent>
+            {userYears.map((year) => (
+              <SelectItem key={year} value={String(year)}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <Tabs defaultValue="bens-e-direitos">
         <TabsList className="mb-4">
           <TabsTrigger value="bens-e-direitos">Bens e Direitos</TabsTrigger>
@@ -89,43 +155,116 @@ export default function ImpostoRendaPage() {
         </TabsList>
 
         <TabsContent value="bens-e-direitos">
-          <div className="mb-6">
-            <label htmlFor="year-select" className="block text-sm font-medium text-gray-700 mb-1">
-              Ano de Referência:
-            </label>
-            <Select value={String(selectedYear)} onValueChange={handleYearChange}>
-              <SelectTrigger className="w-[180px]" id="year-select">
-                <SelectValue placeholder="Selecione o ano" />
-              </SelectTrigger>
-              <SelectContent>
-                {yearOptions.map((year) => (
-                  <SelectItem key={year} value={String(year)}>
-                    {year}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {isLoading && (
+          {isLoadingBensDireitos && (
             <div>
               <Skeleton className="h-8 w-1/2 mb-4" />
               <Skeleton className="h-4 w-3/4 mb-2" />
               <Skeleton className="h-32 w-full" />
             </div>
           )}
-          {error && !isLoading && (
+          {errorBensDireitos && !isLoadingBensDireitos && (
             <div className="text-red-600 bg-red-100 p-4 rounded-md">
-              <p><strong>Erro:</strong> {error}</p>
+              <p><strong>Erro ao carregar Bens e Direitos:</strong> {errorBensDireitos}</p>
             </div>
           )}
-          {!isLoading && !error && (
+          {!isLoadingBensDireitos && !errorBensDireitos && (
             <BensDireitosAcoesTable data={bensDireitosData} year={selectedYear} />
           )}
         </TabsContent>
 
         <TabsContent value="rendimentos-isentos">
-          <p className="text-muted-foreground">Conteúdo da aba Rendimentos Isentos e Não Tributáveis.</p>
+          {isLoadingRendimentos && (
+            <div>
+              <Skeleton className="h-8 w-1/2 mb-4" />
+              <Skeleton className="h-4 w-3/4 mb-2" />
+              <Skeleton className="h-32 w-full" />
+            </div>
+          )}
+          {errorRendimentos && !isLoadingRendimentos && (
+            <div className="text-red-600 bg-red-100 p-4 rounded-md">
+              <p><strong>Erro ao carregar Rendimentos Isentos:</strong> {errorRendimentos}</p>
+            </div>
+          )}
+          {!isLoadingRendimentos && !errorRendimentos && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {rendimentosIsentos.length === 0 ? (
+                <div className="col-span-2 text-center py-4 text-muted-foreground">Nenhum rendimento isento encontrado para o ano selecionado.</div>
+              ) : (
+                rendimentosIsentos.map((item, idx) => (
+                  <div key={idx} className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+                    <div className="bg-gradient-to-r from-blue-400 to-blue-300 p-3 flex items-center">
+                      <div className="w-6 h-6 bg-green-600 rounded mr-2 flex items-center justify-center">
+                        <span className="text-white font-bold text-xs">✓</span>
+                      </div>
+                      <h1 className="text-white text-lg font-semibold">Rendimento Isento e Não Tributável</h1>
+                    </div>
+                    <div className="p-4 space-y-4">
+                      <div>
+                        <label className="block text-gray-600 font-medium mb-2">Tipo de Rendimento</label>
+                        <div className="bg-gray-500 text-white p-2 rounded text-sm font-medium mb-2">
+                          09 - Lucros e dividendos recebidos
+                        </div>
+                        <div className="border border-gray-300 rounded p-3 bg-gray-50">
+                          <div className="text-blue-600 font-semibold mb-3">09. Lucros e dividendos recebidos</div>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1 text-sm">Tipo de Beneficiário</label>
+                              <input
+                                type="text"
+                                value="Titular"
+                                className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
+                                readOnly
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1 text-sm">Beneficiário</label>
+                              <input
+                                type="text"
+                                value="CPF do Titular"
+                                className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
+                                readOnly
+                              />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1 text-sm">CNPJ da Fonte Pagadora</label>
+                                <input
+                                  type="text"
+                                  value={item.cnpj || "N/A"}
+                                  className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
+                                  readOnly
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1 text-sm">Nome da Fonte Pagadora</label>
+                                <input
+                                  type="text"
+                                  value={item.empresa || "N/A"}
+                                  className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
+                                  readOnly
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1 text-sm">Valor</label>
+                              <div className="flex">
+                                <input
+                                  type="text"
+                                  value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  className="w-32 p-2 text-sm border border-gray-300 rounded bg-white text-right"
+                                  readOnly
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="rendimentos-tributacao-exclusiva">
           <p className="text-muted-foreground">

@@ -4,9 +4,17 @@ from dateutil.relativedelta import relativedelta
 from pydantic import BaseModel, validator, Field
 from typing import List, Dict, Any, Optional
 
-from database import (
-    obter_id_acao_por_ticker, 
-    obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a
+# Assuming database.py is in the root of the backend directory, adjust import if necessary
+# For services within app/, to import from root backend/
+import sys
+import os
+# Add the backend directory to sys.path to allow direct import of database
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+
+from database import ( # Now this should work if backend/ is in sys.path
+    obter_id_acao_por_ticker,
+    obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a,
+    get_db # Added for get_rendimentos_isentos_por_ano
 )
 from models import EventoCorporativoInfo
 # Note: datetime is already imported, List, Dict, Any, Optional are from typing.
@@ -769,7 +777,7 @@ def calculate_average_price_up_to_date(
         # assuming operations_for_ticker would conform to it if passed.
         # If fetching from DB, ensure transformation matches this service's Operacao.
 
-        # Correct approach: Use the Operacao model defined in *this* service file,
+        # Correct approach: Use the Operacao model defined in *this* service,
         # and ensure data fetched from DB is transformed to match it if necessary.
         # The `obter_operacoes_por_usuario_ticker_ate_data` in `database.py` likely returns
         # dicts that might need transformation.
@@ -844,7 +852,7 @@ def calculate_average_price_up_to_date(
         adjusted_op = op_original
         # Apply events that occurred *before or on* this operation's date,
         # but *after* the previous operation's date if we were iterating through time.
-        # Simpler: apply all events *up to the operation's date* to this single operation's quantity and price.
+        # Simpler: apply all events *up to* the operation's date to this single operation's quantity and price.
         # This is what _apply_events_to_operation in get_holdings_on_date does.
 
         # We need to adjust the *historical* operations themselves based on subsequent events
@@ -1053,3 +1061,75 @@ if __name__ == '__main__':
     # bens_list = get_bens_e_direitos_acoes(user_id=1, target_date_str="2023-12-31")
     # print(f"Bens e Direitos List for 2023-12-31: {bens_list}")
     pass # End of __main__
+
+
+# --- Rendimentos Isentos e Não Tributáveis ---
+
+from database import get_db # Required for the new service function
+
+# Define a Pydantic model for the response structure, matching RendimentoIsentoResponse in the router
+class RendimentoIsento(BaseModel):
+    ticker: str
+    empresa: Optional[str] = None
+    cnpj: Optional[str] = None
+    valor_total_recebido_no_ano: float
+
+def get_rendimentos_isentos_por_ano(user_id: int, year: int) -> List[RendimentoIsento]:
+    """
+    Busca os rendimentos isentos e não tributáveis (Dividendos e Rendimentos)
+    recebidos pelo usuário em um determinado ano, agrupados por ticker.
+    """
+    rendimentos_por_ticker: Dict[str, Dict[str, Any]] = {}
+
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Query to sum 'valor_total_recebido' for relevant 'tipo_provento'
+        # Group by ticker, and get associated 'nome_acao' and 'cnpj' from 'acoes' table.
+        # Filter by year of 'dt_pagamento'.
+        query = """
+            SELECT
+                upr.ticker_acao,
+                a.razao_social as razao_social,
+                a.cnpj,
+                SUM(upr.valor_total_recebido) as total_valor_ano
+            FROM usuario_proventos_recebidos upr
+            JOIN acoes a ON upr.id_acao = a.id
+            WHERE upr.usuario_id = ?
+              AND strftime('%Y', upr.dt_pagamento) = ?
+              AND upr.tipo_provento IN ('Dividendo', 'Rendimento')
+              AND upr.dt_pagamento IS NOT NULL
+            GROUP BY upr.ticker_acao, a.razao_social, a.cnpj
+            ORDER BY upr.ticker_acao;
+        """
+        cursor.execute(query, (user_id, str(year)))
+        rows = cursor.fetchall()
+
+        for row in rows:
+            rendimentos_por_ticker[row["ticker_acao"]] = {
+                "ticker": row["ticker_acao"],
+                "empresa": row["razao_social"],
+                "cnpj": row["cnpj"],
+                "valor_total_recebido_no_ano": row["total_valor_ano"]
+            }
+
+    # Convert the dictionary to a list of RendimentoIsento objects
+    result_list = [RendimentoIsento(**data) for data in rendimentos_por_ticker.values()]
+
+    return result_list
+
+
+if __name__ == '__main__':
+    # (Previous example usage remains)
+    print("\n--- Testing get_rendimentos_isentos_por_ano ---")
+    # This test would require mocking get_db and database interactions.
+    # Conceptual test:
+    # mock_user_id = 1
+    # mock_year = 2023
+    # rendimentos = get_rendimentos_isentos_por_ano(mock_user_id, mock_year)
+    # print(f"Rendimentos isentos para usuário {mock_user_id} em {mock_year}: {rendimentos}")
+    # Example expected output:
+    # [
+    #     RendimentoIsento(ticker='ITSA4', empresa='ITAUSA S.A.', cnpj='61.532.644/0001-15', valor_total_recebido_no_ano=150.75),
+    #     RendimentoIsento(ticker='PETR4', empresa='PETROLEO BRASILEIRO S.A. PETROBRAS', cnpj='33.000.167/0001-01', valor_total_recebido_no_ano=300.50)
+    # ]
+    pass

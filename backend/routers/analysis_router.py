@@ -107,3 +107,38 @@ async def get_bens_e_direitos_acoes_endpoint(
         print(f"Unexpected error in get_bens_e_direitos_acoes_endpoint: {e}") # Basic logging
         # Consider more specific error handling or logging here
         raise HTTPException(status_code=500, detail="An unexpected error occurred while retrieving assets and rights information.")
+
+# Define the response model for the new endpoint
+class RendimentoIsentoResponse(schemas.BaseModel): # Use schemas.BaseModel if that's your base Pydantic model
+    ticker: str
+    empresa: Optional[str] = None
+    cnpj: Optional[str] = None
+    valor_total_recebido_no_ano: float
+
+@router.get("/rendimentos-isentos", response_model=List[RendimentoIsentoResponse])
+async def get_rendimentos_isentos_endpoint(
+    year: int = Query(..., description="O ano para o qual buscar os rendimentos isentos (e.g., 2023)."),
+    current_user: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Busca os rendimentos isentos e não tributáveis (Dividendos e Rendimentos)
+    recebidos pelo usuário em um determinado ano.
+    """
+    try:
+        if year < 1900 or year > datetime.now().year + 5: # Basic year validation
+            raise ValueError("Ano fora de um intervalo razoável.")
+
+        # Import and call the service function
+        from app.services.portfolio_analysis_service import get_rendimentos_isentos_por_ano
+
+        rendimentos_data = get_rendimentos_isentos_por_ano(
+            user_id=current_user.id,
+            year=year
+        )
+        return rendimentos_data
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        # Log the exception e for server-side debugging
+        print(f"Unexpected error in get_rendimentos_isentos_endpoint: {e}") # Basic logging
+        raise HTTPException(status_code=500, detail="Erro inesperado ao buscar rendimentos isentos.")
