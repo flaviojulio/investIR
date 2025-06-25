@@ -8,7 +8,7 @@ import { BensDireitosAcoesTable } from "@/components/BensDireitosAcoesTable"; //
 import { api } from "@/lib/api"; // For API calls
 import { useToast } from "@/hooks/use-toast"; // For notifications
 import { Skeleton } from "@/components/ui/skeleton"; // For loading state
-
+import { getUserOperatedYears } from "@/lib/userYears";
 
 // Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -27,7 +27,12 @@ export default function ImpostoRendaPage() {
   const [bensDireitosData, setBensDireitosData] = useState<BemDireitoAcao[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [userYears, setUserYears] = useState<number[]>([]);
   const { toast } = useToast();
+
+  useEffect(() => {
+    getUserOperatedYears().then(setUserYears).catch(() => setUserYears([]));
+  }, []);
 
   // Generate year options for the select dropdown
   const yearOptions = Array.from({ length: 10 }, (_, i) => currentYear - 1 - i);
@@ -91,14 +96,14 @@ export default function ImpostoRendaPage() {
         <TabsContent value="bens-e-direitos">
           <div className="mb-6">
             <label htmlFor="year-select" className="block text-sm font-medium text-gray-700 mb-1">
-              Ano de Referência:
+              Ano Base:
             </label>
             <Select value={String(selectedYear)} onValueChange={handleYearChange}>
               <SelectTrigger className="w-[180px]" id="year-select">
                 <SelectValue placeholder="Selecione o ano" />
               </SelectTrigger>
               <SelectContent>
-                {yearOptions.map((year) => (
+                {userYears.map((year) => (
                   <SelectItem key={year} value={String(year)}>
                     {year}
                   </SelectItem>
