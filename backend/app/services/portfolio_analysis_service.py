@@ -777,7 +777,7 @@ def calculate_average_price_up_to_date(
         # assuming operations_for_ticker would conform to it if passed.
         # If fetching from DB, ensure transformation matches this service's Operacao.
 
-        # Correct approach: Use the Operacao model defined in *this* service file,
+        # Correct approach: Use the Operacao model defined in *this* service,
         # and ensure data fetched from DB is transformed to match it if necessary.
         # The `obter_operacoes_por_usuario_ticker_ate_data` in `database.py` likely returns
         # dicts that might need transformation.
@@ -852,7 +852,7 @@ def calculate_average_price_up_to_date(
         adjusted_op = op_original
         # Apply events that occurred *before or on* this operation's date,
         # but *after* the previous operation's date if we were iterating through time.
-        # Simpler: apply all events *up to the operation's date* to this single operation's quantity and price.
+        # Simpler: apply all events *up to* the operation's date to this single operation's quantity and price.
         # This is what _apply_events_to_operation in get_holdings_on_date does.
 
         # We need to adjust the *historical* operations themselves based on subsequent events
@@ -1089,7 +1089,7 @@ def get_rendimentos_isentos_por_ano(user_id: int, year: int) -> List[RendimentoI
         query = """
             SELECT
                 upr.ticker_acao,
-                a.nome as nome_empresa,
+                a.razao_social as razao_social,
                 a.cnpj,
                 SUM(upr.valor_total_recebido) as total_valor_ano
             FROM usuario_proventos_recebidos upr
@@ -1098,7 +1098,7 @@ def get_rendimentos_isentos_por_ano(user_id: int, year: int) -> List[RendimentoI
               AND strftime('%Y', upr.dt_pagamento) = ?
               AND upr.tipo_provento IN ('Dividendo', 'Rendimento')
               AND upr.dt_pagamento IS NOT NULL
-            GROUP BY upr.ticker_acao, a.nome, a.cnpj
+            GROUP BY upr.ticker_acao, a.razao_social, a.cnpj
             ORDER BY upr.ticker_acao;
         """
         cursor.execute(query, (user_id, str(year)))
@@ -1107,7 +1107,7 @@ def get_rendimentos_isentos_por_ano(user_id: int, year: int) -> List[RendimentoI
         for row in rows:
             rendimentos_por_ticker[row["ticker_acao"]] = {
                 "ticker": row["ticker_acao"],
-                "empresa": row["nome_empresa"],
+                "empresa": row["razao_social"],
                 "cnpj": row["cnpj"],
                 "valor_total_recebido_no_ano": row["total_valor_ano"]
             }

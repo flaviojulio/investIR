@@ -186,33 +186,83 @@ export default function ImpostoRendaPage() {
             </div>
           )}
           {!isLoadingRendimentos && !errorRendimentos && (
-            <div className="overflow-x-auto">
-              <table className="min-w-full border border-gray-300 rounded">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="px-4 py-2 border-b text-left">Ticker</th>
-                    <th className="px-4 py-2 border-b text-left">Empresa</th>
-                    <th className="px-4 py-2 border-b text-left">CNPJ</th>
-                    <th className="px-4 py-2 border-b text-left">Total Recebido (R$)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rendimentosIsentos.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="text-center py-4 text-muted-foreground">Nenhum rendimento isento encontrado para o ano selecionado.</td>
-                    </tr>
-                  ) : (
-                    rendimentosIsentos.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="px-4 py-2 border-b">{item.ticker}</td>
-                        <td className="px-4 py-2 border-b">{item.empresa || "N/A"}</td>
-                        <td className="px-4 py-2 border-b">{item.cnpj || "N/A"}</td>
-                        <td className="px-4 py-2 border-b">{item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {rendimentosIsentos.length === 0 ? (
+                <div className="col-span-2 text-center py-4 text-muted-foreground">Nenhum rendimento isento encontrado para o ano selecionado.</div>
+              ) : (
+                rendimentosIsentos.map((item, idx) => (
+                  <div key={idx} className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+                    <div className="bg-gradient-to-r from-blue-400 to-blue-300 p-3 flex items-center">
+                      <div className="w-6 h-6 bg-green-600 rounded mr-2 flex items-center justify-center">
+                        <span className="text-white font-bold text-xs">✓</span>
+                      </div>
+                      <h1 className="text-white text-lg font-semibold">Rendimento Isento e Não Tributável</h1>
+                    </div>
+                    <div className="p-4 space-y-4">
+                      <div>
+                        <label className="block text-gray-600 font-medium mb-2">Tipo de Rendimento</label>
+                        <div className="bg-gray-500 text-white p-2 rounded text-sm font-medium mb-2">
+                          09 - Lucros e dividendos recebidos
+                        </div>
+                        <div className="border border-gray-300 rounded p-3 bg-gray-50">
+                          <div className="text-blue-600 font-semibold mb-3">09. Lucros e dividendos recebidos</div>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1 text-sm">Tipo de Beneficiário</label>
+                              <input
+                                type="text"
+                                value="Titular"
+                                className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
+                                readOnly
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1 text-sm">Beneficiário</label>
+                              <input
+                                type="text"
+                                value="CPF do Titular"
+                                className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
+                                readOnly
+                              />
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1 text-sm">CNPJ da Fonte Pagadora</label>
+                                <input
+                                  type="text"
+                                  value={item.cnpj || "N/A"}
+                                  className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
+                                  readOnly
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1 text-sm">Nome da Fonte Pagadora</label>
+                                <input
+                                  type="text"
+                                  value={item.empresa || "N/A"}
+                                  className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
+                                  readOnly
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1 text-sm">Valor</label>
+                              <div className="flex">
+                                <input
+                                  type="text"
+                                  value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  className="w-32 p-2 text-sm border border-gray-300 rounded bg-white text-right"
+                                  readOnly
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           )}
         </TabsContent>

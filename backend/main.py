@@ -30,7 +30,7 @@ from database import (
     # get_db, remover_operacao, obter_todas_operacoes removed
 )
 
-# import services # Keep this for other service functions
+import services # Keep this for other service functions
 from services import (
     calcular_operacoes_fechadas,
     processar_operacoes,
@@ -73,7 +73,7 @@ import auth # Keep this for other auth functions
 # Import the new router
 from routers import analysis_router
 from routers import proventos_router # Added proventos_router import
-from routers import usuario_router # Commented out as it seems to be the source of the import error
+from routers import usuario_router # Added usuario_router import
 from dependencies import get_current_user, oauth2_scheme # Import from dependencies
 
 # Inicialização do banco de dados
