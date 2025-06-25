@@ -31,7 +31,12 @@ export default function ImpostoRendaPage() {
   const { toast } = useToast();
 
   useEffect(() => {
-    getUserOperatedYears().then(setUserYears).catch(() => setUserYears([]));
+    getUserOperatedYears()
+      .then((years) => {
+        const filteredYears = years.filter((year) => year < currentYear); // Exclui o ano atual
+        setUserYears(filteredYears);
+      })
+      .catch(() => setUserYears([]));
   }, []);
 
   // Generate year options for the select dropdown
@@ -81,6 +86,26 @@ export default function ImpostoRendaPage() {
       <h1 className="text-2xl font-bold mb-4">
         Declaração Anual de Imposto de Renda
       </h1>
+
+      {/* Filtro Ano Base no topo */}
+      <div className="mb-6 flex flex-col items-center">
+        <label htmlFor="year-select" className="block text-lg font-medium text-gray-700 mb-1">
+          Ano Base
+        </label>
+        <Select value={String(selectedYear)} onValueChange={handleYearChange}>
+          <SelectTrigger className="w-[100px] text-lg" id="year-select">
+            <SelectValue placeholder="Selecione o ano" />
+          </SelectTrigger>
+          <SelectContent>
+            {userYears.map((year) => (
+              <SelectItem key={year} value={String(year)}>
+                {year}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <Tabs defaultValue="bens-e-direitos">
         <TabsList className="mb-4">
           <TabsTrigger value="bens-e-direitos">Bens e Direitos</TabsTrigger>
@@ -94,24 +119,6 @@ export default function ImpostoRendaPage() {
         </TabsList>
 
         <TabsContent value="bens-e-direitos">
-          <div className="mb-6">
-            <label htmlFor="year-select" className="block text-sm font-medium text-gray-700 mb-1">
-              Ano Base:
-            </label>
-            <Select value={String(selectedYear)} onValueChange={handleYearChange}>
-              <SelectTrigger className="w-[180px]" id="year-select">
-                <SelectValue placeholder="Selecione o ano" />
-              </SelectTrigger>
-              <SelectContent>
-                {userYears.map((year) => (
-                  <SelectItem key={year} value={String(year)}>
-                    {year}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
           {isLoading && (
             <div>
               <Skeleton className="h-8 w-1/2 mb-4" />
