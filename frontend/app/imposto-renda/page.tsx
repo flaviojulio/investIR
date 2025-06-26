@@ -9,6 +9,8 @@ import { api } from "@/lib/api"; // For API calls
 import { useToast } from "@/hooks/use-toast"; // For notifications
 import { Skeleton } from "@/components/ui/skeleton"; // For loading state
 import { getUserOperatedYears } from "@/lib/userYears";
+import DetalheLucrosIsentosCard from "./DetalheLucrosIsentosCard";
+import ModalLucrosIsentosDetalhe from "./ModalLucrosIsentosDetalhe";
 
 // Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -26,6 +28,13 @@ interface RendimentoIsento {
   empresa?: string | null;
   cnpj?: string | null;
   valor_total_recebido_no_ano: number;
+}
+
+// Tipo para lucros isentos mensais
+interface LucroIsentoMensal {
+  mes: string;
+  ganho_liquido_swing: number;
+  isento_swing: boolean | number;
 }
 
 export default function ImpostoRendaPage() {
@@ -110,8 +119,54 @@ export default function ImpostoRendaPage() {
     setSelectedYear(Number(value));
   };
 
+  // --- NOVA LÓGICA: Buscar lucros isentos mensais (vendas até 20 mil) ---
+  const [lucrosIsentosMensais, setLucrosIsentosMensais] = useState<LucroIsentoMensal[]>([]);
+  const [isLoadingLucrosIsentos, setIsLoadingLucrosIsentos] = useState(false);
+  const [errorLucrosIsentos, setErrorLucrosIsentos] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchLucrosIsentosMensais = async () => {
+      setIsLoadingLucrosIsentos(true);
+      setErrorLucrosIsentos(null);
+      try {
+        const response = await api.get('/analysis/lucros-isentos', {
+          params: { year: selectedYear },
+        });
+        setLucrosIsentosMensais(response.data);
+      } catch (err: any) {
+        setErrorLucrosIsentos('Erro ao buscar lucros isentos mensais.');
+        setLucrosIsentosMensais([]);
+      } finally {
+        setIsLoadingLucrosIsentos(false);
+      }
+    };
+    fetchLucrosIsentosMensais();
+  }, [selectedYear]);
+
+  // Agrupa e soma lucros isentos por mês do ano selecionado
+  let lucrosIsentosPorMes: { mes: string; valor: number }[] = [];
+  let valorTotalLucrosIsentos = 0;
+  if (lucrosIsentosMensais.length > 0) {
+    const mapaMes: Record<string, number> = {};
+    lucrosIsentosMensais.forEach((item) => {
+      if ((item.isento_swing === 1 || item.isento_swing === true) && item.mes && item.ganho_liquido_swing) {
+        if (item.mes.startsWith(String(selectedYear))) {
+          mapaMes[item.mes] = (mapaMes[item.mes] || 0) + item.ganho_liquido_swing;
+        }
+      }
+    });
+    lucrosIsentosPorMes = Object.entries(mapaMes)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([mes, valor]) => ({ mes, valor }));
+    valorTotalLucrosIsentos = lucrosIsentosPorMes.reduce((acc, cur) => acc + cur.valor, 0);
+  }
+
+  // Modal state
+  const [modalLucrosIsentosOpen, setModalLucrosIsentosOpen] = useState(false);
+
   return (
     <div className="container mx-auto p-4 relative">
+      {/* Removido botão de debug e tabela do topo */}
       <button
         className="absolute top-4 right-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded shadow"
         onClick={() => router.push("/")}
@@ -186,84 +241,101 @@ export default function ImpostoRendaPage() {
             </div>
           )}
           {!isLoadingRendimentos && !errorRendimentos && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {rendimentosIsentos.length === 0 ? (
-                <div className="col-span-2 text-center py-4 text-muted-foreground">Nenhum rendimento isento encontrado para o ano selecionado.</div>
-              ) : (
-                rendimentosIsentos.map((item, idx) => (
-                  <div key={idx} className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-                    <div className="bg-gradient-to-r from-blue-400 to-blue-300 p-3 flex items-center">
-                      <div className="w-6 h-6 bg-green-600 rounded mr-2 flex items-center justify-center">
-                        <span className="text-white font-bold text-xs">✓</span>
-                      </div>
-                      <h1 className="text-white text-lg font-semibold">Rendimento Isento e Não Tributável</h1>
-                    </div>
-                    <div className="p-4 space-y-4">
-                      <div>
-                        <label className="block text-gray-600 font-medium mb-2">Tipo de Rendimento</label>
-                        <div className="bg-gray-500 text-white p-2 rounded text-sm font-medium mb-2">
-                          09 - Lucros e dividendos recebidos
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                {rendimentosIsentos.length === 0 ? (
+                  <div className="col-span-2 text-center py-4 text-muted-foreground">Nenhum rendimento isento encontrado para o ano selecionado.</div>
+                ) : (
+                  rendimentosIsentos.map((item, idx) => (
+                    <div key={idx} className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+                      <div className="bg-gradient-to-r from-blue-400 to-blue-300 p-3 flex items-center">
+                        <div className="w-6 h-6 bg-green-600 rounded mr-2 flex items-center justify-center">
+                          <span className="text-white font-bold text-xs">✓</span>
                         </div>
-                        <div className="border border-gray-300 rounded p-3 bg-gray-50">
-                          <div className="text-blue-600 font-semibold mb-3">09. Lucros e dividendos recebidos</div>
-                          <div className="space-y-3">
-                            <div>
-                              <label className="block text-gray-600 font-medium mb-1 text-sm">Tipo de Beneficiário</label>
-                              <input
-                                type="text"
-                                value="Titular"
-                                className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
-                                readOnly
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-gray-600 font-medium mb-1 text-sm">Beneficiário</label>
-                              <input
-                                type="text"
-                                value="CPF do Titular"
-                                className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
-                                readOnly
-                              />
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <h1 className="text-white text-lg font-semibold">Rendimento Isento e Não Tributável</h1>
+                      </div>
+                      <div className="p-4 space-y-4">
+                        <div>
+                          <label className="block text-gray-600 font-medium mb-2">Tipo de Rendimento</label>
+                          <div className="bg-gray-500 text-white p-2 rounded text-sm font-medium mb-2">
+                            09 - Lucros e dividendos recebidos
+                          </div>
+                          <div className="border border-gray-300 rounded p-3 bg-gray-50">
+                            <div className="text-blue-600 font-semibold mb-3">09. Lucros e dividendos recebidos</div>
+                            <div className="space-y-3">
                               <div>
-                                <label className="block text-gray-600 font-medium mb-1 text-sm">CNPJ da Fonte Pagadora</label>
+                                <label className="block text-gray-600 font-medium mb-1 text-sm">Tipo de Beneficiário</label>
                                 <input
                                   type="text"
-                                  value={item.cnpj || "N/A"}
-                                  className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
-                                  readOnly
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-gray-600 font-medium mb-1 text-sm">Nome da Fonte Pagadora</label>
-                                <input
-                                  type="text"
-                                  value={item.empresa || "N/A"}
+                                  value="Titular"
                                   className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
                                   readOnly
                                 />
                               </div>
-                            </div>
-                            <div>
-                              <label className="block text-gray-600 font-medium mb-1 text-sm">Valor</label>
-                              <div className="flex">
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1 text-sm">Beneficiário</label>
                                 <input
                                   type="text"
-                                  value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                  className="w-32 p-2 text-sm border border-gray-300 rounded bg-white text-right"
+                                  value="CPF do Titular"
+                                  className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
                                   readOnly
                                 />
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                  <label className="block text-gray-600 font-medium mb-1 text-sm">CNPJ da Fonte Pagadora</label>
+                                  <input
+                                    type="text"
+                                    value={item.cnpj || "N/A"}
+                                    className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
+                                    readOnly
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-gray-600 font-medium mb-1 text-sm">Nome da Fonte Pagadora</label>
+                                  <input
+                                    type="text"
+                                    value={item.empresa || "N/A"}
+                                    className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
+                                    readOnly
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1 text-sm">Valor</label>
+                                <div className="flex">
+                                  <input
+                                    type="text"
+                                    value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                    className="w-32 p-2 text-sm border border-gray-300 rounded bg-white text-right"
+                                    readOnly
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
-              )}
-            </div>
+                  ))
+                )}
+              </div>
+              {/* Card de Lucros Isentos (vendas até 20 mil) */}
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold mb-2">Lucros Isentos (Vendas até R$20.000 no mês)</h2>
+                <DetalheLucrosIsentosCard
+                  valorTotal={valorTotalLucrosIsentos}
+                  onOpenModal={() => setModalLucrosIsentosOpen(true)}
+                />
+                <ModalLucrosIsentosDetalhe
+                  open={modalLucrosIsentosOpen}
+                  onClose={() => setModalLucrosIsentosOpen(false)}
+                  lucrosIsentosPorMes={lucrosIsentosPorMes}
+                  ano={selectedYear}
+                  valorTotal={valorTotalLucrosIsentos}
+                />
+              </div>
+            </>
           )}
         </TabsContent>
         <TabsContent value="rendimentos-tributacao-exclusiva">

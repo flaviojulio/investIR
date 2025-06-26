@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional, Any, Dict
-from datetime import date, datetime # Added datetime
-import schemas # Imported schemas directly
-
-from app.services.portfolio_analysis_service import calculate_portfolio_history # Corrected
-# from schemas import PortfolioHistoryResponseSchema, EquityPointSchema, ProfitabilityDetailsSchema # Will use schemas.<Name>
-from models import UsuarioResponse # Corrected
-from dependencies import get_current_user # Corrected import path
-from services import listar_operacoes_service # Corrected
+from datetime import date, datetime
+import schemas
+from app.services.portfolio_analysis_service import calculate_portfolio_history
+from models import UsuarioResponse
+from dependencies import get_current_user
+from services import listar_operacoes_service
+from database import get_db
 
 router = APIRouter(
     prefix="/analysis",
@@ -142,3 +141,47 @@ async def get_rendimentos_isentos_endpoint(
         # Log the exception e for server-side debugging
         print(f"Unexpected error in get_rendimentos_isentos_endpoint: {e}") # Basic logging
         raise HTTPException(status_code=500, detail="Erro inesperado ao buscar rendimentos isentos.")
+
+# --- Novo endpoint: Lucros Isentos Mensais (vendas até 20 mil) ---
+from models import ResultadoMensal
+
+class LucroIsentoMensalResponse(schemas.BaseModel):
+    mes: str  # YYYY-MM
+    ganho_liquido_swing: float
+    isento_swing: bool
+
+@router.get("/lucros-isentos", response_model=List[LucroIsentoMensalResponse])
+async def get_lucros_isentos_mensais(
+    year: int = Query(..., description="Ano base para buscar lucros isentos mensais (vendas até 20 mil)."),
+    current_user: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Retorna os lucros isentos mensais (vendas até 20 mil) do usuário autenticado para o ano selecionado.
+    """
+    if year < 1900 or year > datetime.now().year + 5:
+        raise HTTPException(status_code=400, detail="Ano fora de um intervalo razoável.")
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            query = '''
+                SELECT mes, ganho_liquido_swing, isento_swing
+                FROM resultados_mensais
+                WHERE usuario_id = ?
+                  AND isento_swing = 1
+                  AND mes LIKE ?
+                ORDER BY mes
+            '''
+            cursor.execute(query, (current_user.id, f'{year}-%'))
+            rows = cursor.fetchall()
+            result = [
+                {
+                    "mes": row["mes"],
+                    "ganho_liquido_swing": row["ganho_liquido_swing"],
+                    "isento_swing": bool(row["isento_swing"]),
+                }
+                for row in rows
+            ]
+        return result
+    except Exception as e:
+        print(f"Erro ao buscar lucros isentos mensais: {e}")
+        raise HTTPException(status_code=500, detail="Erro inesperado ao buscar lucros isentos mensais.")
