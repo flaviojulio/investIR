@@ -11,6 +11,8 @@ import { Skeleton } from "@/components/ui/skeleton"; // For loading state
 import { getUserOperatedYears } from "@/lib/userYears";
 import DetalheLucrosIsentosCard from "./DetalheLucrosIsentosCard";
 import ModalLucrosIsentosDetalhe from "./ModalLucrosIsentosDetalhe";
+import JCPTributadoCard from "./JCPTributadoCard";
+import { CopyableField } from "@/components/CopyableField";
 
 // Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -164,6 +166,36 @@ export default function ImpostoRendaPage() {
   // Modal state
   const [modalLucrosIsentosOpen, setModalLucrosIsentosOpen] = useState(false);
 
+  // --- NOVA LÓGICA: Buscar JCP tributados por ação ---
+  interface JCPTributado {
+    ticker: string;
+    empresa?: string | null;
+    cnpj?: string | null;
+    valor_total_jcp_no_ano: number;
+  }
+  const [jcpTributados, setJcpTributados] = useState<JCPTributado[]>([]);
+  const [isLoadingJCP, setIsLoadingJCP] = useState(false);
+  const [errorJCP, setErrorJCP] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchJCPTributados = async () => {
+      setIsLoadingJCP(true);
+      setErrorJCP(null);
+      try {
+        const response = await api.get('/analysis/jcp-tributados', {
+          params: { year: selectedYear },
+        });
+        setJcpTributados(response.data);
+      } catch (err: any) {
+        setErrorJCP('Erro ao buscar JCP tributados.');
+        setJcpTributados([]);
+      } finally {
+        setIsLoadingJCP(false);
+      }
+    };
+    fetchJCPTributados();
+  }, [selectedYear]);
+
   return (
     <div className="container mx-auto p-4 relative">
       {/* Removido botão de debug e tabela do topo */}
@@ -263,55 +295,65 @@ export default function ImpostoRendaPage() {
                           <div className="border border-gray-300 rounded p-3 bg-gray-50">
                             <div className="text-blue-600 font-semibold mb-3">09. Lucros e dividendos recebidos</div>
                             <div className="space-y-3">
-                              <div>
-                                <label className="block text-gray-600 font-medium mb-1 text-sm">Tipo de Beneficiário</label>
-                                <input
-                                  type="text"
-                                  value="Titular"
-                                  className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
-                                  readOnly
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-gray-600 font-medium mb-1 text-sm">Beneficiário</label>
-                                <input
-                                  type="text"
-                                  value="CPF do Titular"
-                                  className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
-                                  readOnly
-                                />
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              <CopyableField value="Titular" input>
                                 <div>
-                                  <label className="block text-gray-600 font-medium mb-1 text-sm">CNPJ da Fonte Pagadora</label>
+                                  <label className="block text-gray-600 font-medium mb-1 text-sm">Tipo de Beneficiário</label>
                                   <input
                                     type="text"
-                                    value={item.cnpj || "N/A"}
-                                    className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
-                                    readOnly
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-gray-600 font-medium mb-1 text-sm">Nome da Fonte Pagadora</label>
-                                  <input
-                                    type="text"
-                                    value={item.empresa || "N/A"}
+                                    value="Titular"
                                     className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
                                     readOnly
                                   />
                                 </div>
-                              </div>
-                              <div>
-                                <label className="block text-gray-600 font-medium mb-1 text-sm">Valor</label>
-                                <div className="flex">
+                              </CopyableField>
+                              <CopyableField value="CPF do Titular" input>
+                                <div>
+                                  <label className="block text-gray-600 font-medium mb-1 text-sm">Beneficiário</label>
                                   <input
                                     type="text"
-                                    value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                                    className="w-32 p-2 text-sm border border-gray-300 rounded bg-white text-right"
+                                    value="CPF do Titular"
+                                    className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
                                     readOnly
                                   />
                                 </div>
+                              </CopyableField>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <CopyableField value={item.cnpj || "N/A"} input>
+                                  <div>
+                                    <label className="block text-gray-600 font-medium mb-1 text-sm">CNPJ da Fonte Pagadora</label>
+                                    <input
+                                      type="text"
+                                      value={item.cnpj || "N/A"}
+                                      className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
+                                      readOnly
+                                    />
+                                  </div>
+                                </CopyableField>
+                                <CopyableField value={item.empresa || "N/A"} input>
+                                  <div>
+                                    <label className="block text-gray-600 font-medium mb-1 text-sm">Nome da Fonte Pagadora</label>
+                                    <input
+                                      type="text"
+                                      value={item.empresa || "N/A"}
+                                      className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
+                                      readOnly
+                                    />
+                                  </div>
+                                </CopyableField>
                               </div>
+                              <CopyableField value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} input>
+                                <div>
+                                  <label className="block text-gray-600 font-medium mb-1 text-sm">Valor</label>
+                                  <div className="flex">
+                                    <input
+                                      type="text"
+                                      value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      className="w-32 p-2 text-sm border border-gray-300 rounded bg-white text-right"
+                                      readOnly
+                                    />
+                                  </div>
+                                </div>
+                              </CopyableField>
                             </div>
                           </div>
                         </div>
@@ -339,9 +381,27 @@ export default function ImpostoRendaPage() {
           )}
         </TabsContent>
         <TabsContent value="rendimentos-tributacao-exclusiva">
-          <p className="text-muted-foreground">
-            Conteúdo da aba Rendimentos Sujeitos a Tributação Exclusiva.
-          </p>
+          {isLoadingJCP ? (
+            <Skeleton className="h-8 w-1/2 mb-4" />
+          ) : errorJCP ? (
+            <div className="text-red-600 bg-red-100 p-4 rounded-md mb-2">{errorJCP}</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              {jcpTributados.length === 0 ? (
+                <div className="col-span-2 text-center py-4 text-muted-foreground">Nenhum JCP tributado encontrado para o ano selecionado.</div>
+              ) : (
+                jcpTributados.map((item, idx) => (
+                  <JCPTributadoCard
+                    key={item.ticker + idx}
+                    ticker={item.ticker}
+                    empresa={item.empresa}
+                    cnpj={item.cnpj}
+                    valor={item.valor_total_jcp_no_ano}
+                  />
+                ))
+              )}
+            </div>
+          )}
         </TabsContent>
         <TabsContent value="renda-variavel">
           <p className="text-muted-foreground">Conteúdo da aba Renda Variável.</p>
