@@ -2,7 +2,6 @@
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { BemDireitoAcaoCard } from "@/components/BemDireitoAcaoCard";
-import { formatCurrency, formatInteger } from "@/lib/utils"; // Assuming formatInteger exists or can be created
 
 // Define the type for the props based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -18,9 +17,10 @@ interface BemDireitoAcao {
 interface BensDireitosAcoesTableProps {
   data: BemDireitoAcao[];
   year: number;
+  onInformarRendimentoIsento: (cnpj: string) => void;
 }
 
-export function BensDireitosAcoesTable({ data, year }: BensDireitosAcoesTableProps) {
+export function BensDireitosAcoesTable({ data, year, onInformarRendimentoIsento }: BensDireitosAcoesTableProps) {
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -40,20 +40,31 @@ export function BensDireitosAcoesTable({ data, year }: BensDireitosAcoesTablePro
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Bens e Direitos - Ações em {year}</CardTitle>
-        <CardDescription>
-          Relação de ações em carteira em 31/12/{year}.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {data.map((item) => (
-            <BemDireitoAcaoCard key={item.ticker} {...item} year={year} compact />
-          ))}
-        </div>
-      </CardContent>
-    </Card>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Bens e Direitos - Ações em {year}</CardTitle>
+          <CardDescription>
+            Relação de ações em carteira em 31/12/{year}.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {data.map((item) => (
+              <div key={item.ticker} className="relative">
+                <BemDireitoAcaoCard {...item} year={year} compact />
+                <button
+                  className="mt-2 w-full bg-primary text-white rounded px-2 py-1 text-xs shadow hover:bg-primary/80"
+                  onClick={() => onInformarRendimentoIsento(item.cnpj ?? "")}
+                  type="button"
+                >
+                  Informar Rend. Isento
+                </button>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+    </>
   );
 }
