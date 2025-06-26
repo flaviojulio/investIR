@@ -17,10 +17,11 @@ interface BemDireitoAcao {
 interface BensDireitosAcoesTableProps {
   data: BemDireitoAcao[];
   year: number;
-  onInformarRendimentoIsento: (cnpj: string) => void;
+  onInformarRendimentoIsento?: (cnpj: string) => void;
+  onInformarRendimentoExclusivo?: (cnpj: string) => void;
 }
 
-export function BensDireitosAcoesTable({ data, year, onInformarRendimentoIsento }: BensDireitosAcoesTableProps) {
+export function BensDireitosAcoesTable({ data, year, onInformarRendimentoIsento, onInformarRendimentoExclusivo }: BensDireitosAcoesTableProps) {
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -51,16 +52,30 @@ export function BensDireitosAcoesTable({ data, year, onInformarRendimentoIsento 
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {data.map((item) => (
-              <div key={item.ticker} className="relative">
-                <BemDireitoAcaoCard {...item} year={year} compact />
-                <button
-                  className="px-2 py-0.5 border border-gray-300 rounded text-[10px] hover:bg-gray-50"
-                  onClick={() => onInformarRendimentoIsento(item.cnpj ?? "")}
-                  type="button"
-                >
-                  Informar Rend. Isento
-                </button>
-              </div>
+              <BemDireitoAcaoCard
+                key={item.ticker}
+                {...item}
+                year={year}
+                compact
+                renderInformarRendimentoIsentoButton={() => (
+                  <button
+                    className="px-2 py-0.5 border border-gray-300 rounded text-[10px] hover:bg-gray-50"
+                    onClick={() => onInformarRendimentoIsento?.(item.cnpj ?? "")}
+                    type="button"
+                  >
+                    Informar Rend. Isento
+                  </button>
+                )}
+                renderInformarRendimentoExclusivoButton={() => (
+                  <button
+                    className="px-2 py-0.5 border border-gray-300 rounded text-[10px] hover:bg-gray-50"
+                    onClick={() => onInformarRendimentoExclusivo?.(item.cnpj ?? "")}
+                    type="button"
+                  >
+                    Informar Rend. Exclusivo
+                  </button>
+                )}
+              />
             ))}
           </div>
         </CardContent>
