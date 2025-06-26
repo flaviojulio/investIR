@@ -185,3 +185,50 @@ async def get_lucros_isentos_mensais(
     except Exception as e:
         print(f"Erro ao buscar lucros isentos mensais: {e}")
         raise HTTPException(status_code=500, detail="Erro inesperado ao buscar lucros isentos mensais.")
+
+# --- Novo endpoint: JCP tributados por ação no ano ---
+class JCPTributadoResponse(schemas.BaseModel):
+    ticker: str
+    empresa: Optional[str] = None
+    cnpj: Optional[str] = None
+    valor_total_jcp_no_ano: float
+
+@router.get("/jcp-tributados", response_model=List[JCPTributadoResponse])
+async def get_jcp_tributados(
+    year: int = Query(..., description="Ano base para buscar JCP tributados por ação."),
+    current_user: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Retorna os JCP recebidos por ação no ano selecionado, agrupados e somados.
+    """
+    if year < 1900 or year > datetime.now().year + 5:
+        raise HTTPException(status_code=400, detail="Ano fora de um intervalo razoável.")
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            query = '''
+                SELECT upr.ticker_acao, a.razao_social as empresa, a.cnpj, SUM(upr.valor_total_recebido) as valor_total_jcp_no_ano
+                FROM usuario_proventos_recebidos upr
+                JOIN acoes a ON upr.id_acao = a.id
+                WHERE upr.usuario_id = ?
+                  AND strftime('%Y', upr.dt_pagamento) = ?
+                  AND upr.tipo_provento = 'JCP'
+                  AND upr.dt_pagamento IS NOT NULL
+                GROUP BY upr.ticker_acao, a.razao_social, a.cnpj
+                ORDER BY upr.ticker_acao;
+            '''
+            cursor.execute(query, (current_user.id, str(year)))
+            rows = cursor.fetchall()
+            result = [
+                {
+                    "ticker": row["ticker_acao"],
+                    "empresa": row["empresa"],
+                    "cnpj": row["cnpj"],
+                    "valor_total_jcp_no_ano": row["valor_total_jcp_no_ano"]
+                }
+                for row in rows
+            ]
+        return result
+    except Exception as e:
+        print(f"Erro ao buscar JCP tributados: {e}")
+        raise HTTPException(status_code=500, detail="Erro inesperado ao buscar JCP tributados.")
