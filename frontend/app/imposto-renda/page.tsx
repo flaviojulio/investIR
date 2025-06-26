@@ -15,6 +15,7 @@ import JCPTributadoCard from "./JCPTributadoCard";
 import { CopyableField } from "@/components/CopyableField";
 import ModalRendimentoIsento from "@/components/ModalRendimentoIsento";
 import ModalRendimentoExclusivo from "@/components/ModalRendimentoExclusivo";
+import RendaVariavelOperacoes from "./renda-variavel-operacoes";
 
 // Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -29,8 +30,9 @@ interface BemDireitoAcao {
 // Define the type for RendimentoIsento based on the backend response
 interface RendimentoIsento {
   ticker: string;
-  empresa?: string | null;
-  cnpj?: string | null;
+  nome_empresa?: string;
+  empresa?: string;
+  cnpj: string;
   valor_total_recebido_no_ano: number;
 }
 
@@ -100,7 +102,10 @@ export default function ImpostoRendaPage() {
         const response = await api.get('/analysis/rendimentos-isentos', {
           params: { year: selectedYear },
         });
-        setRendimentosIsentos(response.data);
+        setRendimentosIsentos(response.data.map((item: any) => ({
+          ...item,
+          cnpj: item.cnpj || '',
+        })));
       } catch (err: any) {
         const errorMessage = err.response?.data?.detail || "Erro ao buscar Rendimentos Isentos.";
         setErrorRendimentos(errorMessage);
@@ -447,7 +452,7 @@ export default function ImpostoRendaPage() {
           )}
         </TabsContent>
         <TabsContent value="renda-variavel">
-          <p className="text-muted-foreground">Conteúdo da aba Renda Variável.</p>
+          <RendaVariavelOperacoes />
         </TabsContent>
       </Tabs>
       <ModalRendimentoIsento
