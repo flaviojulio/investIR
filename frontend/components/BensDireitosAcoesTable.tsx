@@ -54,7 +54,7 @@ export function BensDireitosAcoesTable({ data, year, onInformarRendimentoIsento 
               <div key={item.ticker} className="relative">
                 <BemDireitoAcaoCard {...item} year={year} compact />
                 <button
-                  className="mt-2 w-full bg-primary text-white rounded px-2 py-1 text-xs shadow hover:bg-primary/80"
+                  className="px-2 py-0.5 border border-gray-300 rounded text-[10px] hover:bg-gray-50"
                   onClick={() => onInformarRendimentoIsento(item.cnpj ?? "")}
                   type="button"
                 >
