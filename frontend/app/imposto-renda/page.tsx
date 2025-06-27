@@ -452,7 +452,7 @@ export default function ImpostoRendaPage() {
           )}
         </TabsContent>
         <TabsContent value="renda-variavel">
-          <RendaVariavelOperacoes />
+          <RendaVariavelOperacoes ano={selectedYear} />
         </TabsContent>
       </Tabs>
       <ModalRendimentoIsento

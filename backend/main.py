@@ -713,16 +713,21 @@ async def upload_operacoes(
         raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
 
 @app.get("/api/resultados", response_model=List[ResultadoMensal])
-async def obter_resultados(usuario: UsuarioResponse = Depends(get_current_user)):
+async def obter_resultados(mes: str = None, usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna os resultados mensais de apuração de imposto de renda.
+    Se o parâmetro 'mes' for fornecido, retorna apenas o resultado daquele mês.
     """
     try:
+        print(f"[API] /api/resultados chamado por usuario_id={usuario.id} | mes={mes}")
         resultados = calcular_resultados_mensais(usuario_id=usuario.id)
+        if mes:
+            resultados = [r for r in resultados if r["mes"] == mes]
+        print(f"[API] /api/resultados usuario_id={usuario.id} | mes={mes} | resultados retornados={len(resultados)}")
         return resultados
     except Exception as e:
         user_id_for_log = usuario.id if usuario else "Unknown"
-        logging.error(f"Error in /api/resultados for user {user_id_for_log}: {e}", exc_info=True)
+        print(f"Error in /api/resultados for user {user_id_for_log}: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error in /api/resultados. Check logs.")
 
 @app.get("/api/resultados/ticker/{ticker}", response_model=ResultadoTicker)
