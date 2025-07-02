@@ -269,6 +269,34 @@ export default function OperacoesEncerradasTable({
     }
   };
 
+  // Helper to render DARF badge
+  const getDarfBadge = (darfStatus: string | null | undefined) => {
+    if (!darfStatus) return null;
+    let tooltip = "DARF";
+    let colorClass = "bg-gray-100 text-gray-700 border-gray-200";
+    if (darfStatus.toLowerCase() === "pago") {
+      tooltip = "DARF pago!";
+      colorClass = "bg-green-100 text-green-700 border-green-200";
+    } else if (darfStatus.toLowerCase() === "pendente") {
+      tooltip = "DARF pendente de pagamento";
+      colorClass = "bg-yellow-100 text-yellow-800 border-yellow-200";
+    } else {
+      tooltip = `Status do DARF: ${darfStatus}`;
+    }
+    return (
+      <TooltipProvider delayDuration={100}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={"ml-2 px-2 py-0.5 rounded-full text-xs font-semibold border " + colorClass}>DARF</span>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="center">
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
+
   const handleOpenDarfModal = (operation: OperacaoFechada) => {
     setSelectedOpForDarf(operation);
     // Find the corresponding ResultadoMensal for the operation's month
@@ -459,6 +487,19 @@ export default function OperacoesEncerradasTable({
 
                   <div className="col-span-3 flex items-center justify-start" onClick={(e) => e.stopPropagation()}>
                     {getStatusBadge(op.status_ir, isProfit)}
+                    {/* Badge DARF: só para operações tributáveis */}
+                    {(() => {
+                      // Busca o resultado mensal do mês da operação
+                      const opMonth = op.data_fechamento.substring(0, 7);
+                      const resultadoMensal = resultadosMensais.find(rm => rm.mes === opMonth);
+                      let darfStatus: string | null | undefined = null;
+                      if (op.status_ir === "Tributável Day Trade" && resultadoMensal) {
+                        darfStatus = resultadoMensal.status_darf_day_trade;
+                      } else if (op.status_ir === "Tributável Swing" && resultadoMensal) {
+                        darfStatus = resultadoMensal.status_darf_swing_trade;
+                      }
+                      return getDarfBadge(darfStatus);
+                    })()}
                   </div>
                 </div>
 
@@ -589,7 +630,21 @@ export default function OperacoesEncerradasTable({
                             <div className="pt-2 border-t border-gray-100">
                               <div className="flex justify-between text-sm">
                                 <span className="text-gray-600">Status Fiscal:</span>
-                                <div>{getStatusBadge(op.status_ir, isProfit)}</div>
+                                <div className="flex items-center">
+                                  {getStatusBadge(op.status_ir, isProfit)}
+                                  {/* Badge DARF: só para operações tributáveis */}
+                                  {(() => {
+                                    const opMonth = op.data_fechamento.substring(0, 7);
+                                    const resultadoMensal = resultadosMensais.find(rm => rm.mes === opMonth);
+                                    let darfStatus: string | null | undefined = null;
+                                    if (op.status_ir === "Tributável Day Trade" && resultadoMensal) {
+                                      darfStatus = resultadoMensal.status_darf_day_trade;
+                                    } else if (op.status_ir === "Tributável Swing" && resultadoMensal) {
+                                      darfStatus = resultadoMensal.status_darf_swing_trade;
+                                    }
+                                    return getDarfBadge(darfStatus);
+                                  })()}
+                                </div>
                               </div>
                             </div>
                           </div>
