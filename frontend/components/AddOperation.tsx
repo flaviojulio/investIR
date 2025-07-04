@@ -354,10 +354,7 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <h4 className="font-medium text-blue-900 mb-2">Dicas importantes:</h4>
           <ul className="text-sm text-blue-800 space-y-1">
-            <li>• Use sempre o ticker completo (ex: ITUB4, não ITUB)</li>
-            <li>• O preço deve ser por ação individual</li>
-            <li>• Inclua todas as taxas (corretagem, emolumentos, etc.)</li>
-            <li>• A data deve ser a data de liquidação da operação</li>
+            <li>•</li>
           </ul>
         </div>
       </CardContent>

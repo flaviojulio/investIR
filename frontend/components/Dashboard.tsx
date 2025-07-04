@@ -38,6 +38,7 @@ import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"
 import { TaxResults } from "@/components/TaxResults"
 import OperacoesEncerradasTable from '@/components/OperacoesEncerradasTable';
+import ExtratoTabContent from '@/components/ExtratoTabContent';
 import { useToast } from "@/hooks/use-toast"
 import { Tooltip as TooltipUI, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 // Removed DividendTimeline import
@@ -752,6 +753,7 @@ export function Dashboard() {
           <TabsList className="flex flex-wrap w-full gap-2">
             <TabsTrigger value="overview">Dashboard</TabsTrigger>
             <TabsTrigger value="proventos">Proventos</TabsTrigger>
+            <TabsTrigger value="extrato">Extrato</TabsTrigger>
             <TabsTrigger value="taxes">Impostos</TabsTrigger>
             <span className="w-2 md:w-4 lg:w-8 xl:w-12" />
             <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
@@ -760,6 +762,12 @@ export function Dashboard() {
               Declaração Anual
             </Link>
           </TabsList>
+          <TabsContent value="extrato">
+            <ExtratoTabContent
+              operacoesAbertas={data.operacoes}
+              operacoesFechadas={data.operacoes_fechadas}
+            />
+          </TabsContent>
 
           <TabsContent value="overview" className="space-y-6">
             <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} totalDividendosRecebidos={totalDividendosRecebidos} />
