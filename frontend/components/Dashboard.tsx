@@ -7,7 +7,7 @@ import { api, getResumoProventosAnuaisUsuario, getResumoProventosMensaisUsuario,
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy } from "lucide-react" // Added Trophy
+import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink } from "lucide-react" // Added Trophy
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import {
@@ -629,7 +629,7 @@ export function Dashboard() {
     } else if (pathname === "/proventos") {
       setActiveTab("proventos");
     }
-    // "taxes", "history", "prejuizo_acumulado" are local tabs
+    // "taxes", "history" are local tabs
   }, [pathname]);
 
   const fetchDashboardData = async () => {
@@ -738,70 +738,159 @@ export function Dashboard() {
           </Dialog>
         </div>
 
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => {
-            if (value === "overview") {
-              setActiveTab("overview");
-              router.push("/");
-            } else {
-              setActiveTab(value);
-            }
-          }}
-          className="space-y-6"
-        >
-          <TabsList className="flex flex-wrap w-full gap-2">
-            <TabsTrigger value="overview">Dashboard</TabsTrigger>
-            <TabsTrigger value="proventos">Proventos</TabsTrigger>
-            <TabsTrigger value="extrato">Extrato</TabsTrigger>
-            <TabsTrigger value="taxes">Impostos</TabsTrigger>
-            <span className="w-2 md:w-4 lg:w-8 xl:w-12" />
-            <TabsTrigger value="prejuizo_acumulado">Prejuízo Acum.</TabsTrigger>
-            <TabsTrigger value="history">Histórico</TabsTrigger>
-            <Link href="/imposto-renda" className="px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-150 border-transparent text-gray-500 dark:text-gray-400 hover:text-primary hover:border-primary flex items-center h-full whitespace-nowrap">
-              Declaração Anual
-            </Link>
-          </TabsList>
-          <TabsContent value="extrato">
-            <ExtratoTabContent
-              operacoesAbertas={data.operacoes}
-              operacoesFechadas={data.operacoes_fechadas}
-            />
-          </TabsContent>
-
-          <TabsContent value="overview" className="space-y-6">
-            <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} totalDividendosRecebidos={totalDividendosRecebidos} />
-
-            {/* TaxMeter moved here, should take full width */}
-            <TaxMeter resultados={data.resultados} />
-
-            {/* Grid for charts */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <PortfolioEquityChart />
-              <Last12MonthsEarningsChart /> {/* New chart here */}
+        {/* Modern Tabs Layout */}
+        <div className="space-y-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+            <div className="flex flex-wrap gap-1">
+              {/* Grupo Principal */}
+              <div className="flex flex-wrap gap-1 flex-1 min-w-0">
+                <TabButton 
+                  value="overview" 
+                  color="blue" 
+                  isActive={activeTab === "overview"} 
+                  onClick={(v) => {
+                    setActiveTab(v);
+                    router.push("/");
+                  }}
+                >
+                  <TrendingUp className={`h-5 w-5 mr-2 ${activeTab === "overview" ? "text-white" : "text-blue-600"}`} />
+                  Dashboard
+                </TabButton>
+                <TabButton 
+                  value="proventos" 
+                  color="green" 
+                  isActive={activeTab === "proventos"} 
+                  onClick={(v) => setActiveTab(v)}
+                >
+                  <DollarSign className={`h-5 w-5 mr-2 ${activeTab === "proventos" ? "text-white" : "text-green-600"}`} />
+                  Proventos
+                </TabButton>
+                <TabButton 
+                  value="extrato" 
+                  color="purple" 
+                  isActive={activeTab === "extrato"} 
+                  onClick={(v) => setActiveTab(v)}
+                >
+                  <Briefcase className={`h-5 w-5 mr-2 ${activeTab === "extrato" ? "text-white" : "text-purple-600"}`} />
+                  Extrato
+                </TabButton>
+                <TabButton 
+                  value="taxes" 
+                  color="orange" 
+                  isActive={activeTab === "taxes"} 
+                  onClick={(v) => setActiveTab(v)}
+                >
+                  <Landmark className={`h-5 w-5 mr-2 ${activeTab === "taxes" ? "text-white" : "text-orange-600"}`} />
+                  Impostos
+                </TabButton>
+                <TabButton 
+                  value="history" 
+                  color="indigo" 
+                  isActive={activeTab === "history"} 
+                  onClick={(v) => setActiveTab(v)}
+                >
+                  <History className={`h-5 w-5 mr-2 ${activeTab === "history" ? "text-white" : "text-indigo-600"}`} />
+                  <span className="hidden sm:inline">Histórico de Importações</span>
+                  <span className="sm:hidden">Histórico</span>
+                </TabButton>
+              </div>
+              {/* Separador Visual */}
+              <div className="hidden lg:flex items-center px-2">
+                <div className="w-px h-6 bg-gray-300"></div>
+              </div>
+              {/* Grupo Secundário */}
+              <div className="flex flex-wrap gap-1">
+                {/* Link Externo com estilo diferenciado */}
+                <Link href="/imposto-renda" className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-all duration-200 rounded-lg whitespace-nowrap border border-gray-300 hover:border-gray-400 cursor-pointer">
+                  <FileText className="h-5 w-5 mr-2 text-gray-500" />
+                  <span className="hidden sm:inline">Declaração Anual</span>
+                  <span className="sm:hidden">Declaração</span>
+                  <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
+                </Link>
+              </div>
             </div>
-
-            <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
-            <OperacoesEncerradasTable 
-              operacoesFechadas={data.operacoes_fechadas} 
-              resultadosMensais={data.resultados}
-              onUpdateDashboard={handleDataUpdate} 
-            />
-          </TabsContent>
-
-          <TabsContent value="proventos" className="space-y-6">
-            <ProventosTabContent />
-          </TabsContent>
-
-          <TabsContent value="taxes">
-            <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />
-          </TabsContent>
-
-          <TabsContent value="history">
-            <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />
-          </TabsContent>
-        </Tabs>
+            {/* Indicador Mobile */}
+            <div className="md:hidden mt-3 pt-3 border-t border-gray-200">
+              <div className="text-xs text-gray-500 flex items-center">
+                <div className="w-2 h-2 rounded-full bg-current mr-2"></div>
+                Aba ativa: 
+                <span className="ml-1 font-medium text-gray-700">
+                  {activeTab === "overview" && "Dashboard"}
+                  {activeTab === "proventos" && "Proventos"}
+                  {activeTab === "extrato" && "Extrato"}
+                  {activeTab === "taxes" && "Impostos"}
+                  {activeTab === "history" && "Histórico"}
+                </span>
+              </div>
+            </div>
+          </div>
+          {/* Conteúdo da Tab Ativa */}
+          <div className="min-h-[400px]">
+            {activeTab === "overview" && (
+              <div className="space-y-6">
+                <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} totalDividendosRecebidos={totalDividendosRecebidos} />
+                <TaxMeter resultados={data.resultados} />
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <PortfolioEquityChart />
+                  <Last12MonthsEarningsChart />
+                </div>
+                <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
+                <OperacoesEncerradasTable 
+                  operacoesFechadas={data.operacoes_fechadas} 
+                  resultadosMensais={data.resultados}
+                  onUpdateDashboard={handleDataUpdate} 
+                />
+              </div>
+            )}
+            {activeTab === "proventos" && (
+              <div className="space-y-6">
+                <ProventosTabContent />
+              </div>
+            )}
+            {activeTab === "extrato" && (
+              <ExtratoTabContent
+                operacoesAbertas={data.operacoes}
+                operacoesFechadas={data.operacoes_fechadas}
+              />
+            )}
+            {activeTab === "taxes" && (
+              <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />
+            )}
+            {activeTab === "history" && (
+              <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />
+            )}
+          </div>
+        </div>
       </main>
     </div>
   )
+}
+
+// Modern TabButton component
+function TabButton({ value, children, color, isActive, onClick }) {
+  const baseClasses = "inline-flex items-center px-4 py-2.5 text-sm font-medium transition-all duration-200 rounded-lg whitespace-nowrap cursor-pointer";
+  let backgroundColor = undefined;
+  if (isActive) {
+    if (color === 'blue') backgroundColor = '#2563eb';
+    else if (color === 'green') backgroundColor = '#16a34a';
+    else if (color === 'purple') backgroundColor = '#9333ea';
+    else if (color === 'orange') backgroundColor = '#ea580c';
+    else if (color === 'red') backgroundColor = '#dc2626';
+    else if (color === 'indigo') backgroundColor = '#4f46e5';
+    else backgroundColor = '#2563eb';
+  }
+  return (
+    <button
+      className={
+        baseClasses +
+        (isActive
+          ? ' shadow-md text-white'
+          : ' text-gray-700 hover:bg-gray-50')
+      }
+      onClick={() => onClick(value)}
+      style={isActive ? { backgroundColor, color: 'white' } : {}}
+    >
+      {children}
+    </button>
+  );
 }
