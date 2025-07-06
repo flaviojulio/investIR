@@ -324,62 +324,123 @@ function ProventosTabContent() {
   }, [proventosDetalhados, anoSelecionado]);
 
   return (
-    <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8">
-      <h1 className="text-3xl font-bold mb-8 text-gray-800 dark:text-white">Meus Proventos</h1>
+    <div>
+      {/* Filtro de Ano Melhorado */}
+      <div className="mb-8 p-6 bg-white rounded-xl shadow-lg border border-gray-200 hover:shadow-xl transition-shadow duration-300">
+        <div className="flex items-center justify-center">
+          <div>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-3 flex-nowrap">
+                <Label htmlFor="select-ano" className="text-sm font-medium text-gray-700 flex items-center gap-2 whitespace-nowrap">                    
+                  <span>Ano:</span>
+                </Label>
+                <Select
+                  value={anoSelecionado ? String(anoSelecionado) : ""}
+                  onValueChange={(value) => setAnoSelecionado(value ? Number(value) : undefined)}
+                  disabled={loadingData || anosDisponiveis.length === 0}
+                >
+                  <SelectTrigger id="select-ano" className="px-4 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all w-full min-w-[120px]">
+                    <SelectValue placeholder="Selecione o ano" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {anosDisponiveis.map((ano) => (
+                      <SelectItem key={ano} value={String(ano)}>
+                        {ano}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <div className="mb-8 max-w-xs">
-        <Label htmlFor="select-ano" className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 block">
-          Filtrar por Ano:
-        </Label>
-        <Select
-          value={anoSelecionado ? String(anoSelecionado) : ""}
-          onValueChange={(value) => setAnoSelecionado(value ? Number(value) : undefined)}
-          disabled={loadingData || anosDisponiveis.length === 0}
-        >
-          <SelectTrigger id="select-ano" className="w-full">
-            <SelectValue placeholder="Selecione o ano" />
-          </SelectTrigger>
-          <SelectContent>
-            {anosDisponiveis.map((ano) => (
-              <SelectItem key={ano} value={String(ano)}>
-                {ano}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Insights Rápidos */}
+      <div className="mb-10 bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl shadow-lg p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="h-8 w-1 bg-gradient-to-b from-purple-500 to-pink-500 rounded-full"></div>
+          <h2 className="text-xl font-bold text-purple-800 flex items-center gap-2">
+            <span>💡</span>
+            <span>Insights Rápidos</span>
+          </h2>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-white p-5 rounded-lg border border-purple-200 shadow-sm">
+            <h4 className="font-medium text-purple-900 mb-2 flex items-center gap-2">
+              <span>📊</span>
+              <span>Estatísticas do Período</span>
+            </h4>
+            <p className="text-sm text-gray-600">
+              Você tem <strong className="text-purple-600">{proventosFiltradosParaTabela.length}</strong> proventos 
+              registrados em <strong className="text-purple-600">{anoSelecionado || "N/A"}</strong>.
+              {acaoMaiorPagamentoAno && (
+                <> Sua maior fonte é <strong className="text-purple-600">{acaoMaiorPagamentoAno.ticker}</strong>.</>
+              )}
+            </p>
+          </div>
+          
+          <div className="bg-white p-5 rounded-lg border border-purple-200 shadow-sm">
+            <h4 className="font-medium text-purple-900 mb-2 flex items-center gap-2">
+              <span>🎯</span>
+              <span>Próximos Passos</span>
+            </h4>
+            <p className="text-sm text-gray-600">
+              {totalAReceberAnoSelecionado > 0 ? (
+                <>Você tem <strong className="text-green-600">{formatCurrency(totalAReceberAnoSelecionado)}</strong> para receber ainda este ano! 🚀</>
+              ) : (
+                "Continue acompanhando seus investimentos para maximizar os proventos. 📈"
+              )}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div className="mb-8">
-        <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">
-          Resumo de {anoSelecionado || "N/A"}
-        </h2>
+        <div className="flex items-center gap-3 mb-6">
+          <div className="h-8 w-1 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full"></div>
+          <h2 className="text-2xl font-bold text-gray-800">
+            Resumo de {anoSelecionado || "N/A"}
+          </h2>
+        </div>
         {loadingData ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {Array.from({ length: 4 }).map((_, index) => (
-              <Card key={index}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium bg-gray-200 dark:bg-gray-700 h-4 w-3/4 rounded"></CardTitle>
-                  <div className="h-4 w-4 bg-gray-200 dark:bg-gray-700 rounded"></div>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold bg-gray-200 dark:bg-gray-700 h-8 w-1/2 mb-2 rounded"></div>
-                  <p className="text-xs text-muted-foreground bg-gray-200 dark:bg-gray-700 h-3 w-full rounded"></p>
-                </CardContent>
-              </Card>
+              <div key={index} className="animate-pulse bg-white rounded-xl shadow-lg border p-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-3 flex-1">
+                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                    <div className="h-8 bg-gray-200 rounded w-1/2"></div>
+                    <div className="h-3 bg-gray-200 rounded w-full"></div>
+                  </div>
+                  <div className="h-12 w-12 bg-gray-200 rounded-full"></div>
+                </div>
+              </div>
             ))}
           </div>
         ) : resumoDoAnoSelecionado ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Card Total Melhorado */}
             <TooltipProvider>
               <TooltipUI>
                 <TooltipTrigger asChild>
-                  <div>
-                    <InfoCard
-                      title={`Total Recebido (${anoSelecionado})`}
-                      value={formatCurrency(totalAnoSelecionado)}
-                      icon={DollarSign}
-                      description="Proventos recebidos no ano"
-                    />
+                  <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+                    <div className="p-6">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-blue-600 mb-1">Total Recebido ({anoSelecionado})</p>
+                          <p className="text-3xl font-bold text-blue-900">{formatCurrency(totalAnoSelecionado)}</p>
+                          <p className="text-xs text-blue-700 mt-2 flex items-center gap-1">
+                            <span>💰</span>
+                            <span>Proventos do ano</span>
+                          </p>
+                        </div>
+                        <div className="h-14 w-14 bg-blue-500 rounded-full flex items-center justify-center shadow-lg">
+                          <span className="text-white text-2xl">💸</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </TooltipTrigger>
                 <TooltipContent className="text-sm">
@@ -389,27 +450,77 @@ function ProventosTabContent() {
                 </TooltipContent>
               </TooltipUI>
             </TooltipProvider>
-            <InfoCard
-              title={`A Receber (${anoSelecionado})`}
-              value={formatCurrency(totalAReceberAnoSelecionado)}
-              icon={Landmark}
-              description="Proventos ainda não recebidos"
-            />
+
+            {/* Card A Receber Melhorado */}
+            <div className="bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-green-600 mb-1">A Receber ({anoSelecionado})</p>
+                    <p className="text-3xl font-bold text-green-900">{formatCurrency(totalAReceberAnoSelecionado)}</p>
+                    <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
+                      <span>📅</span>
+                      <span>Próximos pagamentos</span>
+                    </p>
+                  </div>
+                  <div className="h-14 w-14 bg-green-500 rounded-full flex items-center justify-center shadow-lg">
+                    <span className="text-white text-2xl">🏦</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Top Ação Melhorado */}
             {acaoMaiorPagamentoAno ? (
-              <InfoCard
-                title={`Top Ação (${anoSelecionado})`}
-                value={
-                  <span className="flex items-center gap-2">
-                    <Trophy className="h-6 w-6 text-yellow-400 drop-shadow-sm" fill="#facc15" stroke="#eab308" />
-                    <span>{acaoMaiorPagamentoAno.ticker}</span>
-                  </span>
-                }
-                description={`Recebido: ${formatCurrency(acaoMaiorPagamentoAno.total_recebido_na_acao)}`}
-                icon={TrendingUp}
-              />
+              <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 border-2 border-yellow-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+                <div className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-yellow-600 mb-1">Top Ação ({anoSelecionado})</p>
+                      <p className="text-2xl font-bold text-yellow-900">{acaoMaiorPagamentoAno.ticker}</p>
+                      <p className="text-xs text-yellow-700 mt-1">{formatCurrency(acaoMaiorPagamentoAno.total_recebido_na_acao)}</p>
+                    </div>
+                    <div className="h-14 w-14 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg animate-pulse">
+                      <span className="text-white text-2xl">🏆</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             ) : (
-              <InfoCard title={`Top Ação (${anoSelecionado})`} value="N/A" description="Sem dados de ações para este ano." icon={TrendingUp}/>
+              <div className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-200 rounded-xl shadow-lg">
+                <div className="p-6">
+                  <div className="text-center text-gray-500">
+                    <div className="h-14 w-14 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <span className="text-gray-500 text-2xl">📊</span>
+                    </div>
+                    <p className="text-sm">Sem dados para {anoSelecionado}</p>
+                  </div>
+                </div>
+              </div>
             )}
+
+            {/* Card Distribuição Melhorado */}
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-purple-600 mb-1">Distribuição</p>
+                    <div className="space-y-1">
+                      <p className="text-lg font-bold text-purple-900">
+                        {formatCurrency(dividendosAnoSelecionado)}
+                      </p>
+                      <p className="text-xs text-purple-700">Dividendos</p>
+                      <p className="text-sm font-semibold text-purple-800">
+                        {formatCurrency(jcpAnoSelecionado)} JCP
+                      </p>
+                    </div>
+                  </div>
+                  <div className="h-14 w-14 bg-purple-500 rounded-full flex items-center justify-center shadow-lg">
+                    <span className="text-white text-2xl">📈</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <p className="text-gray-600 dark:text-gray-400">Não há dados de proventos para o ano selecionado ({anoSelecionado || "N/A"}).</p>
@@ -527,28 +638,58 @@ function ProventosTabContent() {
       </div>
 
       {/* Seção da Tabela Detalhada */}
-      <div className="mt-10">
-        <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">
-          Detalhes dos Proventos Recebidos {anoSelecionado ? `em ${anoSelecionado}` : '(Todos os Anos)'}
-        </h2>
+      <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-6 w-1 bg-indigo-500 rounded-full"></div>
+              <h2 className="text-xl font-bold text-gray-800">
+                Detalhes dos Proventos Recebidos {anoSelecionado ? `em ${anoSelecionado}` : '(Todos os Anos)'}
+              </h2>
+            </div>
+            <div className="text-sm text-gray-500">
+              {proventosFiltradosParaTabela.length} registros
+            </div>
+          </div>
+        </div>
+        
         {loadingData ? (
-          <Card className="h-[200px] flex items-center justify-center"><CardContent><p>Carregando tabela de proventos...</p></CardContent></Card>
+          <div className="h-[200px] flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p>Carregando tabela de proventos...</p>
+            </div>
+          </div>
         ) : (
           <>
-            <div className="mb-4">
-              <Label htmlFor="proventosSearch" className="text-gray-700 dark:text-gray-300">Pesquisar Proventos:</Label>
-              <Input
-                id="proventosSearch"
-                type="text"
-                placeholder="Digite para pesquisar em todos os campos..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="max-w-sm mt-1 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
-              />
+            <div className="p-6 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center gap-3">
+                <Label htmlFor="proventosSearch-table" className="text-gray-700 flex items-center gap-2">
+                  <span>🔍</span>
+                  <span>Pesquisar Proventos:</span>
+                </Label>
+                <Input
+                  id="proventosSearch-table"
+                  type="text"
+                  placeholder="Digite para pesquisar em todos os campos..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="max-w-sm border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
+                />
+              </div>
             </div>
             <TabelaProventos data={proventosFiltradosParaTabela} />
+            
           </>
         )}
+      </div>
+
+      {/* Footer da Página */}
+      <div className="mt-12 text-center text-gray-500 text-sm">
+        <p className="flex items-center justify-center gap-2">
+          <span>💡</span>
+          <span>Dica: Use os filtros para encontrar proventos específicos rapidamente</span>
+        </p>
       </div>
 
       {/* Removed DividendTimeline section
@@ -828,8 +969,20 @@ export function Dashboard() {
           <div className="min-h-[400px]">
             {activeTab === "overview" && (
               <div className="space-y-6">
+                {/* Breadcrumb Melhorado */}
+                <div className="mb-2">       
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="h-10 w-2 bg-gradient-to-b from-blue-500 to-purple-600 rounded-full"></div>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                      Dashboard
+                    </h1>
+                  </div>
+                  <p className="text-gray-600 ml-6">
+                    Visão geral da sua carteira, resultados e operações
+                  </p>
+                </div>
+                
                 <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} totalDividendosRecebidos={totalDividendosRecebidos} />
-                <TaxMeter resultados={data.resultados} />
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <PortfolioEquityChart />
                   <Last12MonthsEarningsChart />
@@ -840,24 +993,83 @@ export function Dashboard() {
                   resultadosMensais={data.resultados}
                   onUpdateDashboard={handleDataUpdate} 
                 />
+                <TaxMeter resultados={data.resultados} />
               </div>
             )}
             {activeTab === "proventos" && (
               <div className="space-y-6">
+                {/* Breadcrumb Melhorado */}
+                <div className="mb-2">       
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="h-10 w-2 bg-gradient-to-b from-blue-500 to-purple-600 rounded-full"></div>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                      Meus Proventos
+                    </h1>
+                  </div>
+                  <p className="text-gray-600 ml-6">
+                    Acompanhe seus dividendos, JCPs e outros proventos de forma inteligente
+                  </p>
+                </div>
+                
                 <ProventosTabContent />
               </div>
             )}
             {activeTab === "extrato" && (
-              <ExtratoTabContent
-                operacoesAbertas={data.operacoes}
-                operacoesFechadas={data.operacoes_fechadas}
-              />
+              <div className="space-y-6">
+                {/* Breadcrumb Melhorado */}
+                <div className="mb-2">       
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="h-10 w-2 bg-gradient-to-b from-purple-500 to-indigo-600 rounded-full"></div>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent">
+                      Extrato de Operações
+                    </h1>
+                  </div>
+                  <p className="text-gray-600 ml-6">
+                    Histórico completo de suas operações abertas e fechadas
+                  </p>
+                </div>
+                
+                <ExtratoTabContent
+                  operacoesAbertas={data.operacoes}
+                  operacoesFechadas={data.operacoes_fechadas}
+                />
+              </div>
             )}
             {activeTab === "taxes" && (
-              <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />
+              <div className="space-y-6">
+                {/* Breadcrumb Melhorado */}
+                <div className="mb-2">       
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="h-10 w-2 bg-gradient-to-b from-orange-500 to-red-600 rounded-full"></div>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
+                      Impostos e Tributação
+                    </h1>
+                  </div>
+                  <p className="text-gray-600 ml-6">
+                    Controle seus impostos, DARF e declarações fiscais
+                  </p>
+                </div>
+                
+                <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />
+              </div>
             )}
             {activeTab === "history" && (
-              <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />
+              <div className="space-y-6">
+                {/* Breadcrumb Melhorado */}
+                <div className="mb-2">       
+                  <div className="flex items-center gap-4 mb-2">
+                    <div className="h-10 w-2 bg-gradient-to-b from-indigo-500 to-blue-600 rounded-full"></div>
+                    <h1 className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">
+                      Histórico de Importações
+                    </h1>
+                  </div>
+                  <p className="text-gray-600 ml-6">
+                    Acompanhe suas importações e sincronizações de dados
+                  </p>
+                </div>
+                
+                <OperationsHistory operacoes={data.operacoes} onUpdate={handleDataUpdate} />
+              </div>
             )}
           </div>
         </div>
