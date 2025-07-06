@@ -7,7 +7,7 @@ import { api, getResumoProventosAnuaisUsuario, getResumoProventosMensaisUsuario,
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink } from "lucide-react" // Added Trophy
+import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff } from "lucide-react" // Added Trophy, Eye, EyeOff
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import {
@@ -60,6 +60,15 @@ const formatCurrency = (value: number | undefined | null): string => {
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
+// Function to format currency with visibility toggle
+const formatCurrencyWithVisibility = (value: number | undefined | null, showValues: boolean): string => {
+  if (!showValues) {
+    return "R$ •••,••";
+  }
+  if (value === undefined || value === null) return "R$ 0,00";
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
 const formatYAxisTick = (tick: number): string => {
   if (tick >= 1000000) return `R$${(tick / 1000000).toFixed(0)}M`;
   if (tick >= 1000) return `R$${(tick / 1000).toFixed(0)}k`;
@@ -91,7 +100,7 @@ const PIE_CHART_COLORS = [
   "#6366f1",            // extra: indigo
 ];
 
-function ProventosTabContent() {
+function ProventosTabContent({ showValues }: { showValues: boolean }) {
   const [anoSelecionado, setAnoSelecionado] = useState<number | undefined>();
   const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -388,7 +397,7 @@ function ProventosTabContent() {
             </h4>
             <p className="text-sm text-gray-600">
               {totalAReceberAnoSelecionado > 0 ? (
-                <>Você tem <strong className="text-green-600">{formatCurrency(totalAReceberAnoSelecionado)}</strong> para receber ainda este ano! 🚀</>
+                <>Você tem <strong className="text-green-600">{formatCurrencyWithVisibility(totalAReceberAnoSelecionado, showValues)}</strong> para receber ainda este ano! 🚀</>
               ) : (
                 "Continue acompanhando seus investimentos para maximizar os proventos. 📈"
               )}
@@ -430,7 +439,7 @@ function ProventosTabContent() {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-medium text-blue-600 mb-1">Total Recebido ({anoSelecionado})</p>
-                          <p className="text-3xl font-bold text-blue-900">{formatCurrency(totalAnoSelecionado)}</p>
+                          <p className="text-3xl font-bold text-blue-900">{formatCurrencyWithVisibility(totalAnoSelecionado, showValues)}</p>
                           <p className="text-xs text-blue-700 mt-2 flex items-center gap-1">
                             <span>💰</span>
                             <span>Proventos do ano</span>
@@ -445,8 +454,8 @@ function ProventosTabContent() {
                 </TooltipTrigger>
                 <TooltipContent className="text-sm">
                   <div className="mb-1 font-semibold">Detalhamento:</div>
-                  <div>Dividendos: <span className="font-bold text-blue-700">{formatCurrency(dividendosAnoSelecionado)}</span></div>
-                  <div>JCP: <span className="font-bold text-green-700">{formatCurrency(jcpAnoSelecionado)}</span></div>
+                  <div>Dividendos: <span className="font-bold text-blue-700">{formatCurrencyWithVisibility(dividendosAnoSelecionado, showValues)}</span></div>
+                  <div>JCP: <span className="font-bold text-green-700">{formatCurrencyWithVisibility(jcpAnoSelecionado, showValues)}</span></div>
                 </TooltipContent>
               </TooltipUI>
             </TooltipProvider>
@@ -457,7 +466,7 @@ function ProventosTabContent() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-green-600 mb-1">A Receber ({anoSelecionado})</p>
-                    <p className="text-3xl font-bold text-green-900">{formatCurrency(totalAReceberAnoSelecionado)}</p>
+                    <p className="text-3xl font-bold text-green-900">{formatCurrencyWithVisibility(totalAReceberAnoSelecionado, showValues)}</p>
                     <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
                       <span>📅</span>
                       <span>Próximos pagamentos</span>
@@ -478,7 +487,7 @@ function ProventosTabContent() {
                     <div>
                       <p className="text-sm font-medium text-yellow-600 mb-1">Top Ação ({anoSelecionado})</p>
                       <p className="text-2xl font-bold text-yellow-900">{acaoMaiorPagamentoAno.ticker}</p>
-                      <p className="text-xs text-yellow-700 mt-1">{formatCurrency(acaoMaiorPagamentoAno.total_recebido_na_acao)}</p>
+                      <p className="text-xs text-yellow-700 mt-1">{formatCurrencyWithVisibility(acaoMaiorPagamentoAno.total_recebido_na_acao, showValues)}</p>
                     </div>
                     <div className="h-14 w-14 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg animate-pulse">
                       <span className="text-white text-2xl">🏆</span>
@@ -507,11 +516,11 @@ function ProventosTabContent() {
                     <p className="text-sm font-medium text-purple-600 mb-1">Distribuição</p>
                     <div className="space-y-1">
                       <p className="text-lg font-bold text-purple-900">
-                        {formatCurrency(dividendosAnoSelecionado)}
+                        {formatCurrencyWithVisibility(dividendosAnoSelecionado, showValues)}
                       </p>
                       <p className="text-xs text-purple-700">Dividendos</p>
                       <p className="text-sm font-semibold text-purple-800">
-                        {formatCurrency(jcpAnoSelecionado)} JCP
+                        {formatCurrencyWithVisibility(jcpAnoSelecionado, showValues)} JCP
                       </p>
                     </div>
                   </div>
@@ -539,7 +548,7 @@ function ProventosTabContent() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" stroke="hsl(var(--foreground))" />
                   <YAxis stroke="hsl(var(--foreground))" tickFormatter={formatYAxisTick} />
-                  <Tooltip content={<ChartTooltipContent formatter={(value, name) => `${name}: ${formatCurrency(Number(value))}`} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
+                  <Tooltip content={<ChartTooltipContent formatter={(value, name) => `${name}: ${formatCurrencyWithVisibility(Number(value), showValues)}`} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
                   <Legend content={<ChartLegendContent />} />
                   <Bar dataKey="Dividendos" stackId="a" radius={[4, 4, 0, 0]}>
                     {dadosGraficoAnual.map((_, index) => (
@@ -577,7 +586,7 @@ function ProventosTabContent() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="name" stroke="hsl(var(--foreground))" />
                   <YAxis stroke="hsl(var(--foreground))" tickFormatter={formatYAxisTick} />
-                  <Tooltip content={<ChartTooltipContent formatter={(value, name) => `${name}: ${formatCurrency(Number(value))}`} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
+                  <Tooltip content={<ChartTooltipContent formatter={(value, name) => `${name}: ${formatCurrencyWithVisibility(Number(value), showValues)}`} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
                   <Legend content={<ChartLegendContent />} />
                   <Bar dataKey="Dividendos" stackId="a" radius={[4, 4, 0, 0]}>
                     {dadosGraficoMensal.map((_, index) => (
@@ -618,7 +627,7 @@ function ProventosTabContent() {
                     <Cell key={`cell-${index}`} fill={PIE_CHART_COLORS[index % PIE_CHART_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip content={<ChartTooltipContent formatter={(value, name) => [formatCurrency(Number(value)), ' '+ name]} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
+                <Tooltip content={<ChartTooltipContent formatter={(value, name) => [formatCurrencyWithVisibility(Number(value), showValues), ' '+ name]} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
                 <Legend content={({ payload }) => (
                   <ul className="flex flex-wrap gap-4 mt-2">
                     {payload && payload.map((entry, idx) => (
@@ -678,7 +687,7 @@ function ProventosTabContent() {
                 />
               </div>
             </div>
-            <TabelaProventos data={proventosFiltradosParaTabela} />
+            <TabelaProventos data={proventosFiltradosParaTabela} showValues={showValues} />
             
           </>
         )}
@@ -754,6 +763,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("overview")
   const [totalDividendosRecebidos, setTotalDividendosRecebidos] = useState<number>(0);
+  const [showValues, setShowValues] = useState(true); // New state for hiding/showing values
 
   const router = useRouter() // Initialize useRouter
   const pathname = usePathname() // Initialize usePathname
@@ -815,6 +825,25 @@ export function Dashboard() {
     fetchDashboardData()
   }
 
+  // Function to mask currency values
+  const formatCurrencyWithVisibility = (value: number) => {
+    if (!showValues) {
+      return "R$ •••,••"
+    }
+    return new Intl.NumberFormat("pt-BR", {
+      style: "currency",
+      currency: "BRL",
+    }).format(value)
+  }
+
+  // Function to mask numeric values (like quantities)
+  const formatNumberWithVisibility = (value: number) => {
+    if (!showValues) {
+      return "•••"
+    }
+    return value.toString()
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -836,6 +865,27 @@ export function Dashboard() {
 
             <div className="flex items-center space-x-4">
               <span className="text-sm text-gray-600">Olá, {user?.nome_completo || user?.username}</span>
+              
+              {/* Toggle para mostrar/esconder valores */}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setShowValues(!showValues)}
+                className="flex items-center gap-2"
+              >
+                {showValues ? (
+                  <>
+                    <Eye className="h-4 w-4" />
+                    <span className="hidden sm:inline">Esconder Valores</span>
+                  </>
+                ) : (
+                  <>
+                    <EyeOff className="h-4 w-4" />
+                    <span className="hidden sm:inline">Mostrar Valores</span>
+                  </>
+                )}
+              </Button>
+              
               <Button variant="outline" size="sm" onClick={logout}>
                 <LogOut className="h-4 w-4 mr-2" />
                 Sair
@@ -982,12 +1032,18 @@ export function Dashboard() {
                   </p>
                 </div>
                 
-                <PortfolioOverview carteira={data.carteira} resultados={data.resultados} operacoes={data.operacoes} totalDividendosRecebidos={totalDividendosRecebidos} />
+                <PortfolioOverview 
+                  carteira={data.carteira} 
+                  resultados={data.resultados} 
+                  operacoes={data.operacoes} 
+                  totalDividendosRecebidos={totalDividendosRecebidos} 
+                  showValues={showValues}
+                />
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <PortfolioEquityChart />
                   <Last12MonthsEarningsChart />
                 </div>
-                <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} />
+                <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} showValues={showValues} />
                 <OperacoesEncerradasTable 
                   operacoesFechadas={data.operacoes_fechadas} 
                   resultadosMensais={data.resultados}
@@ -1011,7 +1067,7 @@ export function Dashboard() {
                   </p>
                 </div>
                 
-                <ProventosTabContent />
+                <ProventosTabContent showValues={showValues} />
               </div>
             )}
             {activeTab === "extrato" && (
