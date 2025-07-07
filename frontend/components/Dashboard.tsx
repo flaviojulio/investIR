@@ -939,7 +939,7 @@ export function Dashboard() {
                   value="overview" 
                   color="blue" 
                   isActive={activeTab === "overview"} 
-                  onClick={(v) => {
+                  onClick={(v: string) => {
                     setActiveTab(v);
                     router.push("/");
                   }}
@@ -951,7 +951,7 @@ export function Dashboard() {
                   value="proventos" 
                   color="green" 
                   isActive={activeTab === "proventos"} 
-                  onClick={(v) => setActiveTab(v)}
+                  onClick={(v: string) => setActiveTab(v)}
                 >
                   <DollarSign className={`h-5 w-5 mr-2 ${activeTab === "proventos" ? "text-white" : "text-green-600"}`} />
                   Proventos
@@ -960,7 +960,7 @@ export function Dashboard() {
                   value="extrato" 
                   color="purple" 
                   isActive={activeTab === "extrato"} 
-                  onClick={(v) => setActiveTab(v)}
+                  onClick={(v: string) => setActiveTab(v)}
                 >
                   <Briefcase className={`h-5 w-5 mr-2 ${activeTab === "extrato" ? "text-white" : "text-purple-600"}`} />
                   Extrato
@@ -969,7 +969,7 @@ export function Dashboard() {
                   value="taxes" 
                   color="orange" 
                   isActive={activeTab === "taxes"} 
-                  onClick={(v) => setActiveTab(v)}
+                  onClick={(v: string) => setActiveTab(v)}
                 >
                   <Landmark className={`h-5 w-5 mr-2 ${activeTab === "taxes" ? "text-white" : "text-orange-600"}`} />
                   Impostos
@@ -978,7 +978,7 @@ export function Dashboard() {
                   value="history" 
                   color="indigo" 
                   isActive={activeTab === "history"} 
-                  onClick={(v) => setActiveTab(v)}
+                  onClick={(v: string) => setActiveTab(v)}
                 >
                   <History className={`h-5 w-5 mr-2 ${activeTab === "history" ? "text-white" : "text-indigo-600"}`} />
                   <span className="hidden sm:inline">Histórico de Importações</span>
@@ -1135,7 +1135,15 @@ export function Dashboard() {
 }
 
 // Modern TabButton component
-function TabButton({ value, children, color, isActive, onClick }) {
+interface TabButtonProps {
+  value: string;
+  children: React.ReactNode;
+  color: string;
+  isActive: boolean;
+  onClick: (value: string) => void;
+}
+
+function TabButton({ value, children, color, isActive, onClick }: TabButtonProps) {
   const baseClasses = "inline-flex items-center px-4 py-2.5 text-sm font-medium transition-all duration-200 rounded-lg whitespace-nowrap cursor-pointer";
   let backgroundColor = undefined;
   if (isActive) {

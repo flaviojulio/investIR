@@ -29,10 +29,8 @@ export default function ModalRendimentoIsento({ open, onClose, rendimento }: Pro
           &times;
         </button>
         <RendimentoIsentoCard
-          ticker={rendimento.ticker}
+          ticker={rendimento.ticker || ""}
           nome_empresa={rendimento.nome_empresa || rendimento.empresa}
-          cnpj={rendimento.cnpj}
-          valor_total_recebido_no_ano={rendimento.valor_total_recebido_no_ano}
           {...rendimento}
         />
       </div>

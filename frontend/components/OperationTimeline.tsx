@@ -17,7 +17,7 @@ import {
   Target,
   Building2
 } from "lucide-react";
-import type { Operacao } from "@/lib/types";
+import type { Operacao, OperacaoDetalhe } from "@/lib/types";
 
 // Sistema de cores consistente e acessível
 const COLORS = {
@@ -436,12 +436,12 @@ function ClosedPositionCard({ item, idx }: ClosedPositionCardProps) {
                         <GitBranch className="w-4 h-4 text-gray-400" /> Operações da Posição
                       </span>
                       <div className="space-y-1">
-                        {item.operacoes.map((op, i) => {
-                          const opType = (op.tipo || op.operation || '').toLowerCase();
+                        {item.operacoes?.map((op: OperacaoDetalhe, i: number) => {
+                          const opType = (op.operation || '').toLowerCase();
                           const opIcon = getIcon(opType);
                           const opColor = getColorScheme(opType);
                           // Função para formatar a data no padrão dd/mm/aaaa
-                          function formatDateBR(dateStr) {
+                          function formatDateBR(dateStr: string) {
                             if (!dateStr) return '';
                             const d = new Date(dateStr);
                             if (isNaN(d.getTime())) return dateStr;
@@ -453,11 +453,11 @@ function ClosedPositionCard({ item, idx }: ClosedPositionCardProps) {
                           return (
                             <div key={i} className="flex items-center text-xs rounded px-2 py-1 gap-2 bg-gray-50 hover:bg-gray-100 transition">
                               <span className={"" + opColor.icon}>{opIcon}</span>
-                              <span className="font-mono text-gray-500 mr-1">{formatDateBR(op.data || op.date)}</span>
-                              <span className="font-semibold text-gray-800 mr-1">{op.ticker}</span>
+                              <span className="font-mono text-gray-500 mr-1">{formatDateBR(op.date)}</span>
+                              <span className="font-semibold text-gray-800 mr-1">{item.ticker}</span>
                               <span className={`mr-1 font-medium capitalize ${opColor.text}`}>{getOperationLabel(opType)}</span>
-                              <span className="mr-1 text-gray-600">Qtd: <span className="font-semibold">{op.quantidade || op.quantity}</span></span>
-                              <span className="text-gray-600">Preço: <span className="font-semibold">{op.preco || op.price}</span></span>
+                              <span className="mr-1 text-gray-600">Qtd: <span className="font-semibold">{op.quantity}</span></span>
+                              <span className="text-gray-600">Preço: <span className="font-semibold">{op.price}</span></span>
                             </div>
                           );
                         })}
@@ -563,9 +563,18 @@ function OperationCard({ item, idx }: OperationCardProps) {
   );
 }
 
-interface TimelineItem extends Operacao {
+interface TimelineItem {
+  id: number;
+  date: string;
+  ticker: string;
+  operation: string; // More flexible than 'buy' | 'sell' to allow dividends, etc.
+  quantity: number;
+  price: number;
+  fees: number;
+  usuario_id?: number;
+  corretora_id?: number | null;
+  corretora_nome?: string | null;
   visualBranch?: "left" | "right";
-  operation: string;
   // Campos adicionais para posições encerradas
   resultado?: number;
   percentual_lucro?: number;
@@ -573,6 +582,7 @@ interface TimelineItem extends Operacao {
   valor_venda?: number;
   day_trade?: boolean;
   data_fechamento?: string;
+  operacoes?: OperacaoDetalhe[]; // Add the operacoes property
 }
 
 interface Props {

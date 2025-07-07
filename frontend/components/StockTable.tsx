@@ -25,9 +25,10 @@ interface CarteiraItemWithCalc extends CarteiraItem {
 interface StockTableProps {
   carteira: CarteiraItem[]
   onUpdate: () => void
+  showValues?: boolean
 }
 
-export function StockTable({ carteira, onUpdate }: StockTableProps) {
+export function StockTable({ carteira, onUpdate, showValues = true }: StockTableProps) {
   const { toast } = useToast();
   const [editingItem, setEditingItem] = useState<CarteiraItem | null>(null);
   const [editFormData, setEditFormData] = useState({ quantidade: "", preco_medio: "" });
@@ -364,10 +365,10 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                       </Link>
                     </TableCell>
                     <TableCell className="text-right">{formatNumber(typedItem.quantidade)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(typedItem.preco_medio)}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(Math.abs(typedItem.custo_total))}</TableCell>
-                    <TableCell className="text-right">{formatCurrency(currentPrice)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatCurrency(valorAtualDisplay)}</TableCell>
+                    <TableCell className="text-right">{showValues ? formatCurrency(typedItem.preco_medio) : '***'}</TableCell>
+                    <TableCell className="text-right">{showValues ? formatCurrency(Math.abs(typedItem.custo_total)) : '***'}</TableCell>
+                    <TableCell className="text-right">{showValues ? formatCurrency(currentPrice) : '***'}</TableCell>
+                    <TableCell className="text-right font-medium">{showValues ? formatCurrency(valorAtualDisplay) : '***'}</TableCell>
                     <TableCell className={`text-right font-medium ${resultadoAtualDisplay >= 0 ? "text-green-600" : "text-red-600"}`}>
                       <div className="flex items-center justify-end gap-1">
                         {resultadoAtualDisplay >= 0 ? (
@@ -375,12 +376,16 @@ export function StockTable({ carteira, onUpdate }: StockTableProps) {
                         ) : (
                           <TrendingDown className="h-4 w-4" />
                         )}
-                        {formatCurrency(Math.abs(resultadoAtualDisplay))}
+                        {showValues ? formatCurrency(Math.abs(resultadoAtualDisplay)) : '***'}
                       </div>
                     </TableCell>
                     <TableCell className={`text-right font-medium ${typeof resultadoPercentualAtualDisplay === 'number' && resultadoPercentualAtualDisplay >= 0 ? "text-green-600" : "text-red-600"}`}>
-                      {typeof resultadoPercentualAtualDisplay === 'number' && resultadoPercentualAtualDisplay >= 0 ? "+" : ""}
-                      {typeof resultadoPercentualAtualDisplay === 'number' ? resultadoPercentualAtualDisplay.toFixed(2) : 'N/A'}%
+                      {showValues ? (
+                        <span>
+                          {typeof resultadoPercentualAtualDisplay === 'number' && resultadoPercentualAtualDisplay >= 0 ? "+" : ""}
+                          {typeof resultadoPercentualAtualDisplay === 'number' ? resultadoPercentualAtualDisplay.toFixed(2) : 'N/A'}%
+                        </span>
+                      ) : '***'}
                     </TableCell>
                     <TableCell className="text-center space-x-1">
                       <Button variant="ghost" size="sm" onClick={() => handleOpenEditModal(typedItem)} title="Editar">

@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BensDireitosAcoesTable } from "@/components/BensDireitosAcoesTable"; // Import the new component
 import { api } from "@/lib/api"; // For API calls
@@ -16,6 +15,7 @@ import { CopyableField } from "@/components/CopyableField";
 import ModalRendimentoIsento from "@/components/ModalRendimentoIsento";
 import ModalRendimentoExclusivo from "@/components/ModalRendimentoExclusivo";
 import RendaVariavelOperacoes from "./renda-variavel-operacoes";
+import { Building2, DollarSign, Receipt, TrendingUp } from "lucide-react"; // Importação dos ícones
 
 // Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -43,10 +43,51 @@ interface LucroIsentoMensal {
   isento_swing: boolean | number;
 }
 
+// Define type for tab values
+type TabValue = "bens-e-direitos" | "rendimentos-isentos" | "rendimentos-tributacao-exclusiva" | "renda-variavel";
+
+// Modern TabButton component
+interface TabButtonProps {
+  value: TabValue;
+  children: React.ReactNode;
+  color: string;
+  isActive: boolean;
+  onClick: (value: TabValue) => void;
+}
+
+function TabButton({ value, children, color, isActive, onClick }: TabButtonProps) {
+  const baseClasses = "inline-flex items-center px-4 py-2.5 text-sm font-medium transition-all duration-200 rounded-lg whitespace-nowrap cursor-pointer";
+  let backgroundColor = undefined;
+  if (isActive) {
+    if (color === 'blue') backgroundColor = '#2563eb';
+    else if (color === 'green') backgroundColor = '#16a34a';
+    else if (color === 'purple') backgroundColor = '#9333ea';
+    else if (color === 'orange') backgroundColor = '#ea580c';
+    else if (color === 'red') backgroundColor = '#dc2626';
+    else if (color === 'indigo') backgroundColor = '#4f46e5';
+    else backgroundColor = '#2563eb';
+  }
+  return (
+    <button
+      className={
+        baseClasses +
+        (isActive
+          ? ' shadow-md text-white'
+          : ' text-gray-700 hover:bg-gray-50')
+      }
+      onClick={() => onClick(value)}
+      style={isActive ? { backgroundColor, color: 'white' } : {}}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function ImpostoRendaPage() {
   const router = useRouter();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState<number>(currentYear - 1);
+  const [activeTab, setActiveTab] = useState<TabValue>("bens-e-direitos");
   const [bensDireitosData, setBensDireitosData] = useState<BemDireitoAcao[]>([]);
   const [rendimentosIsentos, setRendimentosIsentos] = useState<RendimentoIsento[]>([]); // Changed state name and type
   const [isLoadingBensDireitos, setIsLoadingBensDireitos] = useState<boolean>(false); // Specific loading state
@@ -240,8 +281,8 @@ export default function ImpostoRendaPage() {
   }
 
   return (
-    <div className="container mx-auto p-4 relative">
-      {/* Removido botão de debug e tabela do topo */}
+    <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8 relative">
+      {/* Botão de voltar */}
       <button
         className="absolute top-4 right-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded shadow"
         onClick={() => router.push("/")}
@@ -249,17 +290,27 @@ export default function ImpostoRendaPage() {
       >
         Voltar para Dashboard
       </button>
-      <h1 className="text-2xl font-bold mb-4">
-        Declaração Anual de Imposto de Renda
-      </h1>
+      
+      {/* Título seguindo o padrão do Dashboard */}
+      <div className="mb-8">       
+        <div className="flex items-center gap-4 mb-2">
+          <div className="h-10 w-2 bg-gradient-to-b from-blue-500 to-purple-600 rounded-full"></div>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            Módulo IR: Declaração Anual
+          </h1>
+        </div>
+        <p className="text-gray-600 dark:text-gray-300 ml-6">
+          Declare o imposto de renda anual das suas ações de forma fácil
+        </p>
+      </div>
 
-      {/* Filtro Ano Base no topo */}
-      <div className="mb-6 flex flex-col items-center">
-        <label htmlFor="year-select" className="block text-lg font-medium text-gray-700 mb-1">
-          Ano Base
+      {/* Filtro Ano Base seguindo o padrão de proventos */}
+      <div className="mb-8 max-w-[140px]">
+        <label htmlFor="year-select" className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 block">
+          Filtrar por Ano:
         </label>
         <Select value={String(selectedYear)} onValueChange={handleYearChange}>
-          <SelectTrigger className="w-[100px] text-lg" id="year-select">
+          <SelectTrigger id="year-select" className="w-full">
             <SelectValue placeholder="Selecione o ano" />
           </SelectTrigger>
           <SelectContent>
@@ -272,189 +323,265 @@ export default function ImpostoRendaPage() {
         </Select>
       </div>
 
-      <Tabs defaultValue="bens-e-direitos">
-        <TabsList className="mb-4">
-          <TabsTrigger value="bens-e-direitos">Bens e Direitos</TabsTrigger>
-          <TabsTrigger value="rendimentos-isentos">
-            Rendimentos Isentos e Não Tributáveis
-          </TabsTrigger>
-          <TabsTrigger value="rendimentos-tributacao-exclusiva">
-            Rendimentos Sujeitos a Tributação Exclusiva
-          </TabsTrigger>
-          <TabsTrigger value="renda-variavel">Renda Variável</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="bens-e-direitos">
-          {isLoadingBensDireitos && (
-            <div>
-              <Skeleton className="h-8 w-1/2 mb-4" />
-              <Skeleton className="h-4 w-3/4 mb-2" />
-              <Skeleton className="h-32 w-full" />
+      {/* Modern Tabs Layout seguindo o padrão do Dashboard */}
+      <div className="space-y-8">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-2">
+          <div className="flex flex-wrap gap-1">
+            <TabButton 
+              value="bens-e-direitos" 
+              color="blue" 
+              isActive={activeTab === "bens-e-direitos"} 
+              onClick={setActiveTab}
+            >
+              <Building2 className={`h-4 w-4 mr-2 ${activeTab === "bens-e-direitos" ? "text-white" : "text-blue-600"}`} />
+              <span className="text-sm">Bens e Direitos</span>
+            </TabButton>
+            <TabButton 
+              value="rendimentos-isentos" 
+              color="green" 
+              isActive={activeTab === "rendimentos-isentos"} 
+              onClick={setActiveTab}
+            >
+              <DollarSign className={`h-4 w-4 mr-2 ${activeTab === "rendimentos-isentos" ? "text-white" : "text-green-600"}`} />
+              <span className="text-sm">Rendimentos Isentos</span>
+            </TabButton>
+            <TabButton 
+              value="rendimentos-tributacao-exclusiva" 
+              color="orange" 
+              isActive={activeTab === "rendimentos-tributacao-exclusiva"} 
+              onClick={setActiveTab}
+            >
+              <Receipt className={`h-4 w-4 mr-2 ${activeTab === "rendimentos-tributacao-exclusiva" ? "text-white" : "text-orange-600"}`} />
+              <span className="text-sm">Tributação Exclusiva</span>
+            </TabButton>
+            <TabButton 
+              value="renda-variavel" 
+              color="purple" 
+              isActive={activeTab === "renda-variavel"} 
+              onClick={setActiveTab}
+            >
+              <TrendingUp className={`h-4 w-4 mr-2 ${activeTab === "renda-variavel" ? "text-white" : "text-purple-600"}`} />
+              <span className="text-sm">Renda Variável</span>
+            </TabButton>
+          </div>
+          {/* Indicador Mobile */}
+          <div className="md:hidden mt-3 pt-3 border-t border-gray-200">
+            <div className="text-xs text-gray-500 flex items-center">
+              <div className="w-2 h-2 rounded-full bg-current mr-2"></div>
+              Aba ativa: 
+              <span className="ml-1 font-medium text-gray-700">
+                {activeTab === "bens-e-direitos" && "Bens e Direitos"}
+                {activeTab === "rendimentos-isentos" && "Rendimentos Isentos"}
+                {activeTab === "rendimentos-tributacao-exclusiva" && "Tributação Exclusiva"}
+                {activeTab === "renda-variavel" && "Renda Variável"}
+              </span>
             </div>
-          )}
-          {errorBensDireitos && !isLoadingBensDireitos && (
-            <div className="text-red-600 bg-red-100 p-4 rounded-md">
-              <p><strong>Erro ao carregar Bens e Direitos:</strong> {errorBensDireitos}</p>
-            </div>
-          )}
-          {!isLoadingBensDireitos && !errorBensDireitos && (
-            <BensDireitosAcoesTable
-              data={bensDireitosData}
-              year={selectedYear}
-              onInformarRendimentoIsento={handleInformarRendimentoIsento}
-              onInformarRendimentoExclusivo={handleInformarRendimentoExclusivo}
-            />
-          )}
-        </TabsContent>
-
-        <TabsContent value="rendimentos-isentos">
-          {isLoadingRendimentos && (
-            <div>
-              <Skeleton className="h-8 w-1/2 mb-4" />
-              <Skeleton className="h-4 w-3/4 mb-2" />
-              <Skeleton className="h-32 w-full" />
-            </div>
-          )}
-          {errorRendimentos && !isLoadingRendimentos && (
-            <div className="text-red-600 bg-red-100 p-4 rounded-md">
-              <p><strong>Erro ao carregar Rendimentos Isentos:</strong> {errorRendimentos}</p>
-            </div>
-          )}
-          {!isLoadingRendimentos && !errorRendimentos && (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                {rendimentosIsentos.length === 0 ? (
-                  <div className="col-span-2 text-center py-4 text-muted-foreground">Nenhum rendimento isento encontrado para o ano selecionado.</div>
-                ) : (
-                  rendimentosIsentos.map((item, idx) => (
-                    <div key={idx} className="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
-                      <div className="bg-gradient-to-r from-blue-400 to-blue-300 p-3 flex items-center">
-                        <div className="w-6 h-6 bg-green-600 rounded mr-2 flex items-center justify-center">
-                          <span className="text-white font-bold text-xs">✓</span>
-                        </div>
-                        <h1 className="text-white text-lg font-semibold">Rendimento Isento e Não Tributável</h1>
-                      </div>
-                      <div className="p-4 space-y-4">
-                        <div>
-                          <label className="block text-gray-600 font-medium mb-2">Tipo de Rendimento</label>
-                          <div className="bg-gray-500 text-white p-2 rounded text-sm font-medium mb-2">
-                            09 - Lucros e dividendos recebidos
-                          </div>
-                          <div className="border border-gray-300 rounded p-3 bg-gray-50">
-                            <div className="text-blue-600 font-semibold mb-3">09. Lucros e dividendos recebidos</div>
-                            <div className="space-y-3">
-                              <CopyableField value="Titular" input>
-                                <div>
-                                  <label className="block text-gray-600 font-medium mb-1 text-sm">Tipo de Beneficiário</label>
-                                  <input
-                                    type="text"
-                                    value="Titular"
-                                    className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
-                                    readOnly
-                                  />
-                                </div>
-                              </CopyableField>
-                              <CopyableField value="CPF do Titular" input>
-                                <div>
-                                  <label className="block text-gray-600 font-medium mb-1 text-sm">Beneficiário</label>
-                                  <input
-                                    type="text"
-                                    value="CPF do Titular"
-                                    className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
-                                    readOnly
-                                  />
-                                </div>
-                              </CopyableField>
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <CopyableField value={item.cnpj || "N/A"} input>
-                                  <div>
-                                    <label className="block text-gray-600 font-medium mb-1 text-sm">CNPJ da Fonte Pagadora</label>
-                                    <input
-                                      type="text"
-                                      value={item.cnpj || "N/A"}
-                                      className="w-full p-2 text-sm border border-gray-300 rounded bg-white"
-                                      readOnly
-                                    />
-                                  </div>
-                                </CopyableField>
-                                <CopyableField value={item.empresa || "N/A"} input>
-                                  <div>
-                                    <label className="block text-gray-600 font-medium mb-1 text-sm">Nome da Fonte Pagadora</label>
-                                    <input
-                                      type="text"
-                                      value={item.empresa || "N/A"}
-                                      className="w-full p-2 text-sm border border-gray-300 rounded bg-gray-100"
-                                      readOnly
-                                    />
-                                  </div>
-                                </CopyableField>
-                              </div>
-                              <CopyableField value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} input>
-                                <div>
-                                  <label className="block text-gray-600 font-medium mb-1 text-sm">Valor</label>
-                                  <div className="flex">
-                                    <input
-                                      type="text"
-                                      value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                      className="w-32 p-2 text-sm border border-gray-300 rounded bg-white text-right"
-                                      readOnly
-                                    />
-                                  </div>
-                                </div>
-                              </CopyableField>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-              {/* Card de Lucros Isentos (vendas até 20 mil) */}
-              <div className="mb-6">
-                <h2 className="text-lg font-semibold mb-2">Lucros Isentos (Vendas até R$20.000 no mês)</h2>
-                <DetalheLucrosIsentosCard
-                  valorTotal={valorTotalLucrosIsentos}
-                  onOpenModal={() => setModalLucrosIsentosOpen(true)}
+          </div>
+        </div>
+        
+        {/* Conteúdo da Tab Ativa */}
+        <div className="min-h-[400px]">
+          {activeTab === "bens-e-direitos" && (
+            <div className="mb-8">
+              <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">
+                Bens e Direitos - Ações e Fundos Imobiliários ({selectedYear})
+              </h2>
+              {isLoadingBensDireitos && (
+                <div>
+                  <Skeleton className="h-8 w-1/2 mb-4" />
+                  <Skeleton className="h-4 w-3/4 mb-2" />
+                  <Skeleton className="h-32 w-full" />
+                </div>
+              )}
+              {errorBensDireitos && !isLoadingBensDireitos && (
+                <div className="text-red-600 bg-red-100 p-4 rounded-md">
+                  <p><strong>Erro ao carregar Bens e Direitos:</strong> {errorBensDireitos}</p>
+                </div>
+              )}
+              {!isLoadingBensDireitos && !errorBensDireitos && (
+                <BensDireitosAcoesTable
+                  data={bensDireitosData}
+                  year={selectedYear}
+                  onInformarRendimentoIsento={handleInformarRendimentoIsento}
+                  onInformarRendimentoExclusivo={handleInformarRendimentoExclusivo}
                 />
-                <ModalLucrosIsentosDetalhe
-                  open={modalLucrosIsentosOpen}
-                  onClose={() => setModalLucrosIsentosOpen(false)}
-                  lucrosIsentosPorMes={lucrosIsentosPorMes}
-                  ano={selectedYear}
-                  valorTotal={valorTotalLucrosIsentos}
-                />
-              </div>
-            </>
-          )}
-        </TabsContent>
-        <TabsContent value="rendimentos-tributacao-exclusiva">
-          {isLoadingJCP ? (
-            <Skeleton className="h-8 w-1/2 mb-4" />
-          ) : errorJCP ? (
-            <div className="text-red-600 bg-red-100 p-4 rounded-md mb-2">{errorJCP}</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-              {jcpTributados.length === 0 ? (
-                <div className="col-span-2 text-center py-4 text-muted-foreground">Nenhum JCP tributado encontrado para o ano selecionado.</div>
-              ) : (
-                jcpTributados.map((item, idx) => (
-                  <JCPTributadoCard
-                    key={item.ticker + idx}
-                    ticker={item.ticker}
-                    empresa={item.empresa}
-                    cnpj={item.cnpj}
-                    valor={item.valor_total_jcp_no_ano}
-                  />
-                ))
               )}
             </div>
           )}
-        </TabsContent>
-        <TabsContent value="renda-variavel">
-          <RendaVariavelOperacoes ano={selectedYear} />
-        </TabsContent>
-      </Tabs>
+
+          {activeTab === "rendimentos-isentos" && (
+            <div className="mb-8">
+              <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">
+                Rendimentos Isentos e Não Tributáveis ({selectedYear})
+              </h2>
+              {isLoadingRendimentos && (
+                <div>
+                  <Skeleton className="h-8 w-1/2 mb-4" />
+                  <Skeleton className="h-4 w-3/4 mb-2" />
+                  <Skeleton className="h-32 w-full" />
+                </div>
+              )}
+              {errorRendimentos && !isLoadingRendimentos && (
+                <div className="text-red-600 bg-red-100 p-4 rounded-md">
+                  <p><strong>Erro ao carregar Rendimentos Isentos:</strong> {errorRendimentos}</p>
+                </div>
+              )}
+              {!isLoadingRendimentos && !errorRendimentos && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    {rendimentosIsentos.length === 0 ? (
+                      <div className="col-span-2 text-center py-8 text-gray-600 dark:text-gray-400">
+                        Nenhum rendimento isento encontrado para o ano selecionado.
+                      </div>
+                    ) : (
+                      rendimentosIsentos.map((item, idx) => (
+                        <div key={idx} className="bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                          <div className="bg-gradient-to-r from-blue-400 to-blue-300 p-3 flex items-center">
+                            <div className="w-6 h-6 bg-green-600 rounded mr-2 flex items-center justify-center">
+                              <span className="text-white font-bold text-xs">✓</span>
+                            </div>
+                            <h1 className="text-white text-lg font-semibold">Rendimento Isento e Não Tributável</h1>
+                          </div>
+                          <div className="p-4 space-y-4">
+                            <div>
+                              <label className="block text-gray-600 dark:text-gray-300 font-medium mb-2">Tipo de Rendimento</label>
+                              <div className="bg-gray-500 text-white p-2 rounded text-sm font-medium mb-2">
+                                09 - Lucros e dividendos recebidos
+                              </div>
+                              <div className="border border-gray-300 dark:border-gray-600 rounded p-3 bg-gray-50 dark:bg-gray-700">
+                                <div className="text-blue-600 dark:text-blue-400 font-semibold mb-3">09. Lucros e dividendos recebidos</div>
+                                <div className="space-y-3">
+                                  <CopyableField value="Titular" input>
+                                    <div>
+                                      <label className="block text-gray-600 dark:text-gray-300 font-medium mb-1 text-sm">Tipo de Beneficiário</label>
+                                      <input
+                                        type="text"
+                                        value="Titular"
+                                        className="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-600 dark:text-white"
+                                        readOnly
+                                      />
+                                    </div>
+                                  </CopyableField>
+                                  <CopyableField value="CPF do Titular" input>
+                                    <div>
+                                      <label className="block text-gray-600 dark:text-gray-300 font-medium mb-1 text-sm">Beneficiário</label>
+                                      <input
+                                        type="text"
+                                        value="CPF do Titular"
+                                        className="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
+                                        readOnly
+                                      />
+                                    </div>
+                                  </CopyableField>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <CopyableField value={item.cnpj || "N/A"} input>
+                                      <div>
+                                        <label className="block text-gray-600 dark:text-gray-300 font-medium mb-1 text-sm">CNPJ da Fonte Pagadora</label>
+                                        <input
+                                          type="text"
+                                          value={item.cnpj || "N/A"}
+                                          className="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
+                                          readOnly
+                                        />
+                                      </div>
+                                    </CopyableField>
+                                    <CopyableField value={item.empresa || "N/A"} input>
+                                      <div>
+                                        <label className="block text-gray-600 dark:text-gray-300 font-medium mb-1 text-sm">Nome da Fonte Pagadora</label>
+                                        <input
+                                          type="text"
+                                          value={item.empresa || "N/A"}
+                                          className="w-full p-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-gray-100 dark:bg-gray-600 dark:text-white"
+                                          readOnly
+                                        />
+                                      </div>
+                                    </CopyableField>
+                                  </div>
+                                  <CopyableField value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} input>
+                                    <div>
+                                      <label className="block text-gray-600 dark:text-gray-300 font-medium mb-1 text-sm">Valor</label>
+                                      <div className="flex">
+                                        <input
+                                          type="text"
+                                          value={item.valor_total_recebido_no_ano.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                          className="w-32 p-2 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white text-right"
+                                          readOnly
+                                        />
+                                      </div>
+                                    </div>
+                                  </CopyableField>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  {/* Card de Lucros Isentos (vendas até 20 mil) */}
+                  <div className="mb-6">
+                    <h3 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">
+                      Lucros Isentos (Vendas até R$20.000 no mês)
+                    </h3>
+                    <DetalheLucrosIsentosCard
+                      valorTotal={valorTotalLucrosIsentos}
+                      onOpenModal={() => setModalLucrosIsentosOpen(true)}
+                    />
+                    <ModalLucrosIsentosDetalhe
+                      open={modalLucrosIsentosOpen}
+                      onClose={() => setModalLucrosIsentosOpen(false)}
+                      lucrosIsentosPorMes={lucrosIsentosPorMes}
+                      ano={selectedYear}
+                      valorTotal={valorTotalLucrosIsentos}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {activeTab === "rendimentos-tributacao-exclusiva" && (
+            <div className="mb-8">
+              <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">
+                Rendimentos Sujeitos a Tributação Exclusiva ({selectedYear})
+              </h2>
+              {isLoadingJCP ? (
+                <Skeleton className="h-8 w-1/2 mb-4" />
+              ) : errorJCP ? (
+                <div className="text-red-600 bg-red-100 p-4 rounded-md mb-2">{errorJCP}</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  {jcpTributados.length === 0 ? (
+                    <div className="col-span-2 text-center py-8 text-gray-600 dark:text-gray-400">
+                      Nenhum JCP tributado encontrado para o ano selecionado.
+                    </div>
+                  ) : (
+                    jcpTributados.map((item, idx) => (
+                      <JCPTributadoCard
+                        key={item.ticker + idx}
+                        ticker={item.ticker}
+                        empresa={item.empresa}
+                        cnpj={item.cnpj}
+                        valor={item.valor_total_jcp_no_ano}
+                      />
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "renda-variavel" && (
+            <div className="mb-8">
+              <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">
+                Renda Variável - Operações e Ganhos/Perdas ({selectedYear})
+              </h2>
+              <RendaVariavelOperacoes ano={selectedYear} />
+            </div>
+          )}
+        </div>
+      </div>
+      
       <ModalRendimentoIsento
         open={modalRendimentoIsentoOpen}
         onClose={() => setModalRendimentoIsentoOpen(false)}

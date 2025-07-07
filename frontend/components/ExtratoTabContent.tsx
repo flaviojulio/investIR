@@ -63,10 +63,12 @@ export default function ExtratoTabContent({
 
     return operacoesAbertas
       .filter(op => {
-        const normalizedOp = normalizeOperation(op.operation || op["Tipo de Movimentação"] || "");
-        const opDate = (op.date || op["Data do Negócio"] || "").toString().trim().slice(0, 10);
-        const opTicker = (op.ticker || op["Código de Negociação"] || "").toString().toUpperCase().trim();
-        const opQuantity = Number(op.quantity || op["Quantidade"] || 0);
+        // Type assertion to handle imported CSV data with Portuguese property names
+        const opAny = op as any;
+        const normalizedOp = normalizeOperation(op.operation || opAny["Tipo de Movimentação"] || "");
+        const opDate = (op.date || opAny["Data do Negócio"] || "").toString().trim().slice(0, 10);
+        const opTicker = (op.ticker || opAny["Código de Negociação"] || "").toString().toUpperCase().trim();
+        const opQuantity = Number(op.quantity || opAny["Quantidade"] || 0);
         
         // Criar chave única da operação
         const chaveOperacao = `${opTicker}-${opDate}-${opQuantity}-${normalizedOp}`;
@@ -99,7 +101,7 @@ export default function ExtratoTabContent({
           price: Number(op.price || anyOp["Preço"] || 0),
           fees: op.fees ?? anyOp["Taxas"] ?? 0,
           category: normalizedOperation,
-          visualBranch: "left"
+          visualBranch: "left" as const
         };
       })
       .filter(op => !["dividend", "jcp", "rendimento", "bonificacao"].includes(op.operation));
@@ -108,18 +110,20 @@ export default function ExtratoTabContent({
   // Mapeia proventos para a timeline
   const mappedProventos = useMemo(() => {
     return (proventos || []).map((p) => {
-      const tipo = p.tipo || p.tipo_provento || "";
+      const tipo = p.tipo || "";
       const normalizedTipo = normalizeOperation(tipo);
       return {
         date: (p.dt_pagamento || p.data_ex || "").toString().slice(0, 10),
         ticker: (p.ticker_acao || "").toString().toUpperCase(),
         operation: normalizedTipo,
-        price: p.valor_total_recebido || 0,
-        id: p.id ? `provento-${p.id}` : undefined,
+        quantity: p.quantidade_na_data_ex || 0,
+        price: p.valor_unitario_provento || 0,
+        fees: 0,
+        id: p.id || Math.floor(Math.random() * 1000000),
         nome_acao: p.nome_acao,
         provento: true,
         valor_unitario_provento: p.valor_unitario_provento,
-        visualBranch: "right"
+        visualBranch: "right" as const
       };
     });
   }, [proventos]);
@@ -128,15 +132,17 @@ export default function ExtratoTabContent({
   const mappedPosicoesFechadas = useMemo(() => {
     if (!Array.isArray(operacoesFechadas)) return [];
     return operacoesFechadas.map((op) => ({
-      id: `fechada-${op.ticker}-${op.data_fechamento}`,
+      id: Math.floor(Math.random() * 1000000), // Generate numeric ID
       date: op.data_fechamento,
       ticker: op.ticker,
       operation: 'fechamento',
-      visualBranch: 'left',
+      quantity: op.quantidade,
+      price: op.valor_venda / op.quantidade, // Calculate unit price from total value
+      fees: 0,
+      visualBranch: 'left' as const,
       resultado: op.resultado,
       valor_compra: op.valor_compra,
       valor_venda: op.valor_venda,
-      quantidade: op.quantidade,
       day_trade: op.day_trade,
       percentual_lucro: op.percentual_lucro,
       data_fechamento: op.data_fechamento,

@@ -1,20 +1,20 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react" // Added useEffect
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Plus, AlertCircle, ChevronsUpDown } from "lucide-react" // Added ChevronsUpDown
+import { Plus, AlertCircle, ChevronsUpDown } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover" // Added Popover
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command" // Added Command components
-import type { AcaoInfo, Corretora } from "@/lib/types" // Added AcaoInfo type import
-import { getCarteira } from "@/lib/getCarteira";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
+import type { AcaoInfo, Corretora } from "@/lib/types"
+import { getCarteira } from "@/lib/getCarteira"
 
 interface AddOperationProps {
   onSuccess: () => void
@@ -93,7 +93,6 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
     setComboboxOpen(false); // Close combobox
   };
 
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -154,7 +153,11 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
   }
 
   return (
-    <Card className="max-w-2xl mx-auto">
+    <Card className={`max-w-2xl mx-auto transition-colors duration-300 ${
+      formData.operation === 'buy' ? 'bg-green-50 border-green-200' :
+      formData.operation === 'sell' ? 'bg-red-50 border-red-200' :
+      'bg-white'
+    }`}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Plus className="h-5 w-5" />
@@ -283,6 +286,21 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
             </div>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="total-value">Valor Total da Operação</Label>
+            <div className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg text-center">
+              <span className="text-2xl font-bold text-blue-900">
+                {formData.quantity && formData.price ? 
+                  `R$ ${(Number(formData.quantity) * Number(formData.price)).toLocaleString('pt-BR', { 
+                    minimumFractionDigits: 2, 
+                    maximumFractionDigits: 2 
+                  })}` : 
+                  'R$ 0,00'
+                }
+              </span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-2 col-span-1 md:col-span-2 lg:col-span-4">
               <Label htmlFor="corretora_id">Corretora</Label>
@@ -350,13 +368,6 @@ export function AddOperation({ onSuccess }: AddOperationProps) {
             </Button>
           </div>
         </form>
-
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="font-medium text-blue-900 mb-2">Dicas importantes:</h4>
-          <ul className="text-sm text-blue-800 space-y-1">
-            <li>•</li>
-          </ul>
-        </div>
       </CardContent>
     </Card>
   )

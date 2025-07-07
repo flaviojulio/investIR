@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { formatCurrency, formatInteger } from "@/lib/utils";
 import { ClipboardCheck } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import Modal from "@/components/Modal"; // Importe seu componente de modal (ajuste o path se necessário)
 import { RendimentoIsentoCard } from "@/app/imposto-renda/RendimentoIsentoCard"; // Ajuste o path/nome conforme seu projeto
 import { useProventosPorAcaoAno } from "@/hooks/useProventosPorAcaoAno";
 
@@ -93,8 +92,8 @@ export function BemDireitoAcaoCard({
   // O array de rendimentos isentos está disponível no window.__RENDITIONS_ISENTOS__
   // ou pode ser passado via prop/context. Aqui, vamos buscar do window para não alterar a estrutura geral.
   let rendimentoIsento = null;
-  if (typeof window !== "undefined" && Array.isArray(window.__RENDITIONS_ISENTOS__)) {
-    rendimentoIsento = window.__RENDITIONS_ISENTOS__.find((item) => item.ticker === ticker);
+  if (typeof window !== "undefined" && Array.isArray((window as any).__RENDITIONS_ISENTOS__)) {
+    rendimentoIsento = (window as any).__RENDITIONS_ISENTOS__.find((item: any) => item.ticker === ticker);
   }
 
   return (

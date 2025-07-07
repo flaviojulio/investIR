@@ -34,7 +34,6 @@ import {
 import { Input } from "@/components/ui/input";
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { DarfDetailsModal } from "@/components/DarfDetailsModal"; // Added import
-import OperacoesEncerradasTable from '@/components/OperacoesEncerradasTable';
 
 // Mock formatting functions
 const formatCurrency = (value: number) => {
@@ -69,56 +68,71 @@ const mockOperacoes: OperacaoFechada[] = [
     ticker: "BBDC4",
     data_abertura: "2025-06-18T00:00:00",
     data_fechamento: "2025-06-19T00:00:00",
+    tipo: "compra",
     quantidade: 50,
     valor_compra: 25.00,
     valor_venda: 24.00,
+    taxas_total: 2.00,
     resultado: 48.00,
     day_trade: false,
-    status_ir: "Isento"
+    status_ir: "Isento",
+    operacoes_relacionadas: []
   },
   {
     ticker: "ITSA4",
     data_abertura: "2025-05-08T00:00:00",
     data_fechamento: "2025-05-09T00:00:00",
+    tipo: "compra",
     quantidade: 100,
     valor_compra: 11.00,
     valor_venda: 10.00,
+    taxas_total: 4.00,
     resultado: -104.00,
     day_trade: true,
-    status_ir: "Prejuízo Acumulado"
+    status_ir: "Prejuízo Acumulado",
+    operacoes_relacionadas: []
   },
   {
     ticker: "BBAS3",
     data_abertura: "2025-04-23T00:00:00",
     data_fechamento: "2025-04-24T00:00:00",
+    tipo: "compra",
     quantidade: 100,
     valor_compra: 25.00,
     valor_venda: 28.00,
+    taxas_total: 3.00,
     resultado: 297.00,
     day_trade: false,
-    status_ir: "Isento"
+    status_ir: "Isento",
+    operacoes_relacionadas: []
   },
   {
     ticker: "VALE3",
     data_abertura: "2025-03-03T00:00:00",
     data_fechamento: "2025-03-04T00:00:00",
+    tipo: "compra",
     quantidade: 100,
     valor_compra: 65.00,
     valor_venda: 70.00,
+    taxas_total: 10.00,
     resultado: 490.00,
     day_trade: true,
-    status_ir: "Tributável Day Trade"
+    status_ir: "Tributável Day Trade",
+    operacoes_relacionadas: []
   },
   {
     ticker: "PETR4",
     data_abertura: "2025-02-18T00:00:00",
     data_fechamento: "2025-02-19T00:00:00",
+    tipo: "compra",
     quantidade: 5000,
     valor_compra: 25.00,
     valor_venda: 40.00,
+    taxas_total: 18.33,
     resultado: 74981.67,
     day_trade: false,
-    status_ir: "Tributável Swing"
+    status_ir: "Tributável Swing",
+    operacoes_relacionadas: []
   }
 ];
 
@@ -486,7 +500,7 @@ export default function OperacoesEncerradasTable({
                   </div>
 
                   <div className="col-span-3 flex items-center justify-start" onClick={(e) => e.stopPropagation()}>
-                    {getStatusBadge(op.status_ir, isProfit)}
+                    {getStatusBadge(op.status_ir || "", isProfit)}
                     {/* Badge DARF: só para operações tributáveis */}
                     {(() => {
                       // Busca o resultado mensal do mês da operação
@@ -631,7 +645,7 @@ export default function OperacoesEncerradasTable({
                               <div className="flex justify-between text-sm">
                                 <span className="text-gray-600">Status Fiscal:</span>
                                 <div className="flex items-center">
-                                  {getStatusBadge(op.status_ir, isProfit)}
+                                  {getStatusBadge(op.status_ir || "", isProfit)}
                                   {/* Badge DARF: só para operações tributáveis */}
                                   {(() => {
                                     const opMonth = op.data_fechamento.substring(0, 7);

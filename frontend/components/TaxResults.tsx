@@ -209,13 +209,13 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
                       <div className="flex justify-between items-center">
                         <div>
                           <strong>Competência:</strong> {formatMonth(resultado.mes)} |<strong> Código:</strong>{" "}
-                          {resultado.darf_codigo || "6015"}
+                          {resultado.darf_codigo_day || "6015"}
                         </div>
                         <div className="text-right">
                           <div className="font-bold text-red-600">{formatCurrency(resultado.ir_pagar_day)}</div>
-                          {resultado.darf_vencimento && (
+                          {resultado.darf_vencimento_day && (
                             <div className="text-sm text-muted-foreground">
-                              Venc: {formatDate(resultado.darf_vencimento)}
+                              Venc: {formatDate(resultado.darf_vencimento_day)}
                             </div>
                           )}
                         </div>
@@ -267,14 +267,13 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
                       <TableCell className={`text-right ${resultado.ganho_liquido_swing >= 0 ? "text-green-600" : "text-red-600"}`}>
                         {formatCurrency(resultado.ganho_liquido_swing)}
                       </TableCell>
-                      <TableCell className="text-right">
-                        { (resultado.darf_swing_trade_valor && resultado.darf_swing_trade_valor > 0)
-                          ? <Badge variant="outline">{formatCurrency(resultado.darf_swing_trade_valor)}</Badge>
+                      <TableCell className="text-right">                      { (resultado.darf_valor_swing && resultado.darf_valor_swing > 0)
+                        ? <Badge variant="outline">{formatCurrency(resultado.darf_valor_swing)}</Badge>
                           : <span className="text-muted-foreground">-</span>}
                       </TableCell>
                       <TableCell className="text-center">
                         {resultado.status_darf_swing_trade ? (
-                          <Badge variant={resultado.status_darf_swing_trade === 'Pago' ? 'success' : 'warning'}>
+                          <Badge variant={resultado.status_darf_swing_trade === 'Pago' ? 'default' : 'secondary'}>
                             {resultado.status_darf_swing_trade}
                           </Badge>
                         ) : <span className="text-muted-foreground">-</span>}
@@ -283,20 +282,19 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
                       <TableCell className={`text-right ${resultado.ganho_liquido_day >= 0 ? "text-green-600" : "text-red-600"}`}>
                         {formatCurrency(resultado.ganho_liquido_day)}
                       </TableCell>
-                       <TableCell className="text-right">
-                        { (resultado.darf_day_trade_valor && resultado.darf_day_trade_valor > 0)
-                          ? <Badge variant="destructive">{formatCurrency(resultado.darf_day_trade_valor)}</Badge>
+                       <TableCell className="text-right">                      { (resultado.darf_valor_day && resultado.darf_valor_day > 0)
+                        ? <Badge variant="destructive">{formatCurrency(resultado.darf_valor_day)}</Badge>
                           : <span className="text-muted-foreground">-</span>}
                       </TableCell>
                       <TableCell className="text-center">
                         {resultado.status_darf_day_trade ? (
-                          <Badge variant={resultado.status_darf_day_trade === 'Pago' ? 'success' : 'warning'}>
+                          <Badge variant={resultado.status_darf_day_trade === 'Pago' ? 'default' : 'secondary'}>
                             {resultado.status_darf_day_trade}
                           </Badge>
                         ) : <span className="text-muted-foreground">-</span>}
                       </TableCell>
                       <TableCell className="text-center space-x-1">
-                        {resultado.status_darf_swing_trade === 'Pendente' && resultado.darf_swing_trade_valor && resultado.darf_swing_trade_valor > 0 && (
+                        {resultado.status_darf_swing_trade === 'Pendente' && resultado.darf_valor_swing && resultado.darf_valor_swing > 0 && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -307,7 +305,7 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
                             {darfUpdating === `${resultado.mes}-swing` ? "..." : "Pagar ST"} 
                           </Button>
                         )}
-                        {resultado.status_darf_day_trade === 'Pendente' && resultado.darf_day_trade_valor && resultado.darf_day_trade_valor > 0 && (
+                        {resultado.status_darf_day_trade === 'Pendente' && resultado.darf_valor_day && resultado.darf_valor_day > 0 && (
                            <Button
                             variant="outline"
                             size="sm"
@@ -318,8 +316,8 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) { // Destr
                             {darfUpdating === `${resultado.mes}-daytrade` ? "..." : "Pagar DT"}
                           </Button>
                         )}
-                         {!(resultado.status_darf_swing_trade === 'Pendente' && resultado.darf_swing_trade_valor && resultado.darf_swing_trade_valor > 0) &&
-                          !(resultado.status_darf_day_trade === 'Pendente' && resultado.darf_day_trade_valor && resultado.darf_day_trade_valor > 0) &&
+                         {!(resultado.status_darf_swing_trade === 'Pendente' && resultado.darf_valor_swing && resultado.darf_valor_swing > 0) &&
+                          !(resultado.status_darf_day_trade === 'Pendente' && resultado.darf_valor_day && resultado.darf_valor_day > 0) &&
                            <span className="text-muted-foreground text-xs">-</span>
                         }
                       </TableCell>

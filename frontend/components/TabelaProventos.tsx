@@ -8,11 +8,12 @@ import { formatCurrency, formatDate, formatNumber } from '@/lib/utils';
 
 interface TabelaProventosProps {
   data: ProventoRecebidoUsuario[];
+  showValues?: boolean;
 }
 
-type SortableKeys = 'data_ex' | 'dt_pagamento' | 'ticker_acao' | 'tipo_provento' | 'valor_total_recebido';
+type SortableKeys = 'data_ex' | 'dt_pagamento' | 'ticker_acao' | 'tipo' | 'valor_total_recebido';
 
-export function TabelaProventos({ data }: TabelaProventosProps) {
+export function TabelaProventos({ data, showValues = true }: TabelaProventosProps) {
   const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' } | null>({ key: 'dt_pagamento', direction: 'descending' });
 
   const requestSort = (key: SortableKeys) => {
@@ -69,7 +70,7 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
     { key: 'dt_pagamento', label: 'Data Pag.', isSortable: true },
     { key: 'ticker_acao', label: 'Ticker', isSortable: true },
     { label: 'Nome Ação', className: 'hidden lg:table-cell', isSortable: false },
-    { key: 'tipo_provento', label: 'Tipo', isSortable: true },
+    { key: 'tipo', label: 'Tipo', isSortable: true },
     { label: 'Qtd. na Data Ex', className: 'text-right hidden sm:table-cell', isSortable: false },
     { label: 'Valor Unit.', className: 'text-right', isSortable: false },
     { key: 'valor_total_recebido', label: 'Total Recebido', className: 'text-right', isSortable: true },
@@ -127,7 +128,9 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
                 </TableCell>
                 <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm">{formatNumber(provento.quantidade_na_data_ex)}</TableCell>
                 <TableCell className="text-right text-xs sm:text-sm">{formatCurrency(provento.valor_unitario_provento)}</TableCell>
-                <TableCell className="text-right font-semibold text-xs sm:text-sm">{formatCurrency(provento.valor_total_recebido)}</TableCell>
+                <TableCell className="text-right font-semibold text-xs sm:text-sm">
+                  {showValues ? formatCurrency(provento.valor_total_recebido) : '***'}
+                </TableCell>
                 <TableCell className="text-center text-xs sm:text-sm">
                   {status === 'Recebido' ? (
                     <span className="inline-block px-2 py-1 rounded bg-green-100 text-green-700 text-xs">Recebido</span>
@@ -146,21 +149,21 @@ export function TabelaProventos({ data }: TabelaProventosProps) {
               <div className="flex flex-col md:flex-row w-full text-base md:text-lg font-bold divide-y md:divide-y-0 md:divide-x divide-gray-200">
                 <div className="flex-1 flex flex-col items-center py-3 px-2">
                   <span className="text-muted-foreground text-xs md:text-sm mb-1">Recebidos</span>
-                  <span className="text-green-700">{formatCurrency(uniqueData.filter(p => {
+                  <span className="text-green-700">{showValues ? formatCurrency(uniqueData.filter(p => {
                     const now = new Date();
                     return p.dt_pagamento && new Date(p.dt_pagamento) <= now;
-                  }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0))}</span>
+                  }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0)) : '***'}</span>
                 </div>
                 <div className="flex-1 flex flex-col items-center py-3 px-2">
                   <span className="text-muted-foreground text-xs md:text-sm mb-1">A Receber</span>
-                  <span className="text-blue-700">{formatCurrency(uniqueData.filter(p => {
+                  <span className="text-blue-700">{showValues ? formatCurrency(uniqueData.filter(p => {
                     const now = new Date();
                     return !p.dt_pagamento || new Date(p.dt_pagamento) > now;
-                  }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0))}</span>
+                  }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0)) : '***'}</span>
                 </div>
                 <div className="flex-1 flex flex-col items-center py-3 px-2">
                   <span className="text-muted-foreground text-xs md:text-sm mb-1">Total</span>
-                  <span>{formatCurrency(uniqueData.reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0))}</span>
+                  <span>{showValues ? formatCurrency(uniqueData.reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0)) : '***'}</span>
                 </div>
               </div>
             </TableCell>

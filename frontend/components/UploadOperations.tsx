@@ -257,7 +257,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
               O ticker <b>{warningTickers.join(", ")}</b> não foi encontrado na nossa base de dados, mas nossa equipe já está analisando os motivos.
             </span>
           ),
-          variant: "warning",
+          variant: "default",
         });
       }
     } catch (error: any) {
@@ -293,7 +293,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
               O ticker <b>{warningTickers.join(", ")}</b> não foi encontrado na nossa base de dados, mas nossa equipe já está analisando os motivos.
             </span>
           ),
-          variant: "warning",
+          variant: "default",
         });
         setError("");
         setFile(null);

@@ -32,8 +32,7 @@ export default function ModalRendimentoExclusivo({ open, onClose, rendimento }: 
           ticker={rendimento.ticker}
           empresa={rendimento.empresa}
           cnpj={rendimento.cnpj}
-          valor={rendimento.valor_total_jcp_no_ano ?? rendimento.valor_total_recebido_no_ano}
-          valor_ir_descontado={rendimento.valor_ir_descontado}
+          valor={rendimento.valor_total_jcp_no_ano ?? rendimento.valor_total_recebido_no_ano ?? 0}
         />
       </div>
     </div>

@@ -6,7 +6,7 @@ export function useProventosPorAcaoAno(ticker: string, ano: number) {
   // Busca o resumo de proventos por ação para o usuário logado
   const { data, error, isLoading } = useSWR<ResumoProventoPorAcaoAPI[]>(
     ticker && ano ? `/usuario/proventos/resumo_por_acao/${ano}` : null,
-    async (url) => {
+    async (url: string) => {
       // Busca todos os proventos por ação do usuário para o ano
       const response = await api.get<ResumoProventoPorAcaoAPI[]>("/usuario/proventos/resumo_por_acao/", { params: { ano } });
       return response.data;

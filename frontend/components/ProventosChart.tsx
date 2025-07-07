@@ -52,7 +52,7 @@ export function ProventosChart({ data, chartType = "bar" }: ProventosChartProps)
   const tipoData = React.useMemo(() => {
     const map = new Map<string, number>();
     data.forEach((item) => {
-      map.set(item.tipo_provento, (map.get(item.tipo_provento) || 0) + (item.valor_total_recebido || 0));
+      map.set(item.tipo, (map.get(item.tipo) || 0) + (item.valor_total_recebido || 0));
     });
     return Array.from(map.entries()).map(([tipo, total]) => ({ tipo, total }));
   }, [data]);
@@ -81,8 +81,8 @@ export function ProventosChart({ data, chartType = "bar" }: ProventosChartProps)
           <BarChart data={monthlyData} margin={{ top: 16, right: 24, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-            <YAxis tickFormatter={formatCurrency} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={formatCurrency} />
+            <YAxis tickFormatter={(value) => formatCurrency(value)} tick={{ fontSize: 12 }} />
+            <Tooltip formatter={(value) => [formatCurrency(Number(value)), "Total"]} />
             <Legend />
             <Bar dataKey="total" name="Total Recebido">
               {monthlyData.map((entry, idx) => (
@@ -97,8 +97,8 @@ export function ProventosChart({ data, chartType = "bar" }: ProventosChartProps)
           <LineChart data={monthlyData} margin={{ top: 16, right: 24, left: 0, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
-            <YAxis tickFormatter={formatCurrency} tick={{ fontSize: 12 }} />
-            <Tooltip formatter={formatCurrency} />
+            <YAxis tickFormatter={(value) => formatCurrency(value)} tick={{ fontSize: 12 }} />
+            <Tooltip formatter={(value) => [formatCurrency(Number(value)), "Total"]} />
             <Legend />
             <Line type="monotone" dataKey="total" stroke="#22c55e" strokeWidth={3} dot={{ r: 4 }} name="Total Recebido" />
             {monthlyData.map((entry, idx) => (
@@ -123,7 +123,7 @@ export function ProventosChart({ data, chartType = "bar" }: ProventosChartProps)
                 <Cell key={`cell-${idx}`} fill={COLORS[idx % COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip formatter={formatCurrency} />
+            <Tooltip formatter={(value) => [formatCurrency(Number(value)), "Total"]} />
             <Legend />
           </PieChart>
         </ResponsiveContainer>
@@ -133,9 +133,9 @@ export function ProventosChart({ data, chartType = "bar" }: ProventosChartProps)
           <h4 className="font-semibold mb-2 text-sm">Por Tipo de Provento</h4>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={tipoData} layout="vertical">
-              <XAxis type="number" hide tickFormatter={formatCurrency} />
+              <XAxis type="number" hide tickFormatter={(value) => formatCurrency(value)} />
               <YAxis dataKey="tipo" type="category" width={80} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={formatCurrency} />
+              <Tooltip formatter={(value) => [formatCurrency(Number(value)), "Total"]} />
               {tipoData.map((entry, idx) => (
                 <Bar key={entry.tipo} dataKey="total" fill={COLORS[idx % COLORS.length]} radius={4} name="Total" />
               ))}
@@ -146,9 +146,9 @@ export function ProventosChart({ data, chartType = "bar" }: ProventosChartProps)
           <h4 className="font-semibold mb-2 text-sm">Por Ação</h4>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={acaoData} layout="vertical">
-              <XAxis type="number" hide tickFormatter={formatCurrency} />
+              <XAxis type="number" hide tickFormatter={(value) => formatCurrency(value)} />
               <YAxis dataKey="ticker" type="category" width={80} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={formatCurrency} />
+              <Tooltip formatter={(value) => [formatCurrency(Number(value)), "Total"]} />
               {acaoData.map((entry, idx) => (
                 <Bar key={entry.ticker} dataKey="total" fill={COLORS[idx % COLORS.length]} radius={4} name="Total" />
               ))}
