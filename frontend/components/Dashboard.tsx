@@ -155,55 +155,65 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-function ProventosTabContent({ showValues }: { showValues: boolean }) {
+function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: boolean; shouldLoad?: boolean }) {
   const [anoSelecionado, setAnoSelecionado] = useState<number | string | undefined>();
   const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
   const [resumoAnualData, setResumoAnualData] = useState<ResumoProventoAnualAPI[]>([]);
-  const [loadingData, setLoadingData] = useState(true); // Cobre carregamento inicial de resumos e detalhados
+  const [loadingData, setLoadingData] = useState(false); // Não carrega automaticamente
+  const [hasLoadedInitialData, setHasLoadedInitialData] = useState(false); // Track se já carregou
 
   const [resumoMensal, setResumoMensal] = useState<ResumoProventoMensalAPI[]>([]);
   const [loadingGraficoMensal, setLoadingGraficoMensal] = useState(false);
 
   const [proventosDetalhados, setProventosDetalhados] = useState<ProventoRecebidoUsuario[]>([]);
 
-  useEffect(() => {
-    const fetchInitialData = async () => {
-      setLoadingData(true);
-      try {
-        // Buscar todos os dados em paralelo
-        const [anuaisData, detalhadosData] = await Promise.all([
-          getResumoProventosAnuaisUsuario(),
-          getProventosUsuarioDetalhado()
-        ]);
+  // Função para carregar dados iniciais apenas quando necessário
+  const loadInitialData = async () => {
+    if (hasLoadedInitialData || !shouldLoad) return; // Evita recarregar e só carrega se shouldLoad for true
+    
+    setLoadingData(true);
+    try {
+      // Buscar todos os dados em paralelo
+      const [anuaisData, detalhadosData] = await Promise.all([
+        getResumoProventosAnuaisUsuario(),
+        getProventosUsuarioDetalhado()
+      ]);
 
-        setResumoAnualData(anuaisData);
-        setProventosDetalhados(detalhadosData.map(mapProventoRecebidoBackendToFrontend));
+      setResumoAnualData(anuaisData);
+      setProventosDetalhados(detalhadosData.map(mapProventoRecebidoBackendToFrontend));
 
-        if (anuaisData.length > 0) {
-          const anos = anuaisData.map(item => item.ano).sort((a, b) => b - a);
-          setAnosDisponiveis(anos);
-          setAnoSelecionado("todos"); // Definir "Todos" como padrão
-        } else {
-          const anoAtual = new Date().getFullYear();
-          setAnosDisponiveis([anoAtual, anoAtual -1, anoAtual -2, anoAtual -3, anoAtual -4]);
-          setAnoSelecionado("todos"); // Definir "Todos" como padrão
-        }
-      } catch (error) {
-        console.error("Erro ao buscar dados iniciais de proventos:", error);
+      if (anuaisData.length > 0) {
+        const anos = anuaisData.map(item => item.ano).sort((a, b) => b - a);
+        setAnosDisponiveis(anos);
+        setAnoSelecionado("todos"); // Definir "Todos" como padrão
+      } else {
         const anoAtual = new Date().getFullYear();
         setAnosDisponiveis([anoAtual, anoAtual -1, anoAtual -2, anoAtual -3, anoAtual -4]);
         setAnoSelecionado("todos"); // Definir "Todos" como padrão
-      } finally {
-        setLoadingData(false);
       }
-    };
-    fetchInitialData();
-  }, []);
+      setHasLoadedInitialData(true);
+    } catch (error) {
+      console.error("Erro ao buscar dados iniciais de proventos:", error);
+      const anoAtual = new Date().getFullYear();
+      setAnosDisponiveis([anoAtual, anoAtual -1, anoAtual -2, anoAtual -3, anoAtual -4]);
+      setAnoSelecionado("todos"); // Definir "Todos" como padrão
+      setHasLoadedInitialData(true);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  // Carregar dados apenas na primeira renderização do componente E quando shouldLoad for true
+  useEffect(() => {
+    if (shouldLoad) {
+      loadInitialData();
+    }
+  }, [shouldLoad]);
 
   useEffect(() => {
-    if (anoSelecionado === undefined) {
+    if (anoSelecionado === undefined || !shouldLoad) {
       setResumoMensal([]);
       return;
     }
@@ -252,7 +262,7 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
       }
     };
     fetchResumoMensal();
-  }, [anoSelecionado, anosDisponiveis]);
+  }, [anoSelecionado, anosDisponiveis, shouldLoad]);
 
   // Cálculos para resumo do ano selecionado ou todos os anos
   const resumoDoAnoSelecionado = anoSelecionado === "todos" ? null : resumoAnualData.find(r => r.ano === anoSelecionado);
@@ -482,7 +492,61 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
 
   return (
     <div>
-      {/* Seletor de Ano Moderno */}
+      {!shouldLoad ? (
+        <div className="space-y-8">
+          {/* Seletor de Ano Skeleton */}
+          <div className="bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-2xl p-6 border border-blue-200 shadow-lg">
+            <div className="flex items-center justify-center">
+              <div className="flex items-center gap-4">
+                <div className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+                  <span className="text-white text-xl">📅</span>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">
+                    Escolha o ano
+                  </label>
+                  <div className="px-4 py-3 border-2 border-blue-300 rounded-xl w-[160px] bg-white shadow-sm flex items-center justify-center">
+                    <span className="text-gray-500">Aguardando...</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Cards Skeleton */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="bg-white rounded-xl shadow-lg border p-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-3 flex-1">
+                    <div className="h-4 bg-gray-200 rounded w-3/4 animate-pulse"></div>
+                    <div className="h-8 bg-gray-200 rounded w-1/2 animate-pulse"></div>
+                    <div className="h-3 bg-gray-200 rounded w-full animate-pulse"></div>
+                  </div>
+                  <div className="h-12 w-12 bg-gray-200 rounded-full animate-pulse"></div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Mensagem de Lazy Loading */}
+          <div className="text-center p-12 bg-white rounded-2xl shadow-xl border border-gray-200">
+            <div className="max-w-md mx-auto">
+              <div className="h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-blue-600 text-2xl">💤</span>
+              </div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">
+                Dados não carregados
+              </h3>
+              <p className="text-gray-600">
+                Os dados de proventos serão carregados automaticamente quando você acessar a aba "Proventos" para otimizar a performance do dashboard.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Seletor de Ano Moderno */}
       <div className="mb-8 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-2xl p-6 border border-blue-200 shadow-lg">
         <div className="flex items-center justify-center">
           <div className="flex items-center gap-4">
@@ -1030,6 +1094,8 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
         <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Resumo Geral por Ação (Todos os Períodos)</h2>
         <p className="text-gray-600 dark:text-gray-400">Resumo de proventos por ação (todos os períodos) será exibido aqui.</p>
       </div> */}
+        </>
+      )}
     </div>
   );
 }
@@ -1070,7 +1136,8 @@ export function Dashboard() {
 
   useEffect(() => {
     fetchDashboardData();
-    fetchTotalDividendosRecebidos();
+    // Remover fetchTotalDividendosRecebidos do carregamento inicial
+    // será carregado apenas quando acessar a aba Proventos
   }, [])
 
   // Sync activeTab with pathname
@@ -1082,6 +1149,13 @@ export function Dashboard() {
     }
     // "taxes", "history" are local tabs
   }, [pathname]);
+
+  // Carregar dados de proventos apenas quando necessário (lazy loading)
+  useEffect(() => {
+    if (activeTab === "overview" && totalDividendosRecebidos === 0) {
+      fetchTotalDividendosRecebidos();
+    }
+  }, [activeTab, totalDividendosRecebidos]);
 
   const fetchDashboardData = async () => {
     try {
@@ -1336,12 +1410,13 @@ export function Dashboard() {
                   carteira={data.carteira} 
                   resultados={data.resultados} 
                   operacoes={data.operacoes} 
+                  operacoesFechadas={data.operacoes_fechadas}
                   totalDividendosRecebidos={totalDividendosRecebidos} 
                   showValues={showValues}
                 />
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <PortfolioEquityChart />
-                  <Last12MonthsEarningsChart />
+                  <PortfolioEquityChart shouldLoad={activeTab === "overview"} />
+                  <Last12MonthsEarningsChart shouldLoad={activeTab === "overview"} />
                 </div>
                 <StockTable carteira={data.carteira} onUpdate={handleDataUpdate} showValues={showValues} />
                 <OperacoesEncerradasTable 
@@ -1367,7 +1442,7 @@ export function Dashboard() {
                   </p>
                 </div>
                 
-                <ProventosTabContent showValues={showValues} />
+                <ProventosTabContent showValues={showValues} shouldLoad={activeTab === "proventos"} />
               </div>
             )}
             {activeTab === "extrato" && (

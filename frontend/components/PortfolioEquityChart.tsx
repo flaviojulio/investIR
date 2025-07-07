@@ -50,12 +50,13 @@ const periodOptions: { label: string; value: PeriodOption }[] = [
   { label: "Total", value: "all" },
 ]
 
-export function PortfolioEquityChart() {
+export function PortfolioEquityChart({ shouldLoad = true }: { shouldLoad?: boolean }) {
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodOption>("12m")
   const [chartData, setChartData] = useState<EquityDataPoint[]>([])
   const [profitability, setProfitability] = useState<ProfitabilityDetails | null>(null) // Use ProfitabilityDetails type
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hasLoaded, setHasLoaded] = useState(false)
 
   const calculateDates = (period: PeriodOption): { startDate: string, endDate: string, frequency: "daily" | "monthly" } => {
     const today = endOfDay(new Date());
@@ -93,6 +94,8 @@ export function PortfolioEquityChart() {
   }
 
   useEffect(() => {
+    if (!shouldLoad) return;
+
     let didCancel = false;
     const fetchData = async () => {
       setIsLoading(true)
@@ -116,6 +119,7 @@ export function PortfolioEquityChart() {
               setChartData(refined.equity_curve)
               setProfitability(refined.profitability)
               setIsLoading(false)
+              setHasLoaded(true)
               return;
             }
           }
@@ -131,6 +135,7 @@ export function PortfolioEquityChart() {
           setProfitability(null)
         } finally {
           setIsLoading(false)
+          setHasLoaded(true)
         }
         return;
       }
@@ -150,11 +155,12 @@ export function PortfolioEquityChart() {
         setProfitability(null)
       } finally {
         setIsLoading(false)
+        setHasLoaded(true)
       }
     }
     fetchData()
     return () => { didCancel = true }
-  }, [selectedPeriod])
+  }, [selectedPeriod, shouldLoad])
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);

@@ -26,18 +26,22 @@ const formatMonthName = (monthStr: string): string => {
   return date.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
 };
 
-const Last12MonthsEarningsChart: React.FC = () => {
+const Last12MonthsEarningsChart: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = true }) => {
   const [data, setData] = useState<MonthlyEarnings[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState<boolean>(false);
 
   useEffect(() => {
+    if (!shouldLoad || hasLoaded) return;
+
     const fetchData = async () => {
       setLoading(true);
       setError(null);
       try {
         const earningsData = await getSumEarningsLast12Months();
         setData(earningsData);
+        setHasLoaded(true);
       } catch (err) {
         if (err instanceof Error) {
           setError(err.message);
@@ -51,7 +55,7 @@ const Last12MonthsEarningsChart: React.FC = () => {
     };
 
     fetchData();
-  }, []);
+  }, [shouldLoad, hasLoaded]);
 
   // Encontrar o maior valor de provento
   const maxEarnings = Math.max(...data.map(item => typeof item.total_earnings === 'number' ? item.total_earnings : 0));

@@ -1223,7 +1223,7 @@ def calcular_resultados_por_ticker_service(usuario_id: int, ticker: str) -> Resu
 
     if item_carteira_atual:
         quantidade_atual = item_carteira_atual.get("quantidade", 0)
-        preco_medio_atual = item_carterio_atual.get("preco_medio", 0.0)
+        preco_medio_atual = item_carteira_atual.get("preco_medio", 0.0)
         custo_total_atual = item_carteira_atual.get("custo_total", 0.0)
 
     # 2. Historical Aggregates from Operations
