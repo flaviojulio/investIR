@@ -1362,7 +1362,6 @@ def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Usu
     Lista os proventos que um usuário recebeu, buscando da tabela persistida.
     """
     proventos_db_dicts = obter_proventos_recebidos_por_usuario_db(usuario_id)
-    logging.warning(f"[DEBUG] usuario_id={usuario_id} - proventos_db_dicts (raw): {proventos_db_dicts}")
 
     proventos_validados = []
     for p_db_dict in proventos_db_dicts:

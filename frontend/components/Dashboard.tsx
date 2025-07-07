@@ -123,7 +123,6 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
           getProventosUsuarioDetalhado()
         ]);
 
-        console.log("API Response (proventosDetalhados raw):", JSON.stringify(detalhadosData, null, 2));
         setResumoAnualData(anuaisData);
         setProventosDetalhados(detalhadosData.map(mapProventoRecebidoBackendToFrontend));
 
@@ -206,9 +205,6 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
     .sort((a,b) => b.value - a.value) ?? [];
 
   const proventosFiltradosParaTabela = useMemo(() => {
-    console.log("Filtering proventos. anoSelecionado:", anoSelecionado);
-    console.log("proventosDetalhados before filter:", JSON.stringify(proventosDetalhados, null, 2));
-
     // If no year is selected, the original logic was to return proventosDetalhados.
     // This might mean anoSelecionado is always expected to be set.
     const filteredResult = (() => { // IIFE to contain existing logic
@@ -278,8 +274,6 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
         });
     })(); // End of IIFE
 
-    console.log("proventosFiltradosParaTabela after year filter:", JSON.stringify(filteredResult, null, 2));
-
     if (!searchTerm) {
       return filteredResult;
     }
@@ -307,7 +301,6 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
         field && field.toString().toLowerCase().includes(lowerSearchTerm)
       );
     });
-    console.log("proventosFiltradosParaTabela after search filter:", JSON.stringify(searchedResult, null, 2));
     return searchedResult;
 
   }, [proventosDetalhados, anoSelecionado, searchTerm]);
@@ -1084,6 +1077,12 @@ export function Dashboard() {
                     Histórico completo de suas operações abertas e fechadas
                   </p>
                 </div>
+                
+                {/* DEBUG: Log dos dados enviados ao ExtratoTabContent */}
+                {console.log("🔍 [Dashboard] Dados enviados ao ExtratoTabContent:", {
+                  operacoesAbertas: data.operacoes,
+                  operacoesFechadas: data.operacoes_fechadas
+                })}
                 
                 <ExtratoTabContent
                   operacoesAbertas={data.operacoes}

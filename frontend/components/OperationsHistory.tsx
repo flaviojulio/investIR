@@ -52,7 +52,6 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
 
   // Mapeia todas as operações recebidas
   const operacoesPadronizadas = operacoes.map(mapOperacaoCampos);
-  console.log('Operacoes padronizadas:', operacoesPadronizadas);
 
   const filteredOperations = operacoesPadronizadas.filter((op) => {
     const lowerSearch = (searchTerm || "").toLowerCase();
@@ -80,9 +79,6 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       matchesDate
     ) && (filterOperation === "all" || operation === filterOperation);
   })
-
-  console.log('Operacoes recebidas (props):', operacoes);
-  console.log('Operacoes filtradas:', filteredOperations);
 
   const handleDelete = async (operationId: number) => {
     if (!confirm("Tem certeza que deseja excluir esta operação?")) return
@@ -268,7 +264,6 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                 </TableRow>
               ) : (
                 sortedOperations.map((operacao) => {
-                  console.log('Renderizando operacao:', operacao);
                   const total = operacao.quantity * operacao.price
                   const totalWithFees = operacao.operation === "buy" ? total + operacao.fees : total - operacao.fees
 

@@ -79,7 +79,6 @@ export default function ProventosPage() {
           getProventosUsuarioDetalhado()
         ]);
 
-        console.log("API Response (proventosDetalhados raw):", JSON.stringify(detalhadosData, null, 2));
         setResumoAnualData(anuaisData);
         setProventosDetalhados(detalhadosData);
 
@@ -162,9 +161,6 @@ export default function ProventosPage() {
     .sort((a,b) => b.value - a.value) ?? [];
 
   const proventosFiltradosParaTabela = useMemo(() => {
-    console.log("Filtering proventos. anoSelecionado:", anoSelecionado);
-    console.log("proventosDetalhados before filter:", JSON.stringify(proventosDetalhados, null, 2));
-
     // If no year is selected, the original logic was to return proventosDetalhados.
     // This might mean anoSelecionado is always expected to be set.
     const filteredResult = (() => { // IIFE to contain existing logic
@@ -234,7 +230,6 @@ export default function ProventosPage() {
         });
     })(); // End of IIFE
 
-    console.log("proventosFiltradosParaTabela after filter:", JSON.stringify(filteredResult, null, 2));
     return filteredResult;
 
   }, [proventosDetalhados, anoSelecionado]);

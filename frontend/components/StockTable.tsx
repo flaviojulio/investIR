@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog" // AlertDialog components
 import { Input } from "@/components/ui/input" // Input for form
 import { Label } from "@/components/ui/label" // Label for form
-import { TrendingUp, TrendingDown, Edit, Trash2, ArrowUp, ArrowDown, ChevronsUpDown } from "lucide-react" // Edit, Trash2, and Sort icons
+import { TrendingUp, TrendingDown, Edit, Trash2, ArrowUp, ArrowDown, ChevronsUpDown, PiggyBank, Calculator, Target, Activity, Coins, Wallet, TrendingUpDown, DollarSign } from "lucide-react" // Edit, Trash2, and Sort icons
 import Link from 'next/link'; // Import Link for navigation
 import type { CarteiraItem } from "@/lib/types"
 import { api } from "@/lib/api" // For API calls
@@ -52,15 +52,6 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
   useEffect(() => {
     // Augment items with values needed for sorting/filtering, especially calculated ones
     const augmentedCarteira = carteira.map(item => {
-      // Log para item vendido, ANTES de qualquer cálculo local com item.custo_total ou item.preco_medio
-      if (item.quantidade < 0) {
-        console.log("StockTable: Item Vendido Detalhes (useEffect)", {
-          ticker: item.ticker,
-          quantidade: item.quantidade,
-          custo_total_backend: item.custo_total,
-          preco_medio_backend: item.preco_medio
-        });
-      }
       const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
       const valorInicial = item.custo_total; // Para comprados: custo. Para vendidos: valor recebido na venda.
       
@@ -258,13 +249,27 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
   if (carteira.length === 0) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle>Carteira Atual</CardTitle>
-          <CardDescription>Suas posições em ações</CardDescription>
+        <CardHeader className="pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-gradient-to-br from-gray-100 to-slate-100 rounded-full flex items-center justify-center text-2xl border-2 border-gray-200">
+              <Coins className="h-6 w-6 text-gray-500" />
+            </div>
+            <div>
+              <CardTitle className="text-xl font-bold text-gray-800">
+                Carteira de Investimentos
+              </CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                Suas posições em ações
+              </CardDescription>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="text-center py-8 text-muted-foreground">
-            <p>Nenhuma posição encontrada na carteira.</p>
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-50 to-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 border-2 border-blue-200">
+              <Wallet className="h-8 w-8 text-blue-500" />
+            </div>
+            <p className="text-lg font-medium">Nenhuma posição encontrada na carteira.</p>
             <p className="text-sm mt-2">Adicione operações para ver suas posições aqui.</p>
           </div>
         </CardContent>
@@ -274,9 +279,20 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Carteira Atual</CardTitle>
-        <CardDescription>Suas posições em ações com resultados atuais (simulados).</CardDescription>
+      <CardHeader className="pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-12 h-12 bg-gradient-to-br from-emerald-100 to-green-100 rounded-full flex items-center justify-center text-2xl border-2 border-emerald-200">
+            <Wallet className="h-10 w-10 text-emerald-600 drop-shadow" />
+          </div>
+          <div>
+            <CardTitle className="text-xl font-bold text-gray-800 flex items-center gap-2">
+              Carteira de Investimentos
+            </CardTitle>
+            <CardDescription className="text-sm text-muted-foreground">
+              Suas posições em ações com resultados atuais (simulados)
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="mb-4">
@@ -433,6 +449,107 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
             </TableBody>
           </Table>
         </div>
+        
+        {/* Portfolio Summary Cards */}
+        <div className="mt-6 grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {(() => {
+            // Calculate portfolio summary
+            const totalInvested = processedCarteira.reduce((sum, item) => sum + Math.abs(item.custo_total), 0);
+            const totalCurrentValue = processedCarteira.reduce((sum, item) => {
+              const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
+              return sum + Math.abs(item.quantidade * currentPrice);
+            }, 0);
+            const totalResult = totalCurrentValue - totalInvested;
+            const totalResultPercentage = totalInvested > 0 ? (totalResult / totalInvested) * 100 : 0;
+            const activePositions = processedCarteira.length;
+
+            return (
+              <>
+                {/* Valor Total Inicial */}
+                <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-blue-600">Valor Total Inicial</p>
+                        <p className="text-xl font-bold text-blue-700">
+                          {showValues ? formatCurrency(totalInvested) : '***'}
+                        </p>
+                        <p className="text-xs text-blue-500 mt-1">Valor investido total</p>
+                      </div>
+                      <PiggyBank className="h-8 w-8 text-blue-500" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Valor Total da Carteira */}
+                <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-purple-600">Valor Total da Carteira</p>
+                        <p className="text-xl font-bold text-purple-700">
+                          {showValues ? formatCurrency(totalCurrentValue) : '***'}
+                        </p>
+                        <p className="text-xs text-purple-500 mt-1">Valor atual no mercado</p>
+                      </div>
+                      <Calculator className="h-8 w-8 text-purple-500" />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Resultado Total */}
+                <Card className={`bg-gradient-to-br ${totalResult >= 0 ? 'from-green-50 to-green-100 border-green-200' : 'from-red-50 to-red-100 border-red-200'}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className={`text-sm font-medium ${totalResult >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          Resultado Total
+                        </p>
+                        <div className="flex items-center gap-1">
+                          {totalResult >= 0 ? <TrendingUp className="h-4 w-4 text-green-600" /> : <TrendingDown className="h-4 w-4 text-red-600" />}
+                          <p className={`text-xl font-bold ${totalResult >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                            {showValues ? (
+                              <span>
+                                {totalResult >= 0 ? '+' : ''}{formatCurrency(totalResult)}
+                              </span>
+                            ) : '***'}
+                          </p>
+                        </div>
+                        <p className={`text-xs mt-1 ${totalResult >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                          {showValues ? (
+                            <span>
+                              {totalResult >= 0 ? '+' : ''}{totalResultPercentage.toFixed(2)}%
+                            </span>
+                          ) : '***'}
+                        </p>
+                      </div>
+                      <Target className={`h-8 w-8 ${totalResult >= 0 ? 'text-green-500' : 'text-red-500'}`} />
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Posições Ativas */}
+                <Card className="bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-600">Posições Ativas</p>
+                        <p className="text-xl font-bold text-slate-700">
+                          {activePositions}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          {activePositions === 1 ? 'ação na carteira' : 'ações na carteira'}
+                        </p>
+                      </div>
+                      <Activity className="h-8 w-8 text-slate-500" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            );
+          })()}
+        </div>
+
         <div className="mt-4 text-xs text-muted-foreground">
           * Preços atuais são simulados para demonstração. Em produção, seriam obtidos de uma API de cotações.
         </div>

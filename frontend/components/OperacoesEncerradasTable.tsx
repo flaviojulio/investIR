@@ -322,7 +322,12 @@ export default function OperacoesEncerradasTable({
 
   const totalResultadoOperacoes = processedOperacoes.reduce((acc, op) => acc + op.resultado, 0);
 
-  if (!processedOperacoes || processedOperacoes.length === 0) { // Changed to check processedOperacoes
+  // Separar cenários: sem dados originais vs sem resultados filtrados
+  const hasOriginalData = operacoesFechadas && operacoesFechadas.length > 0;
+  const hasFilteredResults = processedOperacoes && processedOperacoes.length > 0;
+
+  // Quando não há dados originais
+  if (!hasOriginalData) {
     return (
       <Card className="border-0 shadow-sm">
         <CardHeader className="pb-4">
@@ -332,18 +337,61 @@ export default function OperacoesEncerradasTable({
           </CardDescription>
         </CardHeader>
         <CardContent>
-         <div className="w-full sm:w-80 my-4"> {/* Search input even when no data */}
-            <Input
-              placeholder="Pesquisar por ação, data ou resultado..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="h-10 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-            />
-          </div>
           <div className="text-center py-12">
             <Building2 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 text-lg">Nenhuma operação encerrada encontrada {searchTerm ? "para o filtro atual" : ""}</p>
+            <p className="text-gray-500 text-lg">Nenhuma operação encerrada encontrada</p>
             <p className="text-gray-400 text-sm mt-2">Suas operações finalizadas aparecerão aqui</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // Quando há dados originais mas filtro não retornou resultados
+  if (!hasFilteredResults) {
+    return (
+      <Card className="border-0 shadow-sm bg-white">
+        <CardHeader className="border-b border-gray-100 pb-6">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="text-xl font-semibold text-gray-900">Operações Encerradas</CardTitle>
+              <CardDescription className="text-gray-600 mt-1">
+                Histórico de suas operações de compra e venda finalizadas.
+              </CardDescription>
+              
+              {/* Mostrar card zerado quando não há resultados filtrados */}
+              <div className="mt-4 inline-flex items-center px-3 py-2 rounded-full shadow-sm border-2 transition-colors duration-200 bg-gray-50 border-gray-200 text-gray-700">
+                <DollarSign className="h-4 w-4 mr-2 text-gray-500" />
+                <span className="text-xs font-medium opacity-75 uppercase tracking-wide mr-2">Resultado Total:</span>
+                <span className="text-sm font-bold text-gray-600">
+                  {formatCurrency(0)}
+                </span>
+              </div>
+            </div>
+            
+            <div className="w-full sm:w-80">
+              <Input
+                placeholder="Pesquisar por ação, data ou resultado..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="h-10 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-12">
+            <Building2 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500 text-lg">Nenhuma operação encontrada para o filtro atual</p>
+            <p className="text-gray-400 text-sm mt-2">
+              Tente ajustar os termos de pesquisa ou 
+              <button 
+                onClick={() => setSearchTerm("")} 
+                className="text-blue-600 hover:text-blue-700 ml-1 underline"
+              >
+                limpar filtro
+              </button>
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -354,17 +402,27 @@ export default function OperacoesEncerradasTable({
     <>
     <Card className="border-0 shadow-sm bg-white">
       <CardHeader className="border-b border-gray-100 pb-6">
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4"> {/* Changed items-center to items-start */}
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="flex-1">
             <CardTitle className="text-xl font-semibold text-gray-900">Operações Encerradas</CardTitle>
             <CardDescription className="text-gray-600 mt-1">
-              {processedOperacoes.length} operação{processedOperacoes.length !== 1 ? 'ões' : ''} encontrada{processedOperacoes.length !== 1 ? 's' : ''}
-              {searchTerm && operacoesFechadas.length !== processedOperacoes.length ? ` (de ${operacoesFechadas.length} no total)` : ''}
+              Histórico de suas operações de compra e venda finalizadas.
             </CardDescription>
-            <p className={`mt-2 text-sm font-semibold ${totalResultadoOperacoes >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              Resultado Total (Filtrado): {formatCurrency(totalResultadoOperacoes)}
-            </p>
+            
+            {/* Card de Resultado Total */}
+            <div className={`mt-4 inline-flex items-center px-3 py-2 rounded-full shadow-sm border-2 transition-colors duration-200 ${
+              totalResultadoOperacoes >= 0 
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+                : 'bg-red-50 border-red-200 text-red-900'
+            }`}>
+              <DollarSign className={`h-4 w-4 mr-2 ${totalResultadoOperacoes >= 0 ? 'text-emerald-600' : 'text-red-600'}`} />
+              <span className="text-xs font-medium opacity-75 uppercase tracking-wide mr-2">Resultado Total:</span>
+              <span className={`text-sm font-bold ${totalResultadoOperacoes >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                {formatCurrency(totalResultadoOperacoes)}
+              </span>
+            </div>
           </div>
+          
           <div className="w-full sm:w-80">
             <Input
               placeholder="Pesquisar por ação, data ou resultado..."

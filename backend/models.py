@@ -1,6 +1,6 @@
 from datetime import date, datetime
 import re # Added
-from pydantic import BaseModel, Field, field_validator, ConfigDict, EmailStr # Ensured ConfigDict and added field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict, EmailStr # Updated for Pydantic 2.x
 from typing import Optional, Any, List, Dict # Ensured Any, List, Dict
 
 # Modelos para autenticação
@@ -29,7 +29,9 @@ class UsuarioResponse(BaseModel):
     data_criacao: Optional[datetime] = None
     data_atualizacao: Optional[datetime] = None
     ativo: Optional[bool] = True    
-    model_config = ConfigDict(from_attributes=True)
+    
+    class Config:
+        from_attributes = True
 
 class LoginRequest(BaseModel):
     username_ou_email: str

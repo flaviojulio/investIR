@@ -201,3 +201,14 @@ export interface BemDireitoAcao {
   valor_total_data_base: number;
   valor_total_ano_anterior?: number; // Novo campo: valor total em 31/12 do ano anterior
 }
+
+// Tipos para Eventos Corporativos
+export interface EventoCorporativoInfo {
+  id: number;
+  id_acao: number;
+  evento: string;
+  data_aprovacao?: string | null; // ISO date string or null
+  data_registro?: string | null;
+  data_ex?: string | null;
+  razao?: string | null;
+}

@@ -64,10 +64,24 @@ const COLORS = {
     dot: "bg-amber-500"
   },
   bonificacao: {
-    bg: "bg-purple-50",
-    border: "border-purple-200",
-    text: "text-purple-700",
-    icon: "text-purple-600",
+    bg: "bg-gradient-to-r from-purple-50 to-indigo-50",
+    border: "border-purple-300",
+    text: "text-purple-800",
+    icon: "text-purple-700",
+    dot: "bg-purple-500"
+  },
+  desdobramento: {
+    bg: "bg-gradient-to-r from-purple-50 to-indigo-50",
+    border: "border-purple-300",
+    text: "text-purple-800",
+    icon: "text-purple-700",
+    dot: "bg-purple-500"
+  },
+  agrupamento: {
+    bg: "bg-gradient-to-r from-purple-50 to-indigo-50",
+    border: "border-purple-300",
+    text: "text-purple-800",
+    icon: "text-purple-700",
     dot: "bg-purple-500"
   },
   default: {
@@ -150,17 +164,50 @@ const LABELS = {
 
 function formatCurrency(value: number | undefined | null): string {
   if (!value) return "R$ 0,00";
+  // Se for menor que 0,01, mostrar até 3 casas decimais
+  if (value > 0 && value < 0.01) {
+    return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 3, maximumFractionDigits: 3 });
+  }
   return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function formatDate(dateStr: string): string {
   if (!dateStr) return "";
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("pt-BR", {
+  
+  // DEBUG: Log para investigar problema de datas
+  const originalDateStr = dateStr;
+  
+  // Garantir que a data seja tratada como local (não UTC)
+  // Se a string estiver no formato YYYY-MM-DD, adicionar horário para evitar problemas de timezone
+  const dateToFormat = dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`;
+  const date = new Date(dateToFormat);
+  
+  // Verificar se a data é válida
+  if (isNaN(date.getTime())) {
+    console.warn("formatDate: Data inválida recebida:", dateStr);
+    return dateStr; // Retorna a string original se não conseguir parsear
+  }
+  
+  const formatted = date.toLocaleDateString("pt-BR", {
     day: "2-digit",
-    month: "short",
+    month: "long",
     year: "numeric"
   }).replace(".", "");
+  
+  // DEBUG: Log para comparar entrada e saída
+  if (originalDateStr.includes('2025-06-12') || originalDateStr.includes('2025-03-20')) {
+    console.log("🔍 [formatDate] Debug:", {
+      input: originalDateStr,
+      dateToFormat: dateToFormat,
+      dateObject: date.toISOString(),
+      formatted: formatted,
+      getDate: date.getDate(),
+      getMonth: date.getMonth() + 1,
+      getFullYear: date.getFullYear()
+    });
+  }
+  
+  return formatted;
 }
 
 function getColorScheme(operation: string) {
@@ -173,6 +220,40 @@ function getIcon(operation: string) {
 
 function getOperationLabel(operation: string) {
   return LABELS[operation?.toLowerCase() as keyof typeof LABELS] || operation;
+}
+
+// Função para gerar explicação humanizada dos eventos corporativos
+function getEventoExplicacao(tipoEvento: string, razao: string, ticker: string): string {
+  if (!razao || !razao.includes(':')) {
+    return `A empresa ${ticker} realizou um evento corporativo que afetou suas ações.`;
+  }
+
+  const [numerador, denominador] = razao.split(':').map(n => parseInt(n.trim()));
+  const tipo = tipoEvento?.toLowerCase();
+
+  if (tipo === 'desdobramento') {
+    if (denominador > numerador) {
+      // Ex: 1:4 = cada 1 ação vira 4
+      const multiplicador = denominador / numerador;
+      return `🎯 Suas ações foram multiplicadas! Cada ${numerador} ação que você tinha se transformou em ${denominador} ações. Resultado: você ficou com ${multiplicador}x mais ações, mas o preço de cada uma diminuiu proporcionalmente. Seu patrimônio total permanece o mesmo.`;
+    } else {
+      // Ex: 4:1 = cada 4 ações vira 1 (tecnicamente um agrupamento)
+      const divisor = numerador / denominador;
+      return `📉 Suas ações foram reagrupadas. Cada ${numerador} ações que você tinha se transformaram em ${denominador} ação${denominador > 1 ? 's' : ''}. Resultado: você ficou com menos ações (÷${divisor}), mas o preço de cada uma aumentou proporcionalmente.`;
+    }
+  }
+  
+  if (tipo === 'agrupamento') {
+    const divisor = numerador / denominador;
+    return `📉 Suas ações foram reagrupadas. Cada ${numerador} ações que você tinha se transformaram em ${denominador} ação${denominador > 1 ? 's' : ''}. Resultado: você ficou com menos ações físicas (÷${divisor}), mas o preço de cada uma aumentou proporcionalmente. Seu patrimônio total permanece o mesmo.`;
+  }
+  
+  if (tipo === 'bonificacao' || tipo === 'bonificação') {
+    const percentual = (numerador / denominador * 100).toFixed(1);
+    return `🎁 Você ganhou ações gratuitas! Para cada ${denominador} ações que você possuía, recebeu ${numerador} ação${numerador > 1 ? 's' : ''} adicional${numerador > 1 ? 's' : ''} de presente da empresa. Isso representa um bônus de ${percentual}% sobre sua posição.`;
+  }
+
+  return `A empresa ${ticker} realizou um evento corporativo na proporção ${razao} que pode ter alterado a quantidade ou características de suas ações.`;
 }
 
 // Função para distribuir items de forma balanceada na timeline
@@ -443,7 +524,11 @@ function ClosedPositionCard({ item, idx }: ClosedPositionCardProps) {
                           // Função para formatar a data no padrão dd/mm/aaaa
                           function formatDateBR(dateStr: string) {
                             if (!dateStr) return '';
-                            const d = new Date(dateStr);
+                            
+                            // Garantir que a data seja tratada como local (não UTC)
+                            const dateToFormat = dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`;
+                            const d = new Date(dateToFormat);
+                            
                             if (isNaN(d.getTime())) return dateStr;
                             const day = String(d.getDate()).padStart(2, '0');
                             const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -484,6 +569,7 @@ function OperationCard({ item, idx }: OperationCardProps) {
   const colors = getColorScheme(item.operation);
   const isRight = item.visualBranch === "right";
   const isProvento = ["dividend", "jcp", "rendimento", "bonificacao"].includes(item.operation?.toLowerCase());
+  const isEventoCorporativo = ["desdobramento", "agrupamento", "bonificacao"].includes(item.operation?.toLowerCase());
   
   return (
     <motion.div
@@ -505,41 +591,116 @@ function OperationCard({ item, idx }: OperationCardProps) {
         <motion.div
           whileHover={{ scale: 1.02 }}
           className={`
-            ${colors.bg} ${colors.border} border rounded-lg p-3 shadow-sm
+            ${isEventoCorporativo 
+              ? "bg-gradient-to-br from-purple-500 to-indigo-600 border-purple-400 text-white shadow-lg" 
+              : `${colors.bg} ${colors.border} border`
+            } rounded-lg p-3 shadow-sm
             hover:shadow-md transition-all duration-200
           `}
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
-              <div className={colors.icon}>
+              <div className={isEventoCorporativo ? "text-white" : colors.icon}>
                 {getIcon(item.operation)}
               </div>
-              <span className={`text-sm font-medium ${colors.text}`}>
+              <span className={`text-sm font-medium ${isEventoCorporativo ? "text-white" : colors.text}`}>
                 {getOperationLabel(item.operation)}
               </span>
             </div>
-            <span className="text-xs text-gray-500 font-mono">
+            <span className={`text-xs font-mono ${isEventoCorporativo ? "text-white/80" : "text-gray-500"}`}>
               {formatDate(item.date)}
             </span>
           </div>
           
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="font-semibold text-gray-900 text-sm">
+              <span className={`font-semibold text-sm ${isEventoCorporativo ? "text-white" : "text-gray-900"}`}>
                 {item.ticker}
               </span>
-              {item.nome_acao && (
-                <span className="text-xs text-gray-500 truncate ml-2 max-w-24">
+              {/* Não exibir nome_acao para eventos corporativos para evitar repetição */}
+              {!isEventoCorporativo && item.nome_acao && (
+                <span className="text-xs truncate ml-2 max-w-24 text-gray-500">
                   {item.nome_acao}
                 </span>
               )}
             </div>
             
             <div className="flex items-center justify-between">
-              {isProvento ? (
-                <span className="text-lg font-bold text-gray-900">
-                  {formatCurrency(item.price)}
-                </span>
+              {isEventoCorporativo ? (
+                <div className="flex-1 mt-2">
+                  {/* Layout específico para eventos corporativos */}
+                  <div className="space-y-3">
+                    {/* Proporção em destaque */}
+                    {(item as any).razao && (
+                      <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 border border-white/30">
+                        <div className="text-sm font-bold text-white">
+                          📊 Proporção: {(item as any).razao}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Explicação humanizada em destaque */}
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3 border border-white/30">
+                      <div className="text-sm font-medium text-white mb-1">
+                        💡 O que isso significa:
+                      </div>
+                      <div className="text-sm text-white/95 leading-relaxed">
+                        {getEventoExplicacao(item.operation, (item as any).razao || '', item.ticker)}
+                      </div>
+                    </div>
+                    
+                    {/* Removido texto de data para eventos corporativos, pois já está no título do card */}
+                  </div>
+                </div>
+              ) : isProvento ? (
+                <div className="flex-1">
+                  {/* Mostrar valor total recebido se disponível - DESTAQUE PRINCIPAL */}
+                  {(item as any).valor_total_recebido ? (
+                    <div className="space-y-2">
+                      {/* VALOR TOTAL RECEBIDO - DESTAQUE MÁXIMO */}
+                      <div className="bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-emerald-300 rounded-lg p-3 shadow-sm">
+                        <div className="text-2xl font-bold text-emerald-800 mb-1">
+                          {formatCurrency((item as any).valor_total_recebido)}
+                        </div>
+                        <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">
+                          💰 TOTAL RECEBIDO
+                        </div>
+                      </div>
+                      
+                      {/* Detalhes do cálculo - visual secundário */}
+                      <div className="bg-gray-50 px-2 py-1 rounded text-xs text-gray-500 border-l-2 border-gray-300">
+                        {item.quantity > 0 ? (
+                          <>
+                            <span className="font-medium">Cálculo:</span> {item.quantity} ações × {formatCurrency(item.price)}
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-medium">Valor unitário:</span> {formatCurrency(item.price)}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {/* Valor unitário como principal quando não há total */}
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-2">
+                        <div className="text-lg font-bold text-gray-900 mb-1">
+                          {formatCurrency(item.price)}
+                        </div>
+                        <div className="text-xs font-medium text-gray-600">
+                          Valor por ação
+                        </div>
+                      </div>
+                      
+                      {/* Mostrar cálculo se disponível e quantity for válido */}
+                      {item.quantity > 0 && (
+                        <div className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border-l-2 border-gray-300">
+                          <span className="font-medium">Total calculado:</span> {item.quantity} × {formatCurrency(item.price)} = {formatCurrency(item.quantity * item.price)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="text-sm text-gray-700">
                   <span className="font-medium">{item.quantity} ações a </span>
@@ -548,7 +709,7 @@ function OperationCard({ item, idx }: OperationCardProps) {
               )}
             </div>
             
-            {!isProvento && item.quantity && item.price && (
+            {!isProvento && !isEventoCorporativo && item.quantity && item.price && (
               <div className="text-right">
                 <span className="text-xs text-gray-500">Total: </span>
                 <span className="text-sm font-semibold text-gray-900">
@@ -592,6 +753,15 @@ interface Props {
 export default function OperationTimeline({ items = [] }: Props) {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchTerm, setSearchTerm] = useState("");
+
+  // DEBUG: Log dos items recebidos para identificar valores zerados
+  console.log("🔍 [OperationTimeline] Items recebidos:", items);
+  console.log("🔍 [OperationTimeline] Items com valores zerados:", 
+    items.filter(item => 
+      (item.price === 0 || item.price === null || item.price === undefined) ||
+      (item.quantity === 0 || item.quantity === null || item.quantity === undefined)
+    )
+  );
 
   // Filtrar e buscar items
   const filteredItems = useMemo(() => {

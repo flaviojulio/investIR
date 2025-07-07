@@ -6,6 +6,7 @@ import type {
   ResumoProventoMensalAPI,
   ResumoProventoPorAcaoAPI,
   MonthlyEarnings, // Added MonthlyEarnings
+  EventoCorporativoInfo, // Added EventoCorporativoInfo
 } from "./types" // Import the new types
 
 export const api = axios.create({
@@ -134,5 +135,18 @@ export const getSumEarningsLast12Months = async (): Promise<MonthlyEarnings[]> =
       throw new Error(error.response.data.detail || "Falha ao buscar o resumo de proventos dos últimos 12 meses.");
     }
     throw new Error("Erro inesperado ao buscar o resumo de proventos dos últimos 12 meses.");
+  }
+};
+
+// Função para buscar eventos corporativos
+export const getEventosCorporativos = async (): Promise<EventoCorporativoInfo[]> => {
+  try {
+    const response = await api.get<EventoCorporativoInfo[]>("/eventos_corporativos/");
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response) {
+      throw new Error(error.response.data.detail || "Falha ao buscar eventos corporativos.");
+    }
+    throw new Error("Erro inesperado ao buscar eventos corporativos.");
   }
 };

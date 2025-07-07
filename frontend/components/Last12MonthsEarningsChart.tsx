@@ -9,6 +9,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Cell,
 } from 'recharts';
 import { getSumEarningsLast12Months } from '@/lib/api';
 import type { MonthlyEarnings } from '@/lib/types';
@@ -52,15 +53,25 @@ const Last12MonthsEarningsChart: React.FC = () => {
     fetchData();
   }, []);
 
-  const chartData = data.map(item => ({
-    ...item,
-    shortMonth: formatMonthName(item.month),
-    // Ensure total_earnings is a number, default to 0 if not
-    total_earnings: typeof item.total_earnings === 'number' ? item.total_earnings : 0,
-  }));
+  // Encontrar o maior valor de provento
+  const maxEarnings = Math.max(...data.map(item => typeof item.total_earnings === 'number' ? item.total_earnings : 0));
+
+  // Adicionar destaque ao melhor mês
+  const chartData = data.map(item => {
+    const total = typeof item.total_earnings === 'number' ? item.total_earnings : 0;
+    return {
+      ...item,
+      shortMonth: formatMonthName(item.month),
+      total_earnings: total,
+      isBestMonth: total === maxEarnings && maxEarnings > 0,
+    };
+  });
 
   // Calcular o total recebido nos últimos 12 meses
   const totalRecebido = chartData.reduce((acc, item) => acc + (item.total_earnings || 0), 0);
+  
+  // Calcular a média mensal
+  const mediaMensal = chartData.length > 0 ? totalRecebido / chartData.length : 0;
 
   if (loading) {
     return (
@@ -111,8 +122,9 @@ const Last12MonthsEarningsChart: React.FC = () => {
       <CardHeader>
         <CardTitle>Proventos - Últimos 12 Meses</CardTitle>
       </CardHeader>
-      <CardContent className="h-[420px] w-full p-0">
-        <ResponsiveContainer width="100%" height="100%">
+      <CardContent className="w-full p-0">
+        <div className="h-[350px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={chartData}
             margin={{
@@ -137,19 +149,79 @@ const Last12MonthsEarningsChart: React.FC = () => {
               width={80}
             />
             <Tooltip
-              formatter={(value: number) => [formatCurrency(value), "Total Recebido"]}
+              formatter={(value: number, name: string, props: any) => {
+                // Valor, nome, props
+                const { payload } = props;
+                const isBest = payload?.isBestMonth;
+                return [
+                  formatCurrency(value),
+                  `${isBest ? '🏆 Melhor mês! ' : ''}Proventos recebidos`
+                ];
+              }}
+              labelFormatter={(label, payload) => {
+                if (payload && payload.length > 0 && payload[0].payload) {
+                  const { month } = payload[0].payload;
+                  // month está no formato YYYY-MM
+                  if (typeof month === 'string' && month.includes('-')) {
+                    const [yyyy, mm] = month.split('-');
+                    return `${mm}-${yyyy}`;
+                  }
+                  return month || label;
+                }
+                return label;
+              }}
               labelStyle={{ fontWeight: 'bold' }}
               itemStyle={{ color: '#2563eb' }}
               cursor={{ fill: 'rgba(200, 200, 200, 0.2)' }}
+              contentStyle={{
+                backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+              }}
             />
-            {/* Legenda removida */}
-            <Bar dataKey="total_earnings" fill="#2563eb" name="Total Recebido" radius={[4, 4, 0, 0]} />
+            {/* Barra com cores dinâmicas */}
+            <Bar
+              dataKey="total_earnings"
+              name="Total Recebido"
+              radius={[4, 4, 0, 0]}
+              isAnimationActive={true}
+            >
+              {chartData.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={entry.isBestMonth ? '#22c55e' : '#2563eb'} 
+                />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
-        <div className="w-full text-center py-2 font-semibold text-base text-primary">
-          Total de dividendos no período: {formatCurrency(totalRecebido)}
         </div>
       </CardContent>
+      
+      {/* Estatísticas resumidas - movidas para fora do CardContent */}
+      <div className="w-full px-4 py-3 space-y-2 bg-gradient-to-r from-blue-50 to-green-50 border-t rounded-b-lg">
+        <div className="flex justify-between items-center">
+          <div className="text-center flex-1">
+            <div className="text-sm text-gray-600">Total no período</div>
+            <div className="text-lg font-bold text-blue-600">{formatCurrency(totalRecebido)}</div>
+          </div>
+          <div className="w-px h-8 bg-gray-300"></div>
+          <div className="text-center flex-1">
+            <div className="text-sm text-gray-600">Média mensal</div>
+            <div className="text-lg font-bold text-green-600">{formatCurrency(mediaMensal)}</div>
+          </div>
+        </div>
+        
+        {/* Melhor mês */}
+        {maxEarnings > 0 && (
+          <div className="text-center pt-2 border-t border-gray-200">
+            <div className="text-xs text-gray-500">
+              🏆 Melhor mês: <span className="font-semibold text-green-600">{formatCurrency(maxEarnings)}</span>
+            </div>
+          </div>
+        )}
+      </div>
     </Card>
   );
 };
