@@ -920,7 +920,7 @@ export function Dashboard() {
                 Importar Operações B3
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="sm:max-w-7xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Importar Operações da B3</DialogTitle>
               </DialogHeader>

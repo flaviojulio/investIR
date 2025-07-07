@@ -1,135 +1,108 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, FileText, CheckCircle, AlertCircle, HelpCircle, UploadCloud, Loader2, Clock } from "lucide-react"
+import { Upload, FileText, CheckCircle, AlertCircle, HelpCircle, UploadCloud, Loader2, Clock, Sparkles } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx"
 
 interface UploadOperationsProps {
   onSuccess: () => void
 }
 
 export function UploadOperations({ onSuccess }: UploadOperationsProps) {
+  const [currentStep, setCurrentStep] = useState(1) // 1: Instruções, 2: Upload, 3: Processando, 4: Sucesso
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
-  const [uploadStarted, setUploadStarted] = useState(false)
-  // Checklist de pré-análise
-  const checklistInitial = [
-    { label: "Validando padrão do arquivo...", status: "pending" },
-    { label: "Estrutura", status: "pending" },
-    { label: "Nomes das colunas", status: "pending" },
-    { label: "Formato dos dados", status: "pending" },
-    { label: "Tamanho do arquivo", status: "pending" },
-  ];
-  const [checklist, setChecklist] = useState(checklistInitial);
-
-  // Checklist animado de progresso (para upload)
-  const progressStepsInitial = [
-    { label: "Enviando arquivo...", status: "pending" },
-    { label: "Processando operações...", status: "pending" },
-    { label: "Validando dados...", status: "pending" },
-    { label: "Tratando eventos corporativos...", status: "pending" },
-    { label: "Calculando dividendos...", status: "pending" },
-    { label: "Montando a carteira...", status: "pending" },
-    { label: "Calculando operações encerradas...", status: "pending" },
-    { label: "Finalizando", status: "pending" },
-  ];
-  const [progressSteps, setProgressSteps] = useState(progressStepsInitial);
-
-  // Remover duplicidade de definição de progressStepsInitial abaixo
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [operationsCount, setOperationsCount] = useState(0)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile) {
-      const isJson = selectedFile.type === "application/json" || selectedFile.name.endsWith(".json");
-      const isExcel = selectedFile.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || selectedFile.type === "application/vnd.ms-excel" || selectedFile.name.endsWith(".xlsx") || selectedFile.name.endsWith(".xls");
-      if (isJson || isExcel) {
-        setFile(selectedFile);
-        setError("");
-        setChecklist(checklistInitial);
-        runChecklistValidation(selectedFile, isExcel);
-      } else {
-        setError("Por favor, selecione um arquivo Excel válido exportado da B3.");
-        setFile(null);
-        setChecklist(checklistInitial);
-      }
-    }
-  };
+  // Estados de validação
+  const [validationSteps, setValidationSteps] = useState([
+    { label: "Verificando arquivo", status: "pending", description: "Confirmando se é um arquivo válido da B3" },
+    { label: "Analisando estrutura", status: "pending", description: "Verificando colunas e formato dos dados" },
+    { label: "Contando operações", status: "pending", description: "Identificando quantas operações serão importadas" },
+  ])
 
-  // Dropzone handlers
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFile = e.dataTransfer.files[0];
-      if (droppedFile.type === "application/json" || droppedFile.name.endsWith(".json")) {
-        setFile(droppedFile);
-        setError("");
-        setChecklist(checklistInitial);
-        runChecklistValidation(droppedFile);
-      } else {
-        setError("Por favor, selecione um arquivo JSON válido.");
-        setFile(null);
-        setChecklist(checklistInitial);
-      }
-    }
-  };
-  // Validação do checklist de pré-análise
-  const runChecklistValidation = async (selectedFile: File, isExcel: boolean = false) => {
-    setChecklist(checklistInitial);
-    const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-    let steps = [...checklistInitial];
+  // Estados de processamento
+  const [processingSteps, setProcessingSteps] = useState([
+    { label: "Importando operações", status: "pending", description: "Salvando suas operações no banco de dados..." },
+    { label: "Calculando posições", status: "pending", description: "Atualizando quantidade e preço médio de cada ação..." },
+    { label: "Processando proventos", status: "pending", description: "Identificando dividendos e bonificações recebidas..." },
+    { label: "Organizando dados", status: "pending", description: "Preparando relatórios e dashboard atualizado..." },
+  ])
 
-    // 1. Validando padrão do arquivo...
-    steps[0].status = "loading";
-    setChecklist([...steps]);
-    await delay(600);
-    let jsonData: any = null;
-    let jsonParseError = false;
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  const handleFileSelect = (selectedFile: File) => {
+    const isExcel = selectedFile.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || 
+                   selectedFile.type === "application/vnd.ms-excel" || 
+                   selectedFile.name.endsWith(".xlsx") || 
+                   selectedFile.name.endsWith(".xls")
+    const isJson = selectedFile.type === "application/json" || selectedFile.name.endsWith(".json")
+    
+    if (isExcel || isJson) {
+      setFile(selectedFile)
+      setError('')
+      setCurrentStep(2)
+      setTimeout(() => runValidation(selectedFile, isExcel), 500)
+    } else {
+      setError('Por favor, selecione um arquivo Excel (.xlsx) ou JSON válido exportado da B3')
+    }
+  }
+
+  const runValidation = async (selectedFile: File, isExcel: boolean = false) => {
+    const steps = [...validationSteps]
+    
+    // Etapa 1: Verificando arquivo (timing mais longo)
+    steps[0].status = 'loading'
+    setValidationSteps([...steps])
+    
+    await new Promise(resolve => setTimeout(resolve, 1500)) // Aumentado de 800ms
+    
+    let jsonData: any = null
     try {
       if (isExcel) {
-        // Lê arquivo Excel
-        const data = await selectedFile.arrayBuffer();
-        const workbook = XLSX.read(data, { type: "array" });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
+        const data = await selectedFile.arrayBuffer()
+        const workbook = XLSX.read(data, { type: "array" })
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+        jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" })
       } else {
-        const text = await selectedFile.text();
-        jsonData = JSON.parse(text);
+        const text = await selectedFile.text()
+        jsonData = JSON.parse(text)
       }
-      steps[0].status = "done";
+      steps[0].status = 'done'
     } catch (e) {
-      steps[0].status = "error";
-      setChecklist([...steps]);
-      return;
+      steps[0].status = 'error'
+      setValidationSteps([...steps])
+      setError('Arquivo inválido. Por favor, verifique se é um arquivo Excel ou JSON válido.')
+      return
     }
-    setChecklist([...steps]);
+    setValidationSteps([...steps])
 
-    // 2. Estrutura (meramente visual)
-    steps[1].status = "loading";
-    setChecklist([...steps]);
-    await delay(500);
-    steps[1].status = "done";
-    setChecklist([...steps]);
-
-    // 3. Nomes das colunas
-    steps[2].status = "loading";
-    setChecklist([...steps]);
-    await delay(700);
+    // Etapa 2: Analisando estrutura (timing mais longo)
+    steps[1].status = 'loading'
+    setValidationSteps([...steps])
+    await new Promise(resolve => setTimeout(resolve, 1200)) // Aumentado de 700ms
+    
     const expectedColumns = [
       "Data do Negócio",
-      "Tipo de Movimentação",
+      "Tipo de Movimentação", 
       "Mercado",
       "Prazo/Vencimento",
       "Instituição",
@@ -137,362 +110,501 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
       "Quantidade",
       "Preço",
       "Valor"
-    ];
-    let columnsOk = false;
+    ]
+    
+    let columnsOk = false
     if (Array.isArray(jsonData) && jsonData.length > 0 && typeof jsonData[0] === "object") {
-      const keys = Object.keys(jsonData[0]);
-      columnsOk = expectedColumns.every(col => keys.includes(col));
+      const keys = Object.keys(jsonData[0])
+      columnsOk = expectedColumns.every(col => keys.includes(col))
     }
-    steps[2].status = columnsOk ? "done" : "error";
-    setChecklist([...steps]);
-    if (!columnsOk) return;
-
-    // 4. Formato dos dados (meramente visual)
-    steps[3].status = "loading";
-    setChecklist([...steps]);
-    await delay(500);
-    steps[3].status = "done";
-    setChecklist([...steps]);
-
-    // 5. Tamanho do arquivo
-    steps[4].status = "loading";
-    setChecklist([...steps]);
-    await delay(500);
-    if (selectedFile.size > 2 * 1024 * 1024) {
-      steps[4].status = "error";
-    } else {
-      steps[4].status = "done";
+    
+    if (!columnsOk) {
+      steps[1].status = 'error'
+      setValidationSteps([...steps])
+      setError('Estrutura do arquivo incompatível. Verifique se está usando o arquivo correto da B3.')
+      return
     }
-    setChecklist([...steps]);
-  };
+    
+    steps[1].status = 'done'
+    setValidationSteps([...steps])
 
-  // ...existing code...
-
-  // Função para simular progresso animado (mais parecido com o checklist de carregamento do arquivo)
-  const animateProgress = async () => {
-    // Tempos semelhantes ao checklist de pré-análise, mas para mais etapas
-    const stepDurations = [600, 500, 700, 600, 600, 600, 700, 500]; // ms para cada etapa
-    for (let i = 0; i < progressStepsInitial.length; i++) {
-      setProgressSteps(prev => prev.map((step, idx) =>
-        idx === i ? { ...step, status: "loading" } : idx < i ? { ...step, status: "done" } : { ...step, status: "pending" }
-      ));
-      await new Promise(res => setTimeout(res, stepDurations[i]));
-      setProgressSteps(prev => prev.map((step, idx) =>
-        idx === i ? { ...step, status: "done" } : step
-      ));
-    }
-    // Garante que todos fiquem com visto ao final
-    setProgressSteps(prev => prev.map(step => ({ ...step, status: "done" })));
-  };
+    // Etapa 3: Contando operações (timing mais longo)
+    steps[2].status = 'loading'
+    setValidationSteps([...steps])
+    await new Promise(resolve => setTimeout(resolve, 1000)) // Aumentado de 600ms
+    
+    setOperationsCount(jsonData.length)
+    steps[2].status = 'done'
+    setValidationSteps([...steps])
+  }
 
   const handleUpload = async () => {
-    if (!file) return;
-    setLoading(true);
-    setUploadStarted(true);
-    setError("");
-    setProgressSteps(progressSteps.map(step => ({ ...step, status: "pending" })));
+    if (!file) return
+    
+    setLoading(true)
+    setCurrentStep(3)
+    setError("")
+    
+    // Animação do progresso
+    const animateProgress = async () => {
+      const stepDurations = [2500, 2000, 1800, 1500] // Tempos mais longos para melhor UX
+      for (let i = 0; i < processingSteps.length; i++) {
+        setProcessingSteps(prev => prev.map((step, idx) =>
+          idx === i ? { ...step, status: "loading" } : idx < i ? { ...step, status: "done" } : step
+        ))
+        await new Promise(resolve => setTimeout(resolve, stepDurations[i]))
+        setProcessingSteps(prev => prev.map((step, idx) =>
+          idx === i ? { ...step, status: "done" } : step
+        ))
+      }
+    }
+    
     try {
-      animateProgress(); // Inicia animação do checklist
+      // Esperar a animação terminar antes de fazer o upload real
+      await animateProgress()
 
-      // Detecta se é Excel
-      const isExcel = file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || file.type === "application/vnd.ms-excel" || file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
-      let formData = new FormData();
+      const isExcel = file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || 
+                     file.type === "application/vnd.ms-excel" || 
+                     file.name.endsWith(".xlsx") || 
+                     file.name.endsWith(".xls")
+      
+      let formData = new FormData()
+      
       if (isExcel) {
-        // Converte Excel para JSON, cria Blob e envia como arquivo
-        const data = await file.arrayBuffer();
-        const workbook = XLSX.read(data, { type: "array" });
-        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" });
-        const jsonBlob = new Blob([JSON.stringify(jsonData)], { type: "application/json" });
-        // Nomeia o arquivo como .json para o backend reconhecer
-        formData.append("file", jsonBlob, file.name.replace(/\.(xlsx|xls)$/i, ".json"));
+        const data = await file.arrayBuffer()
+        const workbook = XLSX.read(data, { type: "array" })
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" })
+        const jsonBlob = new Blob([JSON.stringify(jsonData)], { type: "application/json" })
+        formData.append("file", jsonBlob, file.name.replace(/\.(xlsx|xls)$/i, ".json"))
       } else {
-        // Envia JSON original
-        formData.append("file", file);
+        formData.append("file", file)
       }
 
       const response = await api.post("/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
-      });
+      })
 
-      let toastDescription = response.data.mensagem;
-      let warningTickers: string[] = [];
-      // Se vier um array de erros de validação, filtra os "não encontrado na base" como warning
-      if (Array.isArray(response.data.mensagem)) {
-        const warnings: string[] = [];
-        const outros: string[] = [];
-        response.data.mensagem.forEach((err: any) => {
-          const msg = typeof err === 'string' ? err : (err.msg || JSON.stringify(err));
-          const match = msg.match(/ticker\s*"([A-Z0-9]+)"\s*n[aã]o encontrado/i);
-          if (match) {
-            warnings.push(match[1]);
-          } else {
-            outros.push(msg);
-          }
-        });
-        warningTickers = warnings;
-        toastDescription = outros.length > 0 ? (
-          <ul className="list-disc list-inside text-xs">
-            {outros.map((msg, idx) => <li key={idx}>{msg}</li>)}
-          </ul>
-        ) : "Operação realizada com sucesso.";
-      }
-      toast({
-        title: "Sucesso!",
-        description: toastDescription,
-      });
+      // Mostrar tela de sucesso - usuário controla quando sair
+      setCurrentStep(4)
 
-      setFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-      onSuccess();
-
-      // Exibe warning amigável se houver tickers não encontrados
-      if (warningTickers.length > 0) {
-        toast({
-          title: "Aviso",
-          description: (
-            <span>
-              O ticker <b>{warningTickers.join(", ")}</b> não foi encontrado na nossa base de dados, mas nossa equipe já está analisando os motivos.
-            </span>
-          ),
-          variant: "default",
-        });
-      }
     } catch (error: any) {
-      let errorMessage = error.response?.data?.detail || "Erro ao fazer upload do arquivo";
-      let warningTickers: string[] = [];
-      let outros: string[] = [];
-      // Trata tanto string quanto array de detalhes
-      if (Array.isArray(error.response?.data?.detail)) {
-        error.response.data.detail.forEach((err: any) => {
-          const msg = typeof err === 'string' ? err : (err.msg || JSON.stringify(err));
-          const match = msg.match(/ticker\s*([A-Z0-9]+)\s*n[aã]o encontrado/i);
-          if (match) {
-            warningTickers.push(match[1]);
-          } else {
-            outros.push(msg);
-          }
-        });
-      } else if (typeof errorMessage === 'string') {
-        // Trata string simples
-        const match = errorMessage.match(/ticker\s*([A-Z0-9]+)\s*n[aã]o encontrado/i);
-        if (match) {
-          warningTickers.push(match[1]);
-        } else {
-          outros.push(errorMessage);
-        }
-      }
-      // Se só houver warnings, não bloqueia o upload
-      if (warningTickers.length > 0 && outros.length === 0) {
-        toast({
-          title: "Aviso",
-          description: (
-            <span>
-              O ticker <b>{warningTickers.join(", ")}</b> não foi encontrado na nossa base de dados, mas nossa equipe já está analisando os motivos.
-            </span>
-          ),
-          variant: "default",
-        });
-        setError("");
-        setFile(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-        onSuccess();
-      } else {
-        // Se houver outros erros, exibe normalmente
-        setError(outros.length > 0 ? outros.join("\n") : (typeof errorMessage === 'string' ? errorMessage : ''));
-        toast({
-          title: "Erro",
-          description: outros.length > 0 ? (
-            <ul className="list-disc list-inside text-xs">
-              {outros.map((msg, idx) => <li key={idx}>{msg}</li>)}
-            </ul>
-          ) : errorMessage,
-          variant: "destructive",
-        });
-      }
+      const errorMessage = error.response?.data?.detail || "Erro ao fazer upload do arquivo"
+      setError(errorMessage)
+      toast({
+        title: "Erro",
+        description: errorMessage,
+        variant: "destructive",
+      })
+      setCurrentStep(2) // Volta para a etapa de upload
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }  
+  }
 
-  const exampleData = [
-    {
-      date: "2025-01-10",
-      ticker: "ITUB4",
-      operation: "buy",
-      quantity: 1000,
-      price: 19.0,
-      fees: 2.0,
-    },
-    {
-      date: "2025-01-15",
-      ticker: "ITUB4",
-      operation: "sell",
-      quantity: 500,
-      price: 20.5,
-      fees: 1.5,
-    },
-  ]
+  const resetUpload = () => {
+    setCurrentStep(1)
+    setFile(null)
+    setError('')
+    setOperationsCount(0)
+    setValidationSteps(validationSteps.map(s => ({ ...s, status: 'pending' })))
+    setProcessingSteps(processingSteps.map(s => ({ ...s, status: 'pending' })))
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
 
-  return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-blue-700">
-            <UploadCloud className="h-6 w-6 text-blue-500" />
-            Importar Operações
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <HelpCircle className="h-4 w-4 ml-2 text-gray-400 cursor-pointer" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <span>
-                  Arraste um arquivo JSON ou clique para selecionar.
-                  <br />
-                  <a href="/template.json" className="underline text-blue-700">
-                    Baixar template
-                  </a>
-                </span>
-              </TooltipContent>
-            </Tooltip>
-          </CardTitle>
-          <CardDescription>Importe suas operações de forma rápida e segura.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {/* Se upload não começou, mostra dropzone e checklist de arquivo */}
-          {!uploadStarted && (
-            <>
-              <div
-                className="border-2 border-dashed border-blue-400 bg-blue-50 rounded-lg p-6 flex flex-col items-center cursor-pointer hover:bg-blue-100 transition"
-                onClick={() => fileInputRef.current?.click()}
-                onDrop={handleDrop}
-                onDragOver={(e) => e.preventDefault()}
-              >
-                <Upload className="h-10 w-10 text-blue-400 mb-2" />
-                <span className="text-blue-700 font-medium">
-                  Arraste o arquivo aqui ou clique para selecionar
-                </span>
-                <Input
-                  ref={fileInputRef}
-                  id="file"
-                  type="file"
-                  accept=".json,.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
-                  className="hidden"
-                  onChange={handleFileSelect}
-                />
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const droppedFile = e.dataTransfer.files[0]
+    if (droppedFile) {
+      handleFileSelect(droppedFile)
+    }
+  }
+
+  // Passo 1: Instruções e Preparação
+  if (currentStep === 1) {
+    return (
+      <div className="w-full">
+        
+        {/* Header compacto */}
+        <div className="text-center mb-6">
+          <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-3">
+            <UploadCloud className="h-6 w-6 text-white" />
+          </div>
+          <h1 className="text-xl font-bold text-gray-800 mb-2">Importar Operações da B3</h1>
+          <p className="text-gray-600 text-sm">Importe todas suas operações de uma vez só, de forma simples e segura</p>
+        </div>
+
+        {/* Cards de Instrução Lado a Lado */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+          
+          {/* Como Funciona */}
+          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4">
+            <h2 className="text-lg font-bold text-blue-900 mb-3 flex items-center gap-2">
+              <span>🚀</span> Como funciona?
+            </h2>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-bold">1</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-blue-900 text-sm mb-1">Baixe da B3</h3>
+                  <p className="text-xs text-blue-700">Acesse o site da B3 e baixe o extrato das suas operações em Excel</p>
+                </div>
               </div>
+              
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-bold">2</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-blue-900 text-sm mb-1">Envie Aqui</h3>
+                  <p className="text-xs text-blue-700">Arraste o arquivo ou clique para selecionar. É rápido e seguro!</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-bold">3</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-blue-900 text-sm mb-1">Pronto!</h3>
+                  <p className="text-xs text-blue-700">Sua carteira será atualizada automaticamente com todas as operações</p>
+                </div>
+              </div>
+            </div>
+          </div>
 
-              {file && (
-                <>
-                  <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
-                    <FileText className="h-4 w-4 text-green-600" />
-                    <span className="text-sm text-green-800">{file.name}</span>
-                    <span className="ml-2 px-2 py-0.5 rounded bg-blue-100 text-blue-700 text-xs">
-                      {file.name.endsWith('.xlsx') || file.name.endsWith('.xls') ? 'Excel' : 'JSON'}
-                    </span>
-                    <CheckCircle className="h-4 w-4 text-green-600 ml-auto" />
-                  </div>
-                  {/* Checklist de pré-análise do arquivo */}
-                  <div className="mt-3 space-y-2">
-                    {checklist.map((step, idx) => (
-                      <div
-                        key={idx}
-                        className={
-                          `flex items-center gap-2 p-3 rounded-lg border ` +
-                          (step.status === "done"
-                            ? "bg-green-50 border-green-200"
-                            : step.status === "loading"
-                            ? "bg-blue-50 border-blue-200"
-                            : step.status === "error"
-                            ? "bg-red-50 border-red-200"
-                            : "bg-gray-50 border-gray-200")
-                        }
-                      >
-                        {/* Ícone */}
-                        {step.status === "done" && <CheckCircle className="h-4 w-4 text-green-600" />}
-                        {step.status === "loading" && <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />}
-                        {step.status === "pending" && <Clock className="h-4 w-4 text-gray-400" />}
-                        {step.status === "error" && <AlertCircle className="h-4 w-4 text-red-500" />}
-                        {/* Título da etapa */}
-                        <span
-                          className={
-                            `text-sm ` +
-                            (step.status === "done"
-                              ? "text-green-800"
-                              : step.status === "loading"
-                              ? "text-blue-800"
-                              : step.status === "error"
-                              ? "text-red-800"
-                              : "text-gray-700")
-                          }
-                        >
-                          {step.label}
-                          {step.label === "Tamanho do arquivo" && file && (
-                            <span className="ml-2 text-xs">{(file.size / 1024).toLocaleString(undefined, { maximumFractionDigits: 2 })} KB</span>
-                          )}
-                        </span>
-                        {/* Badge de status à direita */}
-                        <span className="ml-auto">
-                          {step.status === "done" && <CheckCircle className="h-4 w-4 text-green-600" />}
-                          {step.status === "loading" && <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />}
-                          {step.status === "pending" && <Clock className="h-4 w-4 text-gray-400" />}
-                          {step.status === "error" && <AlertCircle className="h-4 w-4 text-red-500" />}
-                        </span>
-                      </div>
-                    ))}
-                    {/* Mensagens de erro específicas */}
-                    {checklist[0].status === "error" && (
-                      <div className="text-red-600 text-xs ml-7">Arquivo JSON inválido.</div>
-                    )}
-                    {checklist[2].status === "error" && (
-                      <div className="text-red-600 text-xs ml-7">Nomes das colunas incompatíveis. Use o template disponível.</div>
-                    )}
-                    {checklist[4].status === "error" && (
-                      <div className="text-red-600 text-xs ml-7">O arquivo excede o limite de 2MB.</div>
-                    )}
-                  </div>
-                </>
-              )}
+          {/* Tutorial B3 */}
+          <div className="bg-white rounded-xl border p-4">
+            <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
+              <span>📚</span> Como baixar da B3?
+            </h2>
+            <div className="space-y-3">
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-bold">1</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800 text-sm">Acesse o site da B3</h3>
+                  <p className="text-gray-600 text-xs">Entre em <span className="font-mono bg-gray-200 px-1 rounded">b3.com.br</span> e faça login</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-bold">2</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800 text-sm">Vá em "Extratos e Informes"</h3>
+                  <p className="text-gray-600 text-xs">Procure pela seção de extratos no menu</p>
+                </div>
+              </div>
+              
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-bold">3</span>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800 text-sm">Baixe o "Extrato de Negociação"</h3>
+                  <p className="text-gray-600 text-xs">Escolha o período e baixe em Excel (.xlsx)</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <span className="text-yellow-600 text-sm">💡</span>
+                <div>
+                  <h4 className="font-semibold text-yellow-800 text-xs">Importante</h4>
+                  <p className="text-xs text-yellow-700">
+                    Use sempre o formato Excel (.xlsx). PDFs não funcionam.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-              {error && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
+        {/* Área de Upload */}
+        <div className="bg-white rounded-xl border p-5">
+          <h2 className="text-lg font-bold text-gray-800 mb-4 text-center">Selecione seu arquivo da B3</h2>
+          
+          <div
+            className={`border-3 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${
+              isDragOver 
+                ? 'border-blue-500 bg-blue-50' 
+                : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <Upload className="h-6 w-6 text-blue-500" />
+            </div>
+            
+            <h3 className="text-base font-semibold text-gray-800 mb-2">
+              Arraste seu arquivo aqui
+            </h3>
+            <p className="text-gray-600 mb-4 text-sm">
+              ou clique para selecionar do seu computador
+            </p>
+            
+            <Button className="px-4 py-2">
+              Escolher Arquivo
+            </Button>
+            
+            <p className="text-xs text-gray-500 mt-3">
+              Arquivos Excel (.xlsx) ou JSON • Máximo 5MB
+            </p>
+            
+            <Input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xls,.json"
+              onChange={(e) => e.target.files && handleFileSelect(e.target.files[0])}
+              className="hidden"
+            />
+          </div>
 
-              <Button
-                onClick={handleUpload}
-                disabled={
-                  !file || loading ||
-                  checklist.some((step, idx) => idx <= 4 && step.status !== "done")
-                }
-                className="w-full flex items-center justify-center gap-2"
-              >
-                {loading ? <><Loader2 className="h-4 w-4 animate-spin" /> Processando...</> : <><UploadCloud className="h-4 w-4" /> Fazer Upload</>}
-              </Button>
-            </>
+          {error && (
+            <Alert variant="destructive" className="mt-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
+        </div>
+      </div>
+    )
+  }
 
-          {/* Checklist animado de progresso - só aparece durante upload */}
-          {uploadStarted && loading && (
-            <div className="mt-6 space-y-2">
-              {progressSteps.map((step, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-sm">
-                  {step.status === "done" && <CheckCircle className="h-4 w-4 text-green-600" />}
-                  {step.status === "loading" && <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />}
-                  {step.status === "pending" && <Clock className="h-4 w-4 text-gray-400" />}
-                  <span className={step.status === "done" ? "text-green-700" : step.status === "loading" ? "text-blue-700" : "text-gray-500"}>{step.label}</span>
+  // Passo 2: Validação do Arquivo
+  if (currentStep === 2) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <Card className="shadow-lg">
+          <CardContent className="p-6">
+            
+            {/* Header */}
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                <CheckCircle className="h-6 w-6 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-800">Arquivo Recebido!</h2>
+              <p className="text-gray-600">Estamos verificando se está tudo certo</p>
+            </div>
+
+            {/* Info do Arquivo */}
+            <div className="bg-gray-50 rounded-lg p-4 mb-6 flex items-center gap-4">
+              <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                <FileText className="h-5 w-5 text-green-600" />
+              </div>
+              <div className="flex-1">
+                <h3 className="font-semibold text-gray-800">{file?.name}</h3>
+                <p className="text-sm text-gray-600">{file ? formatFileSize(file.size) : ''}</p>
+              </div>
+              <CheckCircle className="h-5 w-5 text-green-600" />
+            </div>
+
+            {/* Checklist de Validação */}
+            <div className="space-y-3 mb-6">
+              {validationSteps.map((step, index) => (
+                <div key={index} className="flex items-center gap-4 p-4 rounded-lg bg-gray-50">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center">
+                    {step.status === 'pending' && (
+                      <Clock className="h-5 w-5 text-gray-400" />
+                    )}
+                    {step.status === 'loading' && (
+                      <Loader2 className="h-5 w-5 text-blue-500 animate-spin" />
+                    )}
+                    {step.status === 'done' && (
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                    )}
+                    {step.status === 'error' && (
+                      <AlertCircle className="h-5 w-5 text-red-500" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className={`font-medium ${
+                      step.status === 'done' ? 'text-green-800' :
+                      step.status === 'loading' ? 'text-blue-800' : 
+                      step.status === 'error' ? 'text-red-800' : 'text-gray-600'
+                    }`}>
+                      {step.label}
+                      {step.label === "Contando operações" && operationsCount > 0 && (
+                        <span className="ml-2 text-sm">({operationsCount} operações)</span>
+                      )}
+                    </h4>
+                    <p className="text-sm text-gray-500">{step.description}</p>
+                  </div>
                 </div>
               ))}
             </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
+
+            {/* Botões */}
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={resetUpload}
+                className="flex-1"
+              >
+                Escolher Outro Arquivo
+              </Button>
+              
+              <Button
+                onClick={handleUpload}
+                disabled={validationSteps.some(s => s.status !== 'done')}
+                className="flex-1"
+              >
+                {validationSteps.every(s => s.status === 'done') ? 'Importar Operações' : 'Aguarde...'}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Passo 3: Processamento
+  if (currentStep === 3) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <Card className="shadow-lg">
+          <CardContent className="p-6">
+            
+            {/* Header */}
+            <div className="text-center mb-8">
+              <div className="w-16 h-16 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
+                <Loader2 className="h-8 w-8 text-white animate-spin" />
+              </div>
+              <h2 className="text-2xl font-bold text-gray-800">Processando suas operações</h2>
+              <p className="text-gray-600">Isso pode levar alguns minutos, mas vale a pena!</p>
+            </div>
+
+            {/* Progress Steps */}
+            <div className="space-y-4 mb-8">
+              {processingSteps.map((step, index) => (
+                <div key={index} className="flex items-center gap-4">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center">
+                    {step.status === 'pending' && (
+                      <Clock className="h-6 w-6 text-gray-400" />
+                    )}
+                    {step.status === 'loading' && (
+                      <Loader2 className="h-6 w-6 text-blue-500 animate-spin" />
+                    )}
+                    {step.status === 'done' && (
+                      <CheckCircle className="h-6 w-6 text-green-500" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h4 className={`font-semibold ${
+                      step.status === 'done' ? 'text-green-800' :
+                      step.status === 'loading' ? 'text-blue-800' : 'text-gray-600'
+                    }`}>
+                      {step.label}
+                    </h4>
+                    <p className="text-sm text-gray-500">{step.description}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Dica durante processamento */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-blue-500 text-xl">💡</span>
+                <div>
+                  <h4 className="font-semibold text-blue-800">Enquanto processamos...</h4>
+                  <p className="text-sm text-blue-700">
+                    Estamos organizando todas suas operações, calculando sua carteira atual 
+                    e identificando os dividendos que você recebeu. Em alguns instantes 
+                    sua carteira estará completamente atualizada!
+                  </p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Passo 4: Sucesso
+  if (currentStep === 4) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <Card className="shadow-lg">
+          <CardContent className="p-6 text-center">
+            
+            {/* Success Animation */}
+            <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+              <span className="text-white text-3xl">🎉</span>
+            </div>
+            
+            <h2 className="text-3xl font-bold text-gray-800 mb-3">
+              Sucesso! Tudo importado
+            </h2>
+            <p className="text-gray-600 mb-8">
+              Suas operações foram importadas com sucesso. 
+              Sua carteira e histórico estão atualizados!
+            </p>
+
+            {/* Resumo */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
+              <h3 className="font-bold text-green-800 mb-4">O que foi atualizado:</h3>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span>{operationsCount} operações importadas</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span>Carteira atualizada</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span>Dividendos calculados</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                  <span>Impostos organizados</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Ações */}
+            <div className="flex justify-center">
+              <Button
+                onClick={() => {
+                  onSuccess() // Chama onSuccess para fechar modal e atualizar dashboard
+                }}
+                className="px-8 py-3 text-lg flex items-center gap-2"
+                size="lg"
+              >
+                <Sparkles className="h-5 w-5" />
+                Veja a Mágica Acontecer
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  return null
 }
