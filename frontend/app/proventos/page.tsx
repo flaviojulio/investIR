@@ -348,7 +348,7 @@ export default function ProventosPage() {
       </div>
 
       <div className="mb-8"> {/* Pie chart section */}
-        <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Distribuição por Ação ({anoSelecionado || "N/A"})</h2>
+        <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Distribuição por Ação1 ({anoSelecionado || "N/A"})</h2>
         {loadingData ? (
             <Card className="h-[400px] flex items-center justify-center"><CardContent><p>Carregando gráfico de distribuição...</p></CardContent></Card>
         ) : !anoSelecionado ? (

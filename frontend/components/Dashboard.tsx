@@ -7,7 +7,7 @@ import { api, getResumoProventosAnuaisUsuario, getResumoProventosMensaisUsuario,
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff } from "lucide-react" // Added Trophy, Eye, EyeOff
+import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff, Search } from "lucide-react" // Added Trophy, Eye, EyeOff, Search
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import {
@@ -82,16 +82,47 @@ const formatMonthName = (monthStr: string): string => {
   return date.toLocaleString('pt-BR', { month: 'short' }).replace('.', '');
 };
 
+const MODERN_COLORS = {
+  dividendos: {
+    primary: "#2563eb",
+    secondary: "#3b82f6",
+    gradient: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)"
+  },
+  jcp: {
+    primary: "#22c55e",
+    secondary: "#16a34a",
+    gradient: "linear-gradient(135deg, #22c55e 0%, #16a34a 100%)"
+  },
+  outros: {
+    primary: "#fbbf24",
+    secondary: "#f59e0b",
+    gradient: "linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)"
+  }
+};
+
 const BAR_COLORS = {
-  Dividendos: "#2563eb", // azul
-  JCP: "#22c55e",       // verde
-  Outros: "#fbbf24",    // amarelo
+  Dividendos: MODERN_COLORS.dividendos.primary,
+  JCP: MODERN_COLORS.jcp.primary,
+  Outros: MODERN_COLORS.outros.primary,
 };
 
 const PIE_CHART_COLORS = [
-  BAR_COLORS.Dividendos, // azul
-  BAR_COLORS.JCP,        // verde
-  BAR_COLORS.Outros,     // amarelo
+  "url(#pieGradient0)",  // Equivalente ao dividendos
+  "url(#pieGradient1)",  // Equivalente ao JCP
+  "url(#pieGradient2)",  // Equivalente ao outros
+  "url(#pieGradient3)",  // Roxo
+  "url(#pieGradient4)",  // Ciano
+  "url(#pieGradient5)",  // Dourado
+  "url(#pieGradient6)",  // Teal
+  "url(#pieGradient7)",  // Rosa
+  "url(#pieGradient8)",  // Indigo
+];
+
+// Cores sólidas como fallback
+const PIE_CHART_SOLID_COLORS = [
+  MODERN_COLORS.dividendos.primary,
+  MODERN_COLORS.jcp.primary,
+  MODERN_COLORS.outros.primary,
   "#a21caf",            // extra: roxo
   "#0ea5e9",            // extra: ciano
   "#eab308",            // extra: dourado
@@ -100,8 +131,32 @@ const PIE_CHART_COLORS = [
   "#6366f1",            // extra: indigo
 ];
 
+// Componente para tooltip customizado dos gráficos
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-4 rounded-xl shadow-2xl border border-gray-200">
+        <h4 className="font-bold text-gray-800 mb-2">{label}</h4>
+        {payload.map((entry: any, index: number) => (
+          <div key={index} className="flex items-center gap-2 mb-1">
+            <div 
+              className="w-3 h-3 rounded-full" 
+              style={{ backgroundColor: entry.color }}
+            />
+            <span className="text-sm font-medium">{entry.name}:</span>
+            <span className="text-sm font-semibold text-gray-800">
+              {formatCurrency(entry.value)}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
 function ProventosTabContent({ showValues }: { showValues: boolean }) {
-  const [anoSelecionado, setAnoSelecionado] = useState<number | undefined>();
+  const [anoSelecionado, setAnoSelecionado] = useState<number | string | undefined>();
   const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -129,17 +184,17 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
         if (anuaisData.length > 0) {
           const anos = anuaisData.map(item => item.ano).sort((a, b) => b - a);
           setAnosDisponiveis(anos);
-          setAnoSelecionado(anos[0] || new Date().getFullYear());
+          setAnoSelecionado("todos"); // Definir "Todos" como padrão
         } else {
           const anoAtual = new Date().getFullYear();
           setAnosDisponiveis([anoAtual, anoAtual -1, anoAtual -2, anoAtual -3, anoAtual -4]);
-          setAnoSelecionado(anoAtual);
+          setAnoSelecionado("todos"); // Definir "Todos" como padrão
         }
       } catch (error) {
         console.error("Erro ao buscar dados iniciais de proventos:", error);
         const anoAtual = new Date().getFullYear();
         setAnosDisponiveis([anoAtual, anoAtual -1, anoAtual -2, anoAtual -3, anoAtual -4]);
-        setAnoSelecionado(anoAtual);
+        setAnoSelecionado("todos"); // Definir "Todos" como padrão
       } finally {
         setLoadingData(false);
       }
@@ -152,12 +207,43 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
       setResumoMensal([]);
       return;
     }
+    
     const fetchResumoMensal = async () => {
       setLoadingGraficoMensal(true);
       try {
-        const data = await getResumoProventosMensaisUsuario(anoSelecionado);
-        const dataOrdenada = data.sort((a,b) => a.mes.localeCompare(b.mes));
-        setResumoMensal(dataOrdenada);
+        if (anoSelecionado === "todos") {
+          // Para "Todos", agregamos todos os dados mensais disponíveis
+          const todosAnos = anosDisponiveis.length > 0 ? anosDisponiveis : [new Date().getFullYear()];
+          const todosDados = await Promise.all(
+            todosAnos.map(ano => getResumoProventosMensaisUsuario(ano).catch(() => []))
+          );
+          
+          // Agregar dados por ano-mês
+          const dadosAgregados = new Map<string, ResumoProventoMensalAPI>();
+          
+          todosDados.flat().forEach(item => {
+            const chave = item.mes;
+            if (dadosAgregados.has(chave)) {
+              const existente = dadosAgregados.get(chave)!;
+              dadosAgregados.set(chave, {
+                ...existente,
+                total_dividendos: existente.total_dividendos + item.total_dividendos,
+                total_jcp: existente.total_jcp + item.total_jcp,
+                total_outros: existente.total_outros + item.total_outros,
+                total_geral: existente.total_geral + item.total_geral
+              });
+            } else {
+              dadosAgregados.set(chave, { ...item });
+            }
+          });
+          
+          const dataOrdenada = Array.from(dadosAgregados.values()).sort((a,b) => a.mes.localeCompare(b.mes));
+          setResumoMensal(dataOrdenada);
+        } else {
+          const data = await getResumoProventosMensaisUsuario(anoSelecionado as number);
+          const dataOrdenada = data.sort((a,b) => a.mes.localeCompare(b.mes));
+          setResumoMensal(dataOrdenada);
+        }
       } catch (error) {
         console.error(`Erro ao buscar resumo mensal para o ano ${anoSelecionado}:`, error);
         setResumoMensal([]);
@@ -166,15 +252,50 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
       }
     };
     fetchResumoMensal();
-  }, [anoSelecionado]);
+  }, [anoSelecionado, anosDisponiveis]);
 
-  const resumoDoAnoSelecionado = resumoAnualData.find(r => r.ano === anoSelecionado);
-  const totalAnoSelecionado = resumoDoAnoSelecionado?.total_geral ?? 0;
-  const dividendosAnoSelecionado = resumoDoAnoSelecionado?.total_dividendos ?? 0;
-  const jcpAnoSelecionado = resumoDoAnoSelecionado?.total_jcp ?? 0;
+  // Cálculos para resumo do ano selecionado ou todos os anos
+  const resumoDoAnoSelecionado = anoSelecionado === "todos" ? null : resumoAnualData.find(r => r.ano === anoSelecionado);
+  
+  const totalAnoSelecionado = anoSelecionado === "todos" 
+    ? resumoAnualData.reduce((sum, item) => sum + item.total_geral, 0)
+    : resumoDoAnoSelecionado?.total_geral ?? 0;
+    
+  const dividendosAnoSelecionado = anoSelecionado === "todos"
+    ? resumoAnualData.reduce((sum, item) => sum + item.total_dividendos, 0)
+    : resumoDoAnoSelecionado?.total_dividendos ?? 0;
+    
+  const jcpAnoSelecionado = anoSelecionado === "todos"
+    ? resumoAnualData.reduce((sum, item) => sum + item.total_jcp, 0)
+    : resumoDoAnoSelecionado?.total_jcp ?? 0;
 
   let acaoMaiorPagamentoAno: AcaoDetalhadaResumoProventoAPI | null = null;
-  if (resumoDoAnoSelecionado && resumoDoAnoSelecionado.acoes_detalhadas.length > 0) {
+  if (anoSelecionado === "todos") {
+    // Para "Todos", agregar todas as ações de todos os anos
+    const todasAcoes = new Map<string, AcaoDetalhadaResumoProventoAPI>();
+    
+    resumoAnualData.forEach(ano => {
+      ano.acoes_detalhadas.forEach(acao => {
+        if (todasAcoes.has(acao.ticker)) {
+          const existente = todasAcoes.get(acao.ticker)!;
+          todasAcoes.set(acao.ticker, {
+            ...existente,
+            total_recebido_na_acao: existente.total_recebido_na_acao + acao.total_recebido_na_acao,
+            // Agregar detalhes por tipo
+            detalhes_por_tipo: [...existente.detalhes_por_tipo, ...acao.detalhes_por_tipo]
+          });
+        } else {
+          todasAcoes.set(acao.ticker, { ...acao });
+        }
+      });
+    });
+    
+    if (todasAcoes.size > 0) {
+      acaoMaiorPagamentoAno = Array.from(todasAcoes.values()).reduce((max, acao) =>
+        acao.total_recebido_na_acao > max.total_recebido_na_acao ? acao : max
+      );
+    }
+  } else if (resumoDoAnoSelecionado && resumoDoAnoSelecionado.acoes_detalhadas.length > 0) {
     acaoMaiorPagamentoAno = resumoDoAnoSelecionado.acoes_detalhadas.reduce((max, acao) =>
       acao.total_recebido_na_acao > max.total_recebido_na_acao ? acao : max
     );
@@ -196,13 +317,47 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
     Outros: item.total_outros,
   }));
 
-  const dadosGraficoPizzaAcao = resumoDoAnoSelecionado?.acoes_detalhadas
-    .filter(acao => acao.total_recebido_na_acao > 0)
-    .map(acao => ({
-      name: `${acao.ticker} (${acao.nome_acao || 'N/A'})`,
-      value: acao.total_recebido_na_acao,
-    }))
-    .sort((a,b) => b.value - a.value) ?? [];
+  // Dados do gráfico de pizza (ações mais pagadoras)
+  const dadosGraficoPizzaAcao = useMemo(() => {
+    if (anoSelecionado === "todos") {
+      // Para "Todos", agregar todas as ações de todos os anos
+      const todasAcoes = new Map<string, { ticker: string; nome_acao?: string; total_recebido_na_acao: number }>();
+      
+      resumoAnualData.forEach(ano => {
+        ano.acoes_detalhadas.forEach(acao => {
+          if (todasAcoes.has(acao.ticker)) {
+            const existente = todasAcoes.get(acao.ticker)!;
+            todasAcoes.set(acao.ticker, {
+              ...existente,
+              total_recebido_na_acao: existente.total_recebido_na_acao + acao.total_recebido_na_acao
+            });
+          } else {
+            todasAcoes.set(acao.ticker, {
+              ticker: acao.ticker,
+              nome_acao: acao.nome_acao,
+              total_recebido_na_acao: acao.total_recebido_na_acao
+            });
+          }
+        });
+      });
+      
+      return Array.from(todasAcoes.values())
+        .filter(acao => acao.total_recebido_na_acao > 0)
+        .map(acao => ({
+          name: `${acao.ticker} (${acao.nome_acao || 'N/A'})`,
+          value: acao.total_recebido_na_acao,
+        }))
+        .sort((a,b) => b.value - a.value);
+    } else {
+      return resumoDoAnoSelecionado?.acoes_detalhadas
+        .filter(acao => acao.total_recebido_na_acao > 0)
+        .map(acao => ({
+          name: `${acao.ticker} (${acao.nome_acao || 'N/A'})`,
+          value: acao.total_recebido_na_acao,
+        }))
+        .sort((a,b) => b.value - a.value) ?? [];
+    }
+  }, [anoSelecionado, resumoAnualData, resumoDoAnoSelecionado]);
 
   const proventosFiltradosParaTabela = useMemo(() => {
     // If no year is selected, the original logic was to return proventosDetalhados.
@@ -270,7 +425,7 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
             }
 
             const anoEvento = dateObj.getFullYear();
-            return anoEvento === anoSelecionado;
+            return anoSelecionado === "todos" ? true : anoEvento === anoSelecionado;
         });
     })(); // End of IIFE
 
@@ -321,80 +476,41 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
           }
         }
       }
-      return anoEvento === anoSelecionado && dataPagamento && dataPagamento > now;
+      return (anoSelecionado === "todos" || anoEvento === anoSelecionado) && dataPagamento && dataPagamento > now;
     }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0);
   }, [proventosDetalhados, anoSelecionado]);
 
   return (
     <div>
-      {/* Filtro de Ano Melhorado */}
-      <div className="mb-8 p-6 bg-white rounded-xl shadow-lg border border-gray-200 hover:shadow-xl transition-shadow duration-300">
+      {/* Seletor de Ano Moderno */}
+      <div className="mb-8 bg-gradient-to-r from-blue-50 via-purple-50 to-pink-50 rounded-2xl p-6 border border-blue-200 shadow-lg">
         <div className="flex items-center justify-center">
-          <div>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-3 flex-nowrap">
-                <Label htmlFor="select-ano" className="text-sm font-medium text-gray-700 flex items-center gap-2 whitespace-nowrap">                    
-                  <span>Ano:</span>
-                </Label>
-                <Select
-                  value={anoSelecionado ? String(anoSelecionado) : ""}
-                  onValueChange={(value) => setAnoSelecionado(value ? Number(value) : undefined)}
-                  disabled={loadingData || anosDisponiveis.length === 0}
-                >
-                  <SelectTrigger id="select-ano" className="px-4 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all w-full min-w-[120px]">
-                    <SelectValue placeholder="Selecione o ano" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {anosDisponiveis.map((ano) => (
-                      <SelectItem key={ano} value={String(ano)}>
-                        {ano}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+          <div className="flex items-center gap-4">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+              <span className="text-white text-xl">📅</span>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Insights Rápidos */}
-      <div className="mb-10 bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl shadow-lg p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="h-8 w-1 bg-gradient-to-b from-purple-500 to-pink-500 rounded-full"></div>
-          <h2 className="text-xl font-bold text-purple-800 flex items-center gap-2">
-            <span>💡</span>
-            <span>Insights Rápidos</span>
-          </h2>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="bg-white p-5 rounded-lg border border-purple-200 shadow-sm">
-            <h4 className="font-medium text-purple-900 mb-2 flex items-center gap-2">
-              <span>📊</span>
-              <span>Estatísticas do Período</span>
-            </h4>
-            <p className="text-sm text-gray-600">
-              Você tem <strong className="text-purple-600">{proventosFiltradosParaTabela.length}</strong> proventos 
-              registrados em <strong className="text-purple-600">{anoSelecionado || "N/A"}</strong>.
-              {acaoMaiorPagamentoAno && (
-                <> Sua maior fonte é <strong className="text-purple-600">{acaoMaiorPagamentoAno.ticker}</strong>.</>
-              )}
-            </p>
-          </div>
-          
-          <div className="bg-white p-5 rounded-lg border border-purple-200 shadow-sm">
-            <h4 className="font-medium text-purple-900 mb-2 flex items-center gap-2">
-              <span>🎯</span>
-              <span>Próximos Passos</span>
-            </h4>
-            <p className="text-sm text-gray-600">
-              {totalAReceberAnoSelecionado > 0 ? (
-                <>Você tem <strong className="text-green-600">{formatCurrencyWithVisibility(totalAReceberAnoSelecionado, showValues)}</strong> para receber ainda este ano! 🚀</>
-              ) : (
-                "Continue acompanhando seus investimentos para maximizar os proventos. 📈"
-              )}
-            </p>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">
+                Escolha o ano
+              </label>
+              <Select
+                value={anoSelecionado ? String(anoSelecionado) : ""}
+                onValueChange={(value) => setAnoSelecionado(value === "todos" ? "todos" : Number(value))}
+                disabled={loadingData || anosDisponiveis.length === 0}
+              >
+                <SelectTrigger className="px-4 py-3 border-2 border-blue-300 rounded-xl focus:border-blue-500 focus:ring-4 focus:ring-blue-200 transition-all w-[160px] bg-white shadow-sm">
+                  <SelectValue placeholder="Selecione o ano" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="todos">Todos</SelectItem>
+                  {anosDisponiveis.map((ano) => (
+                    <SelectItem key={ano} value={String(ano)}>
+                      {ano}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </div>
@@ -403,7 +519,7 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
         <div className="flex items-center gap-3 mb-6">
           <div className="h-8 w-1 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full"></div>
           <h2 className="text-2xl font-bold text-gray-800">
-            Resumo de {anoSelecionado || "N/A"}
+            Resumo de {anoSelecionado === "todos" ? "Todos os anos" : anoSelecionado || "N/A"}
           </h2>
         </div>
         {loadingData ? (
@@ -421,7 +537,7 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
               </div>
             ))}
           </div>
-        ) : resumoDoAnoSelecionado ? (
+        ) : (resumoDoAnoSelecionado || anoSelecionado === "todos") ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Card Total Melhorado */}
             <TooltipProvider>
@@ -431,11 +547,11 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
                     <div className="p-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-medium text-blue-600 mb-1">Total Recebido ({anoSelecionado})</p>
+                          <p className="text-sm font-medium text-blue-600 mb-1">Total Recebido ({anoSelecionado === "todos" ? "Todos os anos" : anoSelecionado})</p>
                           <p className="text-3xl font-bold text-blue-900">{formatCurrencyWithVisibility(totalAnoSelecionado, showValues)}</p>
                           <p className="text-xs text-blue-700 mt-2 flex items-center gap-1">
                             <span>💰</span>
-                            <span>Proventos do ano</span>
+                            <span>Proventos {anoSelecionado === "todos" ? "totais" : "do ano"}</span>
                           </p>
                         </div>
                         <div className="h-14 w-14 bg-blue-500 rounded-full flex items-center justify-center shadow-lg">
@@ -458,7 +574,7 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
               <div className="p-6">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium text-green-600 mb-1">A Receber ({anoSelecionado})</p>
+                    <p className="text-sm font-medium text-green-600 mb-1">A Receber ({anoSelecionado === "todos" ? "Todos os anos" : anoSelecionado})</p>
                     <p className="text-3xl font-bold text-green-900">{formatCurrencyWithVisibility(totalAReceberAnoSelecionado, showValues)}</p>
                     <p className="text-xs text-green-700 mt-2 flex items-center gap-1">
                       <span>📅</span>
@@ -478,11 +594,11 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
                 <div className="p-6">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm font-medium text-yellow-600 mb-1">Top Ação ({anoSelecionado})</p>
+                      <p className="text-sm font-medium text-yellow-600 mb-1">Top Ação ({anoSelecionado === "todos" ? "Todos os anos" : anoSelecionado})</p>
                       <p className="text-2xl font-bold text-yellow-900">{acaoMaiorPagamentoAno.ticker}</p>
                       <p className="text-xs text-yellow-700 mt-1">{formatCurrencyWithVisibility(acaoMaiorPagamentoAno.total_recebido_na_acao, showValues)}</p>
                     </div>
-                    <div className="h-14 w-14 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg animate-pulse">
+                    <div className="h-14 w-14 bg-yellow-500 rounded-full flex items-center justify-center shadow-lg">
                       <span className="text-white text-2xl">🏆</span>
                     </div>
                   </div>
@@ -495,7 +611,7 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
                     <div className="h-14 w-14 bg-gray-300 rounded-full flex items-center justify-center mx-auto mb-3">
                       <span className="text-gray-500 text-2xl">📊</span>
                     </div>
-                    <p className="text-sm">Sem dados para {anoSelecionado}</p>
+                    <p className="text-sm">Sem dados para {anoSelecionado === "todos" ? "Todos os anos" : anoSelecionado}</p>
                   </div>
                 </div>
               </div>
@@ -530,127 +646,294 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        <div>
-          <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Recebimento Anual (Todos os Anos)</h2>
-          {loadingData ? (
-            <Card className="h-[400px] flex items-center justify-center"><CardContent><p>Carregando gráfico anual...</p></CardContent></Card>
-          ) : dadosGraficoAnual.length > 0 ? (
-            <ChartContainer config={{}} className="min-h-[300px] w-full">
+        {/* Gráfico Anual */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+          <div className="bg-gradient-to-r from-emerald-500 to-blue-600 p-6 text-white">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">📈</span>
+              <div>
+                <h2 className="text-xl font-bold">Evolução Anual</h2>
+                <p className="text-emerald-100 text-sm">Como seus proventos cresceram ao longo dos anos</p>
+              </div>
+            </div>
+          </div>
+          <div className="p-6">
+            {loadingData ? (
+              <div className="h-[400px] flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p>Carregando gráfico anual...</p>
+              </div>
+            ) : dadosGraficoAnual.length > 0 ? (
               <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={dadosGraficoAnual} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" stroke="hsl(var(--foreground))" />
-                  <YAxis stroke="hsl(var(--foreground))" tickFormatter={formatYAxisTick} />
-                  <Tooltip content={<ChartTooltipContent formatter={(value, name) => `${name}: ${formatCurrencyWithVisibility(Number(value), showValues)}`} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
-                  <Legend content={<ChartLegendContent />} />
-                  <Bar dataKey="Dividendos" stackId="a" radius={[4, 4, 0, 0]}>
-                    {dadosGraficoAnual.map((_, index) => (
-                      <Cell key={`dividendo-bar-${index}`} fill={BAR_COLORS.Dividendos} />
-                    ))}
-                  </Bar>
-                  <Bar dataKey="JCP" stackId="a" radius={[4, 4, 0, 0]}>
-                    {dadosGraficoAnual.map((_, index) => (
-                      <Cell key={`jcp-bar-${index}`} fill={BAR_COLORS.JCP} />
-                    ))}
-                  </Bar>
-                  <Bar dataKey="Outros" stackId="a" radius={[4, 4, 0, 0]}>
-                    {dadosGraficoAnual.map((_, index) => (
-                      <Cell key={`outros-bar-${index}`} fill={BAR_COLORS.Outros} />
-                    ))}
-                  </Bar>
+                <BarChart data={dadosGraficoAnual} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="dividendosGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={MODERN_COLORS.dividendos.primary} stopOpacity={0.9}/>
+                      <stop offset="100%" stopColor={MODERN_COLORS.dividendos.primary} stopOpacity={0.6}/>
+                    </linearGradient>
+                    <linearGradient id="jcpGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={MODERN_COLORS.jcp.primary} stopOpacity={0.9}/>
+                      <stop offset="100%" stopColor={MODERN_COLORS.jcp.primary} stopOpacity={0.6}/>
+                    </linearGradient>
+                    <linearGradient id="outrosGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={MODERN_COLORS.outros.primary} stopOpacity={0.9}/>
+                      <stop offset="100%" stopColor={MODERN_COLORS.outros.primary} stopOpacity={0.6}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="name" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#6b7280" fontSize={12} tickFormatter={formatYAxisTick} tickLine={false} axisLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                  <Bar dataKey="Dividendos" stackId="a" fill="url(#dividendosGradient)" name="💰 Dividendos" />
+                  <Bar dataKey="JCP" stackId="a" fill="url(#jcpGradient)" name="🏦 JCP" />
+                  <Bar dataKey="Outros" stackId="a" fill="url(#outrosGradient)" name="📊 Outros" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </ChartContainer>
-          ) : (
-            <p className="text-gray-600 dark:text-gray-400">Nenhum dado para exibir no gráfico anual.</p>
-          )}
+            ) : (
+              <div className="h-[400px] flex items-center justify-center">
+                <p className="text-gray-600">Nenhum dado para exibir no gráfico anual.</p>
+              </div>
+            )}
+          </div>
         </div>
 
-        <div>
-          <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Recebimento Mensal ({anoSelecionado || "N/A"})</h2>
-          {loadingGraficoMensal ? (
-            <Card className="h-[400px] flex items-center justify-center"><CardContent><p>Carregando gráfico mensal...</p></CardContent></Card>
-          ) : !anoSelecionado ? (
-            <p className="text-gray-600 dark:text-gray-400">Selecione um ano para ver o detalhamento mensal.</p>
-          ) : dadosGraficoMensal.length > 0 ? (
-            <ChartContainer config={{}} className="min-h-[300px] w-full">
+        {/* Gráfico Mensal */}
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+          <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-6 text-white">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">📅</span>
+              <div>
+                <h2 className="text-xl font-bold">Recebimentos Mensais</h2>
+                <p className="text-blue-100 text-sm">Distribuição dos proventos ao longo {anoSelecionado === "todos" ? "dos anos" : `do ano de ${anoSelecionado}`}</p>
+              </div>
+            </div>
+          </div>
+          <div className="p-6">
+            {loadingGraficoMensal ? (
+              <div className="h-[400px] flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p>Carregando gráfico mensal...</p>
+              </div>
+            ) : !anoSelecionado ? (
+              <div className="h-[400px] flex items-center justify-center">
+                <p className="text-gray-600">Selecione um ano para ver o detalhamento mensal.</p>
+              </div>
+            ) : dadosGraficoMensal.length > 0 ? (
               <ResponsiveContainer width="100%" height={400}>
-                <BarChart data={dadosGraficoMensal} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" stroke="hsl(var(--foreground))" />
-                  <YAxis stroke="hsl(var(--foreground))" tickFormatter={formatYAxisTick} />
-                  <Tooltip content={<ChartTooltipContent formatter={(value, name) => `${name}: ${formatCurrencyWithVisibility(Number(value), showValues)}`} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
-                  <Legend content={<ChartLegendContent />} />
-                  <Bar dataKey="Dividendos" stackId="a" radius={[4, 4, 0, 0]}>
-                    {dadosGraficoMensal.map((_, index) => (
-                      <Cell key={`dividendo-mes-bar-${index}`} fill={BAR_COLORS.Dividendos} />
-                    ))}
-                  </Bar>
-                  <Bar dataKey="JCP" stackId="a" radius={[4, 4, 0, 0]}>
-                    {dadosGraficoMensal.map((_, index) => (
-                      <Cell key={`jcp-mes-bar-${index}`} fill={BAR_COLORS.JCP} />
-                    ))}
-                  </Bar>
-                  <Bar dataKey="Outros" stackId="a" radius={[4, 4, 0, 0]}>
-                    {dadosGraficoMensal.map((_, index) => (
-                      <Cell key={`outros-mes-bar-${index}`} fill={BAR_COLORS.Outros} />
-                    ))}
-                  </Bar>
+                <BarChart data={dadosGraficoMensal} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="name" stroke="#6b7280" fontSize={12} tickLine={false} axisLine={false} />
+                  <YAxis stroke="#6b7280" fontSize={12} tickFormatter={formatYAxisTick} tickLine={false} axisLine={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
+                  <Bar dataKey="Dividendos" stackId="b" fill="url(#dividendosGradient)" name="💰 Dividendos" />
+                  <Bar dataKey="JCP" stackId="b" fill="url(#jcpGradient)" name="🏦 JCP" />
+                  <Bar dataKey="Outros" stackId="b" fill="url(#outrosGradient)" name="📊 Outros" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-            </ChartContainer>
-          ) : (
-            <p className="text-gray-600 dark:text-gray-400">Nenhum provento recebido em {anoSelecionado}.</p>
-          )}
+            ) : (
+              <div className="h-[400px] flex items-center justify-center">
+                <p className="text-gray-600">Nenhum provento recebido em {anoSelecionado === "todos" ? "todos os anos" : anoSelecionado}.</p>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="mb-8"> {/* Pie chart section */}
-        <h2 className="text-2xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Distribuição por Ação ({anoSelecionado || "N/A"})</h2>
-        {loadingData ? (
-            <Card className="h-[400px] flex items-center justify-center"><CardContent><p>Carregando gráfico de distribuição...</p></CardContent></Card>
-        ) : !anoSelecionado ? (
-            <p className="text-gray-600 dark:text-gray-400">Selecione um ano para ver a distribuição por ação.</p>
-        ) : dadosGraficoPizzaAcao.length > 0 ? (
-          <ChartContainer config={{}} className="min-h-[300px] w-full">
-            <ResponsiveContainer width="100%" height={400}>
-              <PieChart>
-                <Pie data={dadosGraficoPizzaAcao} cx="50%" cy="50%" labelLine={false} outerRadius={120} fill={BAR_COLORS.Dividendos} dataKey="value" nameKey="name">
-                  {dadosGraficoPizzaAcao.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={PIE_CHART_COLORS[index % PIE_CHART_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip content={<ChartTooltipContent formatter={(value, name) => [formatCurrencyWithVisibility(Number(value), showValues), ' '+ name]} labelClassName="font-bold" className="bg-background text-foreground border-border shadow-lg" />} />
-                <Legend content={({ payload }) => (
-                  <ul className="flex flex-wrap gap-4 mt-2">
-                    {payload && payload.map((entry, idx) => (
-                      <li key={`legend-pie-${entry.value}`} className="flex items-center gap-2">
-                        <span style={{ background: entry.color, width: 16, height: 16, display: 'inline-block', borderRadius: 4 }}></span>
-                        <span className="text-sm">{entry.value}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )} />
-              </PieChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-        ) : (
-          <p className="text-gray-600 dark:text-gray-400">Nenhuma distribuição por ação para exibir em {anoSelecionado}.</p>
-        )}
+      {/* Gráfico de Pizza */}
+      <div className="mb-8">
+        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+          <div className="bg-gradient-to-r from-purple-500 to-pink-600 p-6 text-white">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">🥧</span>
+              <div>
+                <h2 className="text-xl font-bold">Suas Melhores Pagadoras em {anoSelecionado === "todos" ? "Todos os Anos" : anoSelecionado}</h2>
+                <p className="text-purple-100 text-sm">Quais empresas mais contribuíram para sua renda passiva</p>
+              </div>
+            </div>
+          </div>
+          <div className="p-6">
+            {loadingData ? (
+              <div className="h-[400px] flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-2"></div>
+                <p>Carregando gráfico de distribuição...</p>
+              </div>
+            ) : !anoSelecionado ? (
+              <div className="h-[400px] flex items-center justify-center">
+                <p className="text-gray-600">Selecione um ano para ver a distribuição por ação.</p>
+              </div>
+            ) : dadosGraficoPizzaAcao.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                <div className="h-[400px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <defs>
+                        {/* Gradientes para o gráfico de pizza - mesma técnica dos gráficos de barra */}
+                        <linearGradient id="pieGradient0" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={MODERN_COLORS.dividendos.primary} stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor={MODERN_COLORS.dividendos.primary} stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="pieGradient1" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={MODERN_COLORS.jcp.primary} stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor={MODERN_COLORS.jcp.primary} stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="pieGradient2" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={MODERN_COLORS.outros.primary} stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor={MODERN_COLORS.outros.primary} stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="pieGradient3" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#a21caf" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#a21caf" stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="pieGradient4" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#0ea5e9" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#0ea5e9" stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="pieGradient5" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#eab308" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#eab308" stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="pieGradient6" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#14b8a6" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#14b8a6" stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="pieGradient7" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#f472b6" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#f472b6" stopOpacity={0.6}/>
+                        </linearGradient>
+                        <linearGradient id="pieGradient8" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#6366f1" stopOpacity={0.9}/>
+                          <stop offset="100%" stopColor="#6366f1" stopOpacity={0.6}/>
+                        </linearGradient>
+                      </defs>
+                      <Pie 
+                        data={dadosGraficoPizzaAcao}
+                        cx="50%" 
+                        cy="50%" 
+                        labelLine={false}
+                        label={({ name, value }) => {
+                          const total = dadosGraficoPizzaAcao.reduce((sum, item) => sum + item.value, 0);
+                          const ticker = name.split(' ')[0];
+                          return `${ticker} ${((value / total) * 100).toFixed(0)}%`;
+                        }}
+                        outerRadius={140}
+                        fill="#8884d8"
+                        dataKey="value"
+                        strokeWidth={2}
+                        stroke="#fff"
+                      >
+                        {dadosGraficoPizzaAcao.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={PIE_CHART_COLORS[index % PIE_CHART_COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip 
+                        content={({ active, payload }) => {
+                          if (active && payload && payload.length) {
+                            const data = payload[0].payload;
+                            const total = dadosGraficoPizzaAcao.reduce((sum, item) => sum + item.value, 0);
+                            return (
+                              <div className="bg-white p-4 rounded-xl shadow-2xl border border-gray-200">
+                                <h4 className="font-bold text-gray-800 mb-2">{data.name}</h4>
+                                <p className="text-lg font-semibold text-purple-600">{formatCurrencyWithVisibility(data.value, showValues)}</p>
+                                <p className="text-sm text-gray-600">
+                                  {((data.value / total) * 100).toFixed(1)}% do total
+                                </p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 mb-4">
+                    <span className="text-2xl">🏆</span>
+                    <h3 className="text-xl font-bold text-gray-800">Top 5 Pagadoras</h3>
+                  </div>
+                  
+                  <div className="space-y-3 max-h-[350px] overflow-y-auto">
+                    {dadosGraficoPizzaAcao.slice(0, 5).map((acao, index) => {
+                      const totalGeral = dadosGraficoPizzaAcao.reduce((sum, item) => sum + item.value, 0);
+                      const percentual = (acao.value / totalGeral) * 100;
+                      
+                      // Definir cores para cada posição
+                      const getPositionColor = (position: number) => {
+                        switch(position) {
+                          case 0: return 'from-amber-400 to-orange-500'; // Ouro
+                          case 1: return 'from-gray-400 to-gray-500'; // Prata
+                          case 2: return 'from-orange-400 to-red-500'; // Bronze
+                          case 3: return 'from-blue-400 to-blue-500'; // Azul
+                          case 4: return 'from-purple-400 to-purple-500'; // Roxo
+                          default: return 'from-gray-400 to-gray-500';
+                        }
+                      };
+
+                      const getBorderColor = (position: number) => {
+                        switch(position) {
+                          case 0: return 'border-l-amber-400'; // Ouro
+                          case 1: return 'border-l-gray-400'; // Prata
+                          case 2: return 'border-l-orange-400'; // Bronze
+                          case 3: return 'border-l-blue-400'; // Azul
+                          case 4: return 'border-l-purple-400'; // Roxo
+                          default: return 'border-l-gray-400';
+                        }
+                      };
+                      
+                      return (
+                        <div key={index} className={`flex items-center justify-between p-4 bg-white rounded-xl border-l-4 ${getBorderColor(index)} shadow-sm hover:shadow-md transition-all duration-200`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-r ${getPositionColor(index)} text-white font-bold text-sm`}>
+                              {index + 1}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-gray-800">{acao.name.split(' ')[0]}</p>
+                              <p className="text-xs text-gray-500">{percentual.toFixed(1)}% do total</p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-bold text-gray-900">{formatCurrencyWithVisibility(acao.value, showValues)}</p>
+                            <div className="w-20 h-2 bg-gray-200 rounded-full mt-1">
+                              <div 
+                                className={`h-2 bg-gradient-to-r ${getPositionColor(index)} rounded-full transition-all duration-500`}
+                                style={{ width: `${Math.min(percentual, 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[400px] flex items-center justify-center">
+                <p className="text-gray-600">Nenhuma distribuição por ação para exibir em {anoSelecionado === "todos" ? "todos os anos" : anoSelecionado}.</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Seção da Tabela Detalhada */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+      <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+        <div className="bg-gradient-to-r from-indigo-500 to-blue-600 p-6 text-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-6 w-1 bg-indigo-500 rounded-full"></div>
-              <h2 className="text-xl font-bold text-gray-800">
-                Detalhes dos Proventos Recebidos {anoSelecionado ? `em ${anoSelecionado}` : '(Todos os Anos)'}
-              </h2>
+              <span className="text-3xl">📋</span>
+              <div>
+                <h2 className="text-xl font-bold">
+                  Histórico Detalhado de {anoSelecionado === "todos" ? "Todos os Anos" : anoSelecionado || "Todos os Anos"}
+                </h2>
+                <p className="text-indigo-100 text-sm">
+                  Todos os seus proventos organizados e detalhados
+                </p>
+              </div>
             </div>
-            <div className="text-sm text-gray-500">
-              {proventosFiltradosParaTabela.length} registros
+            <div className="bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
+              <span className="text-white font-semibold">{proventosFiltradosParaTabela.length} registros</span>
             </div>
           </div>
         </div>
@@ -664,22 +947,46 @@ function ProventosTabContent({ showValues }: { showValues: boolean }) {
           </div>
         ) : (
           <>
-            <div className="p-6 border-b border-gray-200 bg-gray-50">
-              <div className="flex items-center gap-3">
-                <Label htmlFor="proventosSearch-table" className="text-gray-700 flex items-center gap-2">
-                  <span>🔍</span>
-                  <span>Pesquisar Proventos:</span>
-                </Label>
-                <Input
-                  id="proventosSearch-table"
-                  type="text"
-                  placeholder="Digite para pesquisar em todos os campos..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="max-w-sm border-2 border-gray-300 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all"
-                />
+            {/* Barra de Pesquisa */}
+            <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3 flex-1">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-100">
+                    <Search className="text-indigo-600 h-5 w-5" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-gray-700 font-medium mb-1 block">
+                      Pesquisar nos seus proventos
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Digite o nome da empresa, ticker, tipo de provento..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="w-full border-2 border-indigo-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200 transition-all rounded-xl px-4 py-3 outline-none"
+                    />
+                  </div>
+                </div>
+                
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm("")}
+                    className="px-4 py-2 border border-gray-300 hover:border-gray-400 rounded-lg transition-colors"
+                  >
+                    Limpar
+                  </button>
+                )}
               </div>
+              
+              {searchTerm && (
+                <div className="mt-3 p-3 bg-blue-100 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800">
+                    <span className="font-semibold">{proventosFiltradosParaTabela.length}</span> resultados encontrados para "{searchTerm}"
+                  </p>
+                </div>
+              )}
             </div>
+
             <TabelaProventos data={proventosFiltradosParaTabela} showValues={showValues} />
             
           </>
@@ -1077,12 +1384,6 @@ export function Dashboard() {
                     Histórico completo de suas operações abertas e fechadas
                   </p>
                 </div>
-                
-                {/* DEBUG: Log dos dados enviados ao ExtratoTabContent */}
-                {console.log("🔍 [Dashboard] Dados enviados ao ExtratoTabContent:", {
-                  operacoesAbertas: data.operacoes,
-                  operacoesFechadas: data.operacoes_fechadas
-                })}
                 
                 <ExtratoTabContent
                   operacoesAbertas={data.operacoes}
