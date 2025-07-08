@@ -130,8 +130,32 @@ export default function AcaoDetalhePage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-4 text-center">
-        <p>Carregando dados da ação...</p> {/* TODO: Replace with a spinner component */}
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
+        <div className="text-center">
+          {/* Spinner animado com múltiplos elementos */}
+          <div className="relative w-16 h-16 mx-auto mb-6">
+            <div className="absolute inset-0 w-16 h-16 border-4 border-blue-200 rounded-full"></div>
+            <div className="absolute inset-0 w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <div className="absolute inset-2 w-12 h-12 border-4 border-purple-300 border-b-transparent rounded-full animate-spin" style={{ animationDelay: '150ms' }}></div>
+          </div>
+          
+          {/* Texto animado */}
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent animate-pulse">
+              Carregando dados da ação...
+            </h2>
+            <p className="text-gray-600 animate-pulse">
+              Buscando suas informações de investimento
+            </p>
+          </div>
+          
+          {/* Pontos de loading animados */}
+          <div className="flex justify-center items-center space-x-2 mt-6">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -345,10 +369,10 @@ export default function AcaoDetalhePage() {
                       🔍 Pesquisar nas suas operações
                     </label>
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      
                       <Input
                         type="text"
-                        placeholder="Digite a data, tipo (compra/venda), quantidade, preço..."
+                        placeholder="Busque por qualquer campo..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-10 border-2 border-indigo-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200 transition-all rounded-xl px-4 py-3 outline-none"

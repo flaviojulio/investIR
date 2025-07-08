@@ -2,8 +2,6 @@ import React, { useState } from "react";
 import { formatCurrency, formatInteger } from "@/lib/utils";
 import { ClipboardCheck } from "lucide-react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { RendimentoIsentoCard } from "@/app/imposto-renda/RendimentoIsentoCard"; // Ajuste o path/nome conforme seu projeto
-import { useProventosPorAcaoAno } from "@/hooks/useProventosPorAcaoAno";
 
 interface BemDireitoAcaoCardProps {
   ticker: string;

@@ -83,12 +83,12 @@ const Last12MonthsEarningsChart: React.FC<{ shouldLoad?: boolean }> = ({ shouldL
         <CardHeader>
           <CardTitle>Proventos - Últimos 12 Meses</CardTitle>
         </CardHeader>
-        <CardContent className="h-[350px] w-full flex items-center justify-center">
+        <CardContent className="h-[450px] w-full flex items-center justify-center">
           {/* Skeleton loader for chart area */}
           <div className="space-y-2 w-full">
             <Skeleton className="h-8 w-3/4" />
             <Skeleton className="h-4 w-1/2" />
-            <Skeleton className="h-[250px] w-full" />
+            <Skeleton className="h-[300px] w-full" />
           </div>
         </CardContent>
       </Card>
@@ -101,7 +101,7 @@ const Last12MonthsEarningsChart: React.FC<{ shouldLoad?: boolean }> = ({ shouldL
         <CardHeader>
           <CardTitle>Proventos - Últimos 12 Meses</CardTitle>
         </CardHeader>
-        <CardContent className="h-[350px] w-full flex items-center justify-center">
+        <CardContent className="h-[450px] w-full flex items-center justify-center">
           <p className="text-red-500">Erro ao carregar dados: {error}</p>
         </CardContent>
       </Card>
@@ -114,7 +114,7 @@ const Last12MonthsEarningsChart: React.FC<{ shouldLoad?: boolean }> = ({ shouldL
         <CardHeader>
           <CardTitle>Proventos - Últimos 12 Meses</CardTitle>
         </CardHeader>
-        <CardContent className="h-[350px] w-full flex items-center justify-center">
+        <CardContent className="h-[450px] w-full flex items-center justify-center">
           <p>Nenhum dado de proventos encontrado para os últimos 12 meses.</p>
         </CardContent>
       </Card>
@@ -127,15 +127,15 @@ const Last12MonthsEarningsChart: React.FC<{ shouldLoad?: boolean }> = ({ shouldL
         <CardTitle>Proventos - Últimos 12 Meses</CardTitle>
       </CardHeader>
       <CardContent className="w-full p-0">
-        <div className="h-[350px] w-full">
+        <div className="h-[450px] w-full">
           <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={chartData}
             margin={{
-              top: 10,
-              right: 32, // margem maior à direita
-              left: 32,  // margem maior à esquerda
-              bottom: 10,
+              top: 20,
+              right: 32,
+              left: 32,
+              bottom: 20,
             }}
           >
             <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -203,24 +203,24 @@ const Last12MonthsEarningsChart: React.FC<{ shouldLoad?: boolean }> = ({ shouldL
         </div>
       </CardContent>
       
-      {/* Estatísticas resumidas - movidas para fora do CardContent */}
-      <div className="w-full px-4 py-3 space-y-2 bg-gradient-to-r from-blue-50 to-green-50 border-t rounded-b-lg">
+      {/* Estatísticas resumidas - compactas */}
+      <div className="w-full px-6 py-4 bg-gradient-to-r from-blue-50 to-green-50 border-t rounded-b-lg">
         <div className="flex justify-between items-center">
           <div className="text-center flex-1">
-            <div className="text-sm text-gray-600">Total no período</div>
-            <div className="text-lg font-bold text-blue-600">{formatCurrency(totalRecebido)}</div>
+            <div className="text-sm text-gray-600 mb-1">Total no período</div>
+            <div className="text-xl font-bold text-blue-600">{formatCurrency(totalRecebido)}</div>
           </div>
-          <div className="w-px h-8 bg-gray-300"></div>
+          <div className="w-px h-12 bg-gray-300 mx-4"></div>
           <div className="text-center flex-1">
-            <div className="text-sm text-gray-600">Média mensal</div>
-            <div className="text-lg font-bold text-green-600">{formatCurrency(mediaMensal)}</div>
+            <div className="text-sm text-gray-600 mb-1">Média mensal</div>
+            <div className="text-xl font-bold text-green-600">{formatCurrency(mediaMensal)}</div>
           </div>
         </div>
         
         {/* Melhor mês */}
         {maxEarnings > 0 && (
-          <div className="text-center pt-2 border-t border-gray-200">
-            <div className="text-xs text-gray-500">
+          <div className="text-center pt-3 mt-3 border-t border-gray-200">
+            <div className="text-sm text-gray-500">
               🏆 Melhor mês: <span className="font-semibold text-green-600">{formatCurrency(maxEarnings)}</span>
             </div>
           </div>

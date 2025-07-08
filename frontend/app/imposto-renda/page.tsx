@@ -2,6 +2,8 @@
 
 import React, { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BensDireitosAcoesTable } from "@/components/BensDireitosAcoesTable"; // Import the new component
 import { api } from "@/lib/api"; // For API calls
@@ -15,7 +17,7 @@ import { CopyableField } from "@/components/CopyableField";
 import ModalRendimentoIsento from "@/components/ModalRendimentoIsento";
 import ModalRendimentoExclusivo from "@/components/ModalRendimentoExclusivo";
 import RendaVariavelOperacoes from "./renda-variavel-operacoes";
-import { Building2, DollarSign, Receipt, TrendingUp } from "lucide-react"; // Importação dos ícones
+import { Building2, DollarSign, Receipt, TrendingUp, ArrowLeft } from "lucide-react"; // Importação dos ícones
 
 // Define the type for BemDireitoAcao based on BemDireitoAcaoSchema
 interface BemDireitoAcao {
@@ -281,7 +283,7 @@ export default function ImpostoRendaPage() {
   }
 
   return (
-    <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8 relative">
+    <div className="container mx-auto py-8 px-4 md:px-6 lg:px-8">
       {/* Botão de voltar */}
       <button
         className="absolute top-4 right-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded shadow"

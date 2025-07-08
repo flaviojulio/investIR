@@ -374,23 +374,6 @@ export function PortfolioEquityChart({ shouldLoad = true }: { shouldLoad?: boole
                     </p>
                   </div>
                 </div>
-
-                {/* Linha de Detalhes */}
-                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                  <div className="flex flex-wrap justify-center gap-6 text-sm">
-                    <div className="flex items-center space-x-1">
-                      <DollarSign className="w-4 h-4 text-green-600" />
-                      <span className="text-gray-600">Investido:</span>
-                      <span className="font-semibold text-gray-800">{formatCurrency(profitability.cash_invested_in_period)}</span>
-                    </div>
-                    <div className="w-px h-4 bg-gray-300"></div>
-                    <div className="flex items-center space-x-1">
-                      <DollarSign className="w-4 h-4 text-blue-600" />
-                      <span className="text-gray-600">Retornado:</span>
-                      <span className="font-semibold text-gray-800">{formatCurrency(profitability.cash_returned_in_period)}</span>
-                    </div>
-                  </div>
-                </div>
               </div>
             )}
           </>
