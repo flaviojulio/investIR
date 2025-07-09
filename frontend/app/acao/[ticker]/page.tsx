@@ -7,10 +7,21 @@ import { Operacao, ResultadoTicker } from '@/lib/types'; // Assuming ResultadoTi
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Package, Briefcase, ShoppingCart, Landmark, Search, X } from 'lucide-react'; // Added Search, X icons
+import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Package, Briefcase, ShoppingCart, Landmark, Search, X, Gift } from 'lucide-react'; // Added Gift icon
 import Link from 'next/link';
 import { Button } from '@/components/ui/button'; // For back button
 import { Input } from '@/components/ui/input'; // For search input
+
+// Interface para proventos por ação
+interface ProventosPorAcao {
+  ticker: string;
+  ticker_acao?: string;
+  nome_acao?: string;
+  total_proventos: number;
+  total_recebido_geral_acao?: number;
+  detalhes_por_tipo?: any[];
+  quantidade_pagamentos?: number;
+}
 
 // Placeholder for ResultadoTicker if not already in types.ts
 // You might need to create/update this in a separate step if it's complex
@@ -45,6 +56,7 @@ export default function AcaoDetalhePage() {
 
   const [resultadoDoTicker, setResultadoDoTicker] = useState<ResultadoTicker | null>(null);
   const [operacoesDoTicker, setOperacoesDoTicker] = useState<Operacao[]>([]);
+  const [proventosDoTicker, setProventosDoTicker] = useState<ProventosPorAcao | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -60,11 +72,14 @@ export default function AcaoDetalhePage() {
       setLoading(true);
       setError(null);
       try {
-        const [resResultados, resOperacoes] = await Promise.all([
+        const [resResultados, resOperacoes, resProventos] = await Promise.all([
           api.get(`/resultados/ticker/${ticker}`),
-          api.get(`/operacoes/ticker/${ticker}`)
+          api.get(`/operacoes/ticker/${ticker}`),
+          api.get(`/usuario/proventos/resumo_por_acao/`)
         ]);
+        
         setResultadoDoTicker(resResultados.data);
+        
         // Mapeia os campos da API para o formato esperado pelo frontend
         const operacoesMapeadas = Array.isArray(resOperacoes.data)
           ? resOperacoes.data.map((op: any, idx: number) => ({
@@ -78,6 +93,68 @@ export default function AcaoDetalhePage() {
             }))
           : [];
         setOperacoesDoTicker(operacoesMapeadas);
+        
+        // Debug: Log dos dados de proventos
+        console.log("🔍 Debug - Dados da API de proventos:", resProventos.data);
+        console.log("🔍 Debug - Ticker atual:", ticker);
+        
+        // Filtra os proventos para o ticker específico
+        // Tenta diferentes variações do ticker
+        let proventosData = null;
+        if (Array.isArray(resProventos.data)) {
+          // Busca pelo campo correto da API: ticker_acao
+          proventosData = resProventos.data.find((p: any) => 
+            p.ticker_acao === ticker ||
+            p.ticker_acao?.toUpperCase() === ticker.toUpperCase() ||
+            p.ticker === ticker ||
+            p.ticker?.toUpperCase() === ticker.toUpperCase() ||
+            p.codigo === ticker ||
+            p.codigo?.toUpperCase() === ticker.toUpperCase() ||
+            p.acao === ticker ||
+            p.acao?.toUpperCase() === ticker.toUpperCase()
+          );
+        }
+        
+        console.log("🔍 Debug - Proventos filtrados para", ticker, ":", proventosData);
+        
+        // Tenta diferentes campos possíveis da API
+        let totalProventos = 0;
+        let quantidadePagamentos = 0;
+        
+        if (proventosData) {
+          // Campos baseados na estrutura real da API
+          totalProventos = proventosData.total_recebido_geral_acao || 
+                          proventosData.total_proventos || 
+                          proventosData.total_dividendos || 
+                          proventosData.total_jcp || 
+                          proventosData.total_rendimentos || 
+                          proventosData.total || 
+                          proventosData.valor_total || 
+                          proventosData.valor || 
+                          0;
+          
+          // Tenta calcular quantidade de pagamentos baseado nos detalhes
+          if (proventosData.detalhes_por_tipo && Array.isArray(proventosData.detalhes_por_tipo)) {
+            quantidadePagamentos = proventosData.detalhes_por_tipo.reduce((total: number, tipo: any) => {
+              return total + (tipo.quantidade_pagamentos || tipo.count || 0);
+            }, 0);
+          } else {
+            quantidadePagamentos = proventosData.quantidade_pagamentos || 
+                                  proventosData.count || 
+                                  proventosData.total_pagamentos || 
+                                  proventosData.quantidade || 
+                                  0;
+          }
+        }
+        
+        console.log("🔍 Debug - Total calculado:", totalProventos, "Quantidade:", quantidadePagamentos);
+        
+        setProventosDoTicker({ 
+          ticker, 
+          total_proventos: totalProventos, 
+          quantidade_pagamentos: quantidadePagamentos 
+        });
+        
       } catch (err: any) {
         let errorMessage = "Erro ao carregar dados da ação.";
         if (err.response?.data?.detail && typeof err.response.data.detail === 'string') {
@@ -211,7 +288,7 @@ export default function AcaoDetalhePage() {
             <h2 className="text-2xl font-bold text-gray-800">📈 Sua Posição Atual</h2>
           </div>
           {resultadoDoTicker ? (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
@@ -257,13 +334,38 @@ export default function AcaoDetalhePage() {
                 </CardContent>
               </div>
 
+              {/* Novo Card de Proventos */}
+              <div className="bg-gradient-to-br from-amber-50 to-amber-100 border-2 border-amber-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg font-semibold text-amber-700 flex items-center gap-2">
+                      <Gift className="h-5 w-5" />
+                      Proventos Recebidos
+                    </CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-3xl font-bold text-amber-800 mb-2">
+                    {proventosDoTicker ? formatCurrency(proventosDoTicker.total_proventos) : formatCurrency(0)}
+                  </div>
+                  <p className="text-sm text-amber-600">
+                    {proventosDoTicker?.total_proventos > 0 
+                      ? (proventosDoTicker?.quantidade_pagamentos > 0 
+                          ? `🎁 ${proventosDoTicker?.quantidade_pagamentos} pagamentos recebidos`
+                          : "🎁 Proventos recebidos")
+                      : "📊 Nenhum provento registrado ainda"
+                    }
+                  </p>
+                </CardContent>
+              </div>
+
               {/* Card de Lucro/Prejuízo com destaque especial */}
-              <div className={`${resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200' : 'bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200'} rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 col-span-full md:col-span-2 lg:col-span-3`}>
+              <div className={`${resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200' : 'bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200'} rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 col-span-full md:col-span-2`}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className={`text-xl font-semibold ${resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? 'text-emerald-700' : 'text-red-700'} flex items-center gap-2`}>
                       {resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? <TrendingUp className="h-6 w-6" /> : <TrendingDown className="h-6 w-6" />}
-                      Lucro/Prejuízo Realizado
+                      Resultado Atual
                     </CardTitle>
                   </div>
                 </CardHeader>

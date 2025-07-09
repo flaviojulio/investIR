@@ -38,6 +38,7 @@ from database import (
     remover_item_carteira_db, # Added for deleting single portfolio item
     obter_operacoes_por_ticker_db, # Added for fetching operations by ticker
     obter_todas_acoes, # Renamed from obter_todos_stocks
+    obter_acao_info_por_ticker, # Added for getting stock info
     # Provento related database functions
     inserir_provento,
     obter_proventos_por_acao_id,
@@ -613,9 +614,32 @@ def recalcular_carteira(usuario_id: int) -> None:
         for ticker_symbol in unique_tickers:
             id_acao = obter_id_acao_por_ticker(ticker_symbol)
             if id_acao:
+                # Otimização: encontrar a data da primeira operação para este ticker
+                first_op_date = min(
+                    op_from_db['date'] if isinstance(op_from_db['date'], date) 
+                    else datetime.fromisoformat(str(op_from_db['date']).split("T")[0]).date()
+                    for op_from_db in operacoes_originais 
+                    if op_from_db['ticker'] == ticker_symbol
+                )
+                
+                # Buscar eventos apenas a partir de um pouco antes da primeira operação
+                search_start_date = first_op_date - timedelta(days=30)  # 30 dias antes
+                
                 raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, today_date)
+                
+                # Filtrar eventos para manter apenas os relevantes
+                filtered_events_data = [
+                    event for event in raw_events_data 
+                    if event.get('data_ex') and (
+                        isinstance(event['data_ex'], date) and event['data_ex'] >= search_start_date
+                        or isinstance(event['data_ex'], str) and datetime.fromisoformat(event['data_ex']).date() >= search_start_date
+                    )
+                ]
+                
+                print(f"Eventos para {ticker_symbol} (primeira operação: {first_op_date}, filtro: {search_start_date}): {len(filtered_events_data)} eventos")
+                
                 # Event data from DB should have date objects due to [date] alias and converters
-                events_by_ticker[ticker_symbol] = [EventoCorporativoInfo.model_validate(event_data) for event_data in raw_events_data]
+                events_by_ticker[ticker_symbol] = [EventoCorporativoInfo.model_validate(event_data) for event_data in filtered_events_data]
 
         for op_from_db in operacoes_originais:
             current_op_date = op_from_db['date']
@@ -1254,8 +1278,13 @@ def calcular_resultados_por_ticker_service(usuario_id: int, ticker: str) -> Resu
         if op_fechada.get('ticker') == ticker_upper:
             lucro_prejuizo_realizado_total += op_fechada.get('resultado', 0.0)
 
+    # Get stock info including name
+    acao_info = obter_acao_info_por_ticker(ticker_upper)
+    nome_acao = acao_info.get('nome') if acao_info else None
+
     return ResultadoTicker(
         ticker=ticker_upper,
+        nome_acao=nome_acao,
         quantidade_atual=quantidade_atual,
         preco_medio_atual=preco_medio_atual,
         custo_total_atual=custo_total_atual,
