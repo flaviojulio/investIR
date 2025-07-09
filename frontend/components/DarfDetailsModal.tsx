@@ -38,6 +38,7 @@ interface DarfDetailsModalProps {
   resultadoMensal?: ResultadoMensal | null;
   tipoDarf: 'swing' | 'daytrade';
   onUpdateDashboard: () => void;
+  onDarfStatusChange?: (newStatus: string) => void; // Nova prop opcional
 }
 
 export function DarfDetailsModal({
@@ -47,6 +48,7 @@ export function DarfDetailsModal({
   resultadoMensal,
   tipoDarf,
   onUpdateDashboard,
+  onDarfStatusChange,
 }: DarfDetailsModalProps) {
   const { toast } = useToast();
   const [isMarkingPaid, setIsMarkingPaid] = useState(false);
@@ -75,6 +77,12 @@ export function DarfDetailsModal({
         description: `DARF ${tipoDarf === 'swing' ? 'Swing Trade' : 'Day Trade'} para ${formatMonthYear(resultadoMensal.mes)} marcado como pago com sucesso.`,
         className: "bg-green-50 border-green-200 text-green-800"
       });
+      
+      // Chama o callback para atualizar o status na tabela
+      if (onDarfStatusChange) {
+        onDarfStatusChange("pago");
+      }
+      
       onUpdateDashboard();
       onClose();
     } catch (error: any) {
@@ -109,6 +117,12 @@ export function DarfDetailsModal({
         description: `DARF ${tipoDarf === 'swing' ? 'Swing Trade' : 'Day Trade'} para ${formatMonthYear(resultadoMensal.mes)} marcado como pendente.`,
         className: "bg-blue-50 border-blue-200 text-blue-800"
       });
+      
+      // Chama o callback para atualizar o status na tabela
+      if (onDarfStatusChange) {
+        onDarfStatusChange("pendente");
+      }
+      
       onUpdateDashboard();
       onClose();
     } catch (error: any) {
