@@ -9,6 +9,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Input } from "@/components/ui/input" // Input for form
 import { Label } from "@/components/ui/label" // Label for form
 import { TrendingUp, TrendingDown, Edit, Trash2, ArrowUp, ArrowDown, ChevronsUpDown, PiggyBank, Calculator, Target, Activity, Coins, Wallet, TrendingUpDown, DollarSign } from "lucide-react" // Edit, Trash2, and Sort icons
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip" // Tooltip components
 import Link from 'next/link'; // Import Link for navigation
 import type { CarteiraItem } from "@/lib/types"
 import { api } from "@/lib/api" // For API calls
@@ -385,10 +386,24 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
                       <div className="flex items-center justify-end gap-1">
                         {showValues ? formatCurrency(typedItem.preco_medio) : '***'}
                         {typedItem.preco_editado_pelo_usuario && (
-                          <Edit 
-                            className="h-3 w-3 text-amber-500 opacity-75" 
-                            title="Preço médio editado manualmente"
-                          />
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Edit 
+                                  className="h-3 w-3 text-amber-500 opacity-75 cursor-help" 
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-amber-50 border-amber-200 text-amber-800">
+                                <div className="flex items-center gap-1.5">
+                                  <Edit className="h-3 w-3" />
+                                  <span className="font-medium text-xs">Preço editado manualmente</span>
+                                </div>
+                                <p className="text-xs text-amber-600 mt-1">
+                                  Este valor foi alterado pelo usuário
+                                </p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
                         )}
                       </div>
                     </TableCell>
@@ -562,45 +577,52 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
 
         <div className="mt-4 text-xs text-muted-foreground space-y-1">
           <p>* Preços atuais são simulados para demonstração. Em produção, seriam obtidos de uma API de cotações.</p>
-          <div className="flex items-center gap-1">
-            <Edit className="h-3 w-3 text-amber-500 opacity-75" />
-            <span>Indica preço médio editado manualmente</span>
-          </div>
         </div>
       </CardContent>
 
       {/* Edit Modal */}
       {editingItem && (
         <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                Editar Ação: {editingItem.ticker}
-                {editingItem.preco_editado_pelo_usuario && (
-                  <Badge variant="secondary" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-                    <Edit className="h-3 w-3 mr-1" />
-                    Já editado
-                  </Badge>
-                )}
-              </DialogTitle>
-              <DialogDescription>
-                Ajuste a quantidade e o preço médio da sua posição.
-                {editingItem.preco_editado_pelo_usuario && (
-                  <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md border border-amber-200">
-                    <div className="flex items-center gap-1">
-                      <Edit className="h-3 w-3" />
-                      <span className="font-medium">Preço já foi editado manualmente.</span>
+          <DialogContent className="sm:max-w-[480px]">
+            <DialogHeader className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-200 rounded-full flex items-center justify-center border-2 border-blue-300">
+                  <Edit className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <DialogTitle className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    Editar Posição
+                    <Badge variant="outline" className="text-xs font-medium bg-blue-50 text-blue-700 border-blue-200">
+                      {editingItem.ticker}
+                    </Badge>
+                  </DialogTitle>
+                  <DialogDescription className="text-sm text-muted-foreground mt-1">
+                    Ajuste a quantidade e o preço médio da sua posição.
+                  </DialogDescription>
+                </div>
+              </div>
+              
+              {editingItem.preco_editado_pelo_usuario && (
+                <div className="bg-gradient-to-r from-amber-50 to-amber-100 border border-amber-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-6 h-6 bg-amber-200 rounded-full flex items-center justify-center">
+                      <Edit className="h-3 w-3 text-amber-700" />
                     </div>
-                    <span className="text-xs text-amber-700">
-                      Esta alteração será registrada no histórico de edições.
+                    <span className="text-sm font-medium text-amber-800">
+                      Preço já foi editado manualmente
                     </span>
                   </div>
-                )}
-              </DialogDescription>
+                  <p className="text-xs text-amber-700 ml-8">
+                    Esta alteração será registrada no histórico de edições.
+                  </p>
+                </div>
+              )}
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="quantidade" className="text-right">
+            
+            <div className="space-y-6 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="quantidade" className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-gray-500" />
                   Quantidade
                 </Label>
                 <Input
@@ -609,12 +631,18 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
                   type="number"
                   value={editFormData.quantidade}
                   onChange={handleEditFormChange}
-                  className="col-span-3"
+                  className="w-full h-11 text-base"
                   min="0"
+                  placeholder="Digite a quantidade"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Número de ações na sua carteira
+                </p>
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="preco_medio" className="text-right">
+              
+              <div className="space-y-2">
+                <Label htmlFor="preco_medio" className="text-sm font-medium text-gray-700 flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-gray-500" />
                   Preço Médio
                 </Label>
                 <Input
@@ -623,18 +651,58 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
                   type="number"
                   value={editFormData.preco_medio}
                   onChange={handleEditFormChange}
-                  className="col-span-3"
+                  className="w-full h-11 text-base"
                   min="0"
                   step="0.01"
+                  placeholder="Digite o preço médio"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Preço médio pago pelas ações (R$)
+                </p>
               </div>
+              
+              {/* Preview Card */}
+              <Card className="bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-slate-600">Valor Total da Posição</p>
+                      <p className="text-lg font-bold text-slate-800">
+                        {!isNaN(parseFloat(editFormData.quantidade)) && !isNaN(parseFloat(editFormData.preco_medio)) 
+                          ? formatCurrency(parseFloat(editFormData.quantidade) * parseFloat(editFormData.preco_medio))
+                          : 'R$ 0,00'
+                        }
+                      </p>
+                    </div>
+                    <Calculator className="h-6 w-6 text-slate-500" />
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-            <DialogFooter>
+            
+            <DialogFooter className="flex gap-3 pt-4">
               <DialogClose asChild>
-                <Button variant="outline" onClick={handleCloseEditModal}>Cancelar</Button>
+                <Button variant="outline" onClick={handleCloseEditModal} className="flex-1">
+                  Cancelar
+                </Button>
               </DialogClose>
-              <Button type="submit" onClick={handleSaveEdit} disabled={isSavingEdit}>
-                {isSavingEdit ? "Salvando..." : "Salvar Alterações"}
+              <Button 
+                type="submit" 
+                onClick={handleSaveEdit} 
+                disabled={isSavingEdit}
+                className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800"
+              >
+                {isSavingEdit ? (
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Salvando...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Edit className="h-4 w-4" />
+                    Salvar Alterações
+                  </div>
+                )}
               </Button>
             </DialogFooter>
           </DialogContent>
