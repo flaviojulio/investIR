@@ -15,7 +15,8 @@ from models import (
     ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao,
     UsuarioProventoRecebidoDB, UsuarioCreate, UsuarioUpdate, UsuarioResponse,
     LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
-    Corretora # Added Corretora model
+    Corretora, # Added Corretora model
+    ResultadoImportacao, ImportacaoResumo, ImportacaoResponse  # NOVA LINHA
 )
 from pydantic import BaseModel
 
@@ -63,7 +64,16 @@ from services import (
     # EventoCorporativo services
     registrar_evento_corporativo_service,
     listar_eventos_corporativos_por_acao_service,
-    listar_todos_eventos_corporativos_service
+    listar_todos_eventos_corporativos_service,
+    # Importation services
+    processar_importacao_com_deteccao_duplicatas,  # NOVA LINHA
+    listar_historico_importacoes_service,  # NOVA LINHA
+    obter_detalhes_importacao_service,  # NOVA LINHA
+    reverter_importacao_service,  # NOVA LINHA
+    # Duplicate analysis services
+    analisar_duplicatas_service,
+    verificar_estrutura_importacao_service,
+    limpar_importacoes_service
 )
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -283,7 +293,10 @@ async def recalcular_proventos_usuario_endpoint(
     """
     try:
         # Replace with the new "rapido" service
+        import logging
+        logging.info(f"[PROVENTO-TRACE] Iniciando recálculo manual rápido de proventos para usuário {usuario.id}. ORIGEM: recalcular_proventos_usuario_endpoint")
         stats = services.recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
+        logging.info(f"[PROVENTO-TRACE] Recálculo manual rápido de proventos para usuário {usuario.id} concluído. Stats: {stats}")
         return {
             "message": "Recálculo rápido de proventos concluído.",
             "stats": stats
@@ -665,26 +678,14 @@ async def listar_operacoes_por_ticker(
         logging.error(f"Error in /api/operacoes/ticker/{ticker} for user {user_id_for_log}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes/ticker. Check logs.")
 
-@app.post("/api/upload", response_model=Dict[str, str])
+@app.post("/api/upload", response_model=Dict[str, Any])
 async def upload_operacoes(
     file: UploadFile = File(...),
-    usuario: UsuarioResponse = Depends(get_current_user) # Changed type hint
+    usuario: UsuarioResponse = Depends(get_current_user)
 ):
     """
-    Endpoint para upload de arquivo JSON com operações de compra e venda de ações.
-    
-    O arquivo deve seguir o formato:
-    [
-      {
-        "date": "YYYY-MM-DD",
-        "ticker": "PETR4",
-        "operation": "buy"|"sell",
-        "quantity": 100,
-        "price": 28.50,
-        "fees": 5.20
-      },
-      …
-    ]
+    Endpoint para upload de arquivo JSON/Excel com operações.
+    Agora com detecção de duplicatas e rastreamento completo.
     """
     try:
         # Lê o conteúdo do arquivo
@@ -696,20 +697,31 @@ async def upload_operacoes(
         # Valida e processa as operações
         operacoes = [OperacaoCreate(**preprocess_imported_operation(op)) for op in operacoes_json]
         
-        # Salva as operações no banco de dados com o ID do usuário
-        try:
-            processar_operacoes(operacoes, usuario_id=usuario.id) # Use .id
-            # Recalcula proventos após importar operações
-            from services import recalcular_proventos_recebidos_rapido
-            recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+        # Processa com detecção de duplicatas
+        resultado = processar_importacao_com_deteccao_duplicatas(
+            operacoes=operacoes,
+            usuario_id=usuario.id,
+            nome_arquivo=file.filename,
+            conteudo_arquivo=conteudo,
+            nome_arquivo_original=file.filename
+        )
         
-        return {"mensagem": f"Arquivo processado com sucesso. {len(operacoes)} operações importadas."}
-    
+        # Recalcula proventos apenas se houver operações importadas
+        if resultado.get('importacao', {}).get('total_operacoes_importadas', 0) > 0:
+            import logging
+            from services import recalcular_proventos_recebidos_rapido
+            logging.info(f"[PROVENTO-TRACE] Iniciando recálculo rápido de proventos para usuário {usuario.id} após upload. ORIGEM: upload_operacoes. Operações inseridas: {resultado.get('importacao', {}).get('total_operacoes_importadas', 0)}")
+            recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
+            logging.info(f"[PROVENTO-TRACE] Recálculo rápido de proventos para usuário {usuario.id} após upload concluído.")
+        
+        return resultado
+        
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Formato de arquivo JSON inválido")
+    except HTTPException as e:
+        raise e
     except Exception as e:
+        logging.error(f"Error in upload for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
 
 @app.get("/api/resultados", response_model=List[ResultadoMensal])
@@ -828,7 +840,7 @@ async def atualizar_status_darf(
 @app.post("/api/operacoes", response_model=Operacao)
 async def criar_operacao(
     operacao: OperacaoCreate,
-    usuario: Dict = Depends(get_current_user)
+    usuario: UsuarioResponse = Depends(get_current_user)  # MUDANÇA: usar UsuarioResponse
 ):
     """
     Cria uma nova operação manualmente e retorna a operação criada.
@@ -837,16 +849,14 @@ async def criar_operacao(
         operacao: Dados da operação a ser criada.
     """
     try:
-        new_operacao_id = services.inserir_operacao_manual(operacao, usuario_id=usuario.id) # Use .id
-        operacao_criada = services.obter_operacao_service(new_operacao_id, usuario_id=usuario.id) # Use .id
+        new_operacao_id = services.inserir_operacao_manual(operacao, usuario_id=usuario.id, importacao_id=None)  # MUDANÇA: importacao_id=None para operações manuais
+        operacao_criada = services.obter_operacao_service(new_operacao_id, usuario_id=usuario.id)
         if not operacao_criada:
-            # This case should ideally not happen if insertion and ID return were successful
             raise HTTPException(status_code=500, detail="Operação criada mas não pôde ser recuperada.")
         return operacao_criada
-    except ValueError as e: # Handle ticker validation error
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        # Log the exception e for detailed debugging
         raise HTTPException(status_code=500, detail=f"Erro ao criar operação: {str(e)}")
 
 @app.put("/api/carteira/{ticker}", response_model=Dict[str, str])
@@ -1000,6 +1010,192 @@ async def listar_corretoras():
             return [Corretora(id=row["id"], nome=row["nome"], cnpj=row["cnpj"]) for row in corretoras]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao listar corretoras: {str(e)}")
+
+# ==================== IMPORTATION ENDPOINTS ====================
+
+@app.get("/api/importacoes", response_model=List[Dict[str, Any]], tags=["Importações"])
+async def listar_importacoes(
+    limite: int = 50,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Lista o histórico de importações do usuário.
+    """
+    try:
+        importacoes = listar_historico_importacoes_service(usuario.id, limite)
+        return importacoes
+    except Exception as e:
+        logging.error(f"Error listing imports for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao listar importações: {str(e)}")
+
+@app.get("/api/importacoes/{importacao_id}", response_model=Dict[str, Any], tags=["Importações"])
+async def obter_detalhes_importacao(
+    importacao_id: int = Path(..., description="ID da importação"),
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Obtém detalhes completos de uma importação específica,
+    incluindo todas as operações importadas.
+    """
+    try:
+        detalhes = obter_detalhes_importacao_service(importacao_id, usuario.id)
+        return detalhes
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error getting import details {importacao_id} for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao obter detalhes da importação: {str(e)}")
+
+@app.delete("/api/importacoes/{importacao_id}/reverter", response_model=Dict[str, Any], tags=["Importações"])
+async def reverter_importacao(
+    importacao_id: int = Path(..., description="ID da importação a ser revertida"),
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Reverte uma importação, removendo todas as operações que foram importadas.
+    Esta ação é irreversível.
+    """
+    try:
+        resultado = reverter_importacao_service(importacao_id, usuario.id)
+        
+        # Recalcular carteira e resultados após reverter
+        import logging
+        from services import recalcular_proventos_recebidos_rapido
+        logging.info(f"[PROVENTO-TRACE] Iniciando recálculo rápido de proventos para usuário {usuario.id} após reverter importação {importacao_id}. ORIGEM: reverter_importacao")
+        recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
+        logging.info(f"[PROVENTO-TRACE] Recálculo rápido de proventos para usuário {usuario.id} após reverter importação concluído.")
+        
+        return resultado
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error reverting import {importacao_id} for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao reverter importação: {str(e)}")
+
+@app.get("/api/importacoes/{importacao_id}/operacoes", response_model=List[Dict[str, Any]], tags=["Importações"])
+async def listar_operacoes_da_importacao(
+    importacao_id: int = Path(..., description="ID da importação"),
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Lista todas as operações de uma importação específica.
+    """
+    try:
+        detalhes = obter_detalhes_importacao_service(importacao_id, usuario.id)
+        return detalhes["operacoes"]
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error listing operations for import {importacao_id}, user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao listar operações da importação: {str(e)}")
+
+@app.delete("/api/importacoes/limpar", response_model=Dict[str, Any], tags=["Importações"])
+async def limpar_historico_importacoes(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Remove todas as importações do usuário logado.
+    Isso permite reutilizar os mesmos arquivos de importação no futuro.
+    
+    Útil quando você quer "resetar" o histórico de importações sem perder as operações.
+    """
+    try:
+        resultado = limpar_importacoes_service(usuario.id)
+        return resultado
+    except Exception as e:
+        logging.error(f"Error clearing imports for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao limpar importações: {str(e)}")
+
+# ==================== DUPLICATE ANALYSIS ENDPOINTS ====================
+
+@app.get("/api/operacoes/duplicatas/analise", response_model=Dict[str, Any], tags=["Análises"])
+async def analisar_duplicatas_potenciais(
+    tolerancia_preco: float = 0.01,
+    tolerancia_dias: int = 1,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Analisa operações existentes em busca de possíveis duplicatas
+    que possam ter passado despercebidas.
+    """
+    try:
+        from database import get_db
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Buscar operações muito similares
+            cursor.execute('''
+                SELECT 
+                    o1.id as id1, o1.date as date1, o1.ticker, o1.operation, 
+                    o1.quantity, o1.price as price1, o1.importacao_id as imp1,
+                    o2.id as id2, o2.date as date2, o2.price as price2, 
+                    o2.importacao_id as imp2,
+                    ABS(julianday(o1.date) - julianday(o2.date)) as diff_dias,
+                    ABS(o1.price - o2.price) as diff_preco
+                FROM operacoes o1
+                JOIN operacoes o2 ON 
+                    o1.usuario_id = o2.usuario_id AND
+                    o1.ticker = o2.ticker AND
+                    o1.operation = o2.operation AND
+                    o1.quantity = o2.quantity AND
+                    o1.id < o2.id
+                WHERE o1.usuario_id = ?
+                    AND ABS(julianday(o1.date) - julianday(o2.date)) <= ?
+                    AND ABS(o1.price - o2.price) <= ?
+                ORDER BY diff_dias, diff_preco
+            ''', (usuario.id, tolerancia_dias, tolerancia_preco))
+            
+            duplicatas_potenciais = [dict(row) for row in cursor.fetchall()]
+            
+            # Agrupar por nível de suspeita
+            suspeita_alta = [d for d in duplicatas_potenciais if d['diff_dias'] == 0 and d['diff_preco'] <= 0.001]
+            suspeita_media = [d for d in duplicatas_potenciais if d['diff_dias'] <= 1 and d['diff_preco'] <= 0.01 and d not in suspeita_alta]
+            suspeita_baixa = [d for d in duplicatas_potenciais if d not in suspeita_alta and d not in suspeita_media]
+            
+            return {
+                'total_analisadas': len(duplicatas_potenciais),
+                'suspeita_alta': suspeita_alta,
+                'suspeita_media': suspeita_media,
+                'suspeita_baixa': suspeita_baixa,
+                'parametros': {
+                    'tolerancia_preco': tolerancia_preco,
+                    'tolerancia_dias': tolerancia_dias
+                }
+            }
+            
+    except Exception as e:
+        logging.error(f"Error analyzing potential duplicates for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao analisar duplicatas: {str(e)}")
+
+@app.get("/api/operacoes/duplicatas/exatas", response_model=List[Dict[str, Any]], tags=["Análises"])
+async def listar_duplicatas_exatas(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Lista grupos de operações que são duplicatas exatas.
+    """
+    try:
+        duplicatas = analisar_duplicatas_service(usuario.id)
+        return duplicatas
+    except Exception as e:
+        logging.error(f"Error listing exact duplicates for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao listar duplicatas exatas: {str(e)}")
+
+# ==================== DEBUG ENDPOINTS (TEMPORARY) ====================
+
+@app.get("/api/debug/importacoes-test", tags=["Debug"])
+async def test_importacoes_table():
+    """
+    Endpoint temporário para testar se a tabela de importações foi criada corretamente.
+    REMOVER ESTE ENDPOINT DEPOIS DOS TESTES.
+    """
+    try:
+        resultado = verificar_estrutura_importacao_service()
+        return resultado
+    except Exception as e:
+        return {"erro": str(e)}
+
+# ==================== UTILITY FUNCTIONS ====================
 
 def preprocess_imported_operation(op: dict) -> dict:
     # Mapeamento de campos

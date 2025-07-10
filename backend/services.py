@@ -5,12 +5,14 @@ import calendar
 from collections import defaultdict
 from fastapi import HTTPException # Added HTTPException
 import logging
+import time
 
 from models import (
     OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
     ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo,
     UsuarioProventoRecebidoDB,
-    ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, DetalheTipoProvento
+    ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao, DetalheTipoProvento,
+    StatusImportacao, ImportacaoCreate, ImportacaoResponse, ImportacaoResumo, OperacaoDuplicada, ResultadoImportacao
 )
 
 # datetime is already imported from datetime import date, datetime, timedelta but ensure strptime is accessible
@@ -46,6 +48,9 @@ from database import (
     obter_todos_proventos,
     obter_acao_por_id, # For validating id_acao in proventos
     # EventoCorporativo related database functions
+    # Importation and duplicate analysis functions
+    analisar_duplicatas_usuario,
+    verificar_estrutura_importacao,
     inserir_evento_corporativo,
     obter_eventos_corporativos_por_acao_id,
     obter_evento_corporativo_por_id,
@@ -64,7 +69,18 @@ from database import (
     obter_proventos_recebidos_por_usuario_db,
     obter_resumo_anual_proventos_recebidos_db,
     obter_resumo_mensal_proventos_recebidos_db,
-    obter_resumo_por_acao_proventos_recebidos_db
+    obter_resumo_por_acao_proventos_recebidos_db,
+    # Import database functions for importation
+    inserir_importacao,
+    atualizar_status_importacao,
+    calcular_hash_arquivo,
+    verificar_arquivo_ja_importado,
+    detectar_operacao_duplicada,
+    obter_importacao_por_id,
+    listar_importacoes_usuario,
+    obter_operacoes_por_importacao,
+    remover_operacoes_por_importacao,
+    limpar_importacoes_usuario
 )
 
 # --- Função Auxiliar para Transformação de Proventos do DB ---
@@ -276,7 +292,7 @@ def gerar_darfs(usuario_id: int) -> List[Dict[str, Any]]:
 
 # Novas funções para as funcionalidades adicionais
 
-def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int) -> int:
+def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int, importacao_id: Optional[int] = None) -> int:
     """
     Insere uma operação manualmente para um usuário e recalcula a carteira e os resultados.
     Retorna o ID da operação inserida.
@@ -284,13 +300,19 @@ def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int) -> int:
     Args:
         operacao: Dados da operação a ser inserida.
         usuario_id: ID do usuário.
+        importacao_id: ID da importação (opcional, para tracking de importações).
         
     Returns:
         int: ID da operação inserida.
     """
     # Insere a operação no banco de dados
     try:
-        new_operacao_id = inserir_operacao(operacao.model_dump(), usuario_id=usuario_id)
+        if importacao_id is not None:
+            # Usar a função inserir_operacao padrão com importacao_id
+            new_operacao_id = inserir_operacao(operacao.model_dump(), usuario_id=usuario_id, importacao_id=importacao_id)
+        else:
+            # Usar a função tradicional
+            new_operacao_id = inserir_operacao(operacao.model_dump(), usuario_id=usuario_id)
     except ValueError: # Catching the specific ValueError from database.inserir_operacao
         raise # Re-raise it to be handled by the router (e.g., converted to HTTPException)
     
@@ -299,30 +321,27 @@ def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int) -> int:
     recalcular_resultados(usuario_id=usuario_id)
 
     try:
-        logging.info(f"Iniciando recálculo rápido de proventos para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}.")
+        logging.info(f"[PROVENTO-TRACE] Iniciando recálculo rápido de proventos para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. ORIGEM: inserir_operacao_manual")
         stats = recalcular_proventos_recebidos_rapido(usuario_id=usuario_id)
-        logging.info(f"Recálculo rápido de proventos para usuário {usuario_id} após inserção manual concluído. Stats: {stats}")
+        logging.info(f"[PROVENTO-TRACE] Recálculo rápido de proventos para usuário {usuario_id} após inserção manual concluído. Stats: {stats}")
     except Exception as e_recalc:
-        logging.error(f"ALERTA: Falha ao recalcular proventos (rápido) para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. A operação principal foi bem-sucedida. Erro no recálculo de proventos: {e_recalc}", exc_info=True)
+        logging.error(f"[PROVENTO-TRACE] ALERTA: Falha ao recalcular proventos (rápido) para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. A operação principal foi bem-sucedida. Erro no recálculo de proventos: {e_recalc}", exc_info=True)
         # Não relançar o erro para não afetar o status da criação da operação.
 
     return new_operacao_id
 
-def obter_operacao_service(operacao_id: int, usuario_id: int) -> Optional[Operacao]:
+def obter_operacao_service(operacao_id: int, usuario_id: int) -> Optional[Dict[str, Any]]:
     """
-    Obtém uma operação específica pelo ID e ID do usuário.
+    Obtém uma operação específica pelo ID e ID do usuário, incluindo informações de importação.
     
     Args:
         operacao_id: ID da operação.
         usuario_id: ID do usuário.
         
     Returns:
-        Optional[Operacao]: O objeto Operacao se encontrado, None caso contrário.
+        Optional[Dict[str, Any]]: Os dados da operação se encontrada, None caso contrário.
     """
-    operacao_data = obter_operacao_por_id(operacao_id, usuario_id)
-    if operacao_data:
-        return Operacao(**operacao_data)
-    return None
+    return obter_operacao_por_id(operacao_id, usuario_id)
 
 def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None:
     """
@@ -1074,7 +1093,7 @@ def recalcular_resultados(usuario_id: int) -> None:
 
 def listar_operacoes_service(usuario_id: int) -> List[Dict[str, Any]]:
     """
-    Serviço para listar todas as operações de um usuário.
+    Serviço para listar todas as operações de um usuário, incluindo informações de importação.
     """
     return obter_todas_operacoes(usuario_id=usuario_id)
 
@@ -1113,7 +1132,7 @@ def gerar_resumo_operacoes_fechadas(usuario_id: int) -> Dict[str, Any]:
     operacoes_prejuizo = [op for op in operacoes_ordenadas if op.get("resultado", 0) < 0] # Corrigido para < 0
     
     top_lucrativas = operacoes_lucrativas[:5]
-    top_prejuizo = sorted(operacoes_prejuizo, key=lambda x: x.get("resultado", 0))[:5] # Ordena por menor resultado para pegar os maiores prejuízos
+    top_prejuizo = sorted(operacoes_prejuizo, key=lambda x: x.get("resultado", 0))[:5] # Ordena por menor resultado para
 
     # Calcula o resumo por ticker
     resumo_por_ticker = defaultdict(lambda: {
@@ -1180,7 +1199,10 @@ def gerar_resumo_operacoes_fechadas(usuario_id: int) -> Dict[str, Any]:
 
 def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
     """
-    Serviço para deletar todas as operações de um usuário e limpar todos os dados relacionados (proventos, carteira, resultados, resumos).
+    Serviço para deletar todas as operações de um usuário e limpar todos os dados relacionados 
+    (proventos, carteira, resultados, resumos e importações).
+    
+    A limpeza das importações permite reutilizar os mesmos arquivos no futuro.
     """
     deleted_count = remover_todas_operacoes_usuario(usuario_id=usuario_id)
 
@@ -1188,12 +1210,20 @@ def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
     limpar_usuario_proventos_recebidos_db(usuario_id=usuario_id)
     limpar_carteira_usuario_db(usuario_id=usuario_id)
     limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
+    
+    # Limpa todas as importações do usuário para permitir reutilização dos arquivos
+    importacoes_removidas = limpar_importacoes_usuario(usuario_id=usuario_id)
+    
     # Se existirem funções para limpar resumos de proventos, chame aqui
     # limpar_resumo_anual_proventos_usuario_db(usuario_id=usuario_id)
     # limpar_resumo_mensal_proventos_usuario_db(usuario_id=usuario_id)
     # limpar_resumo_por_acao_proventos_usuario_db(usuario_id=usuario_id)
 
-    return {"mensagem": f"{deleted_count} operações e todos os dados relacionados foram removidos com sucesso.", "deleted_count": deleted_count}
+    return {
+        "mensagem": f"{deleted_count} operações, {importacoes_removidas} importações e todos os dados relacionados foram removidos com sucesso.",
+        "deleted_count": deleted_count,
+        "importacoes_removidas": importacoes_removidas
+    }
 
 def atualizar_status_darf_service(usuario_id: int, year_month: str, darf_type: str, new_status: str) -> Dict[str, str]:
     """
@@ -1649,6 +1679,14 @@ def listar_eventos_corporativos_por_acao_service(id_acao: int) -> List[EventoCor
 
 # --- Serviço de Recálculo de Proventos Recebidos pelo Usuário (Rápido) ---
 def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
+    import logging
+    import traceback
+    
+    # Log detalhado da origem da chamada
+    stack_trace = traceback.format_stack()
+    caller_info = stack_trace[-2] if len(stack_trace) > 1 else "unknown"
+    logging.info(f"[PROVENTO-TRACE] recalcular_proventos_recebidos_rapido chamado para usuário {usuario_id}. Origem: {caller_info.strip()}")
+    
     print(f"[Proventos Rápido] Iniciando recálculo para usuário ID: {usuario_id}")
 
     limpar_usuario_proventos_recebidos_db(usuario_id)
@@ -1784,7 +1822,12 @@ def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict
             }
 
             try:
-                inserir_usuario_provento_recebido_db(dados_para_inserir)
+                inserir_usuario_provento_recebido_db(
+                    usuario_id=usuario_id,
+                    provento_global_id=provento_global.id,
+                    quantidade=quantidade_na_data_ex,
+                    valor_total=valor_total_recebido
+                )
                 proventos_calculados += 1
             except sqlite3.IntegrityError:
                 erros_insercao += 1
@@ -1834,6 +1877,185 @@ def listar_todos_eventos_corporativos_service() -> List[EventoCorporativoInfo]:
     return [EventoCorporativoInfo.model_validate(e) for e in eventos_db]
 
 
+# --- Funções de Importação ---
+
+def processar_importacao_com_deteccao_duplicatas(
+    operacoes: List[OperacaoCreate],
+    usuario_id: int,
+    nome_arquivo: str,
+    conteudo_arquivo: bytes,
+    nome_arquivo_original: str = None
+) -> Dict[str, Any]:
+    """
+    Processa uma importação completa com detecção de duplicatas
+    """
+    inicio_tempo = time.time()
+    
+    # Calcular hash do arquivo
+    hash_arquivo = calcular_hash_arquivo(conteudo_arquivo)
+    
+    # Verificar se arquivo já foi importado
+    importacao_existente = verificar_arquivo_ja_importado(usuario_id, hash_arquivo)
+    if importacao_existente:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Este arquivo já foi importado em {importacao_existente['data_importacao']}. "
+                   f"Importação ID: {importacao_existente['id']}"
+        )
+    
+    # Registrar a importação
+    importacao_id = inserir_importacao(
+        usuario_id=usuario_id,
+        nome_arquivo=nome_arquivo,
+        nome_arquivo_original=nome_arquivo_original,
+        tamanho_arquivo=len(conteudo_arquivo),
+        total_operacoes_arquivo=len(operacoes),
+        hash_arquivo=hash_arquivo
+    )
+    
+    operacoes_importadas = 0
+    operacoes_duplicadas = []
+    erros_processamento = []
+    
+    try:
+        for idx, operacao in enumerate(operacoes):
+            try:
+                # Verificar duplicata
+                operacao_existente = detectar_operacao_duplicada(
+                    usuario_id=usuario_id,
+                    data=operacao.date.isoformat() if hasattr(operacao.date, 'isoformat') else operacao.date,
+                    ticker=operacao.ticker,
+                    operacao=operacao.operation,
+                    quantidade=operacao.quantity,
+                    preco=operacao.price
+                )
+                
+                if operacao_existente:
+                    # Operação duplicada encontrada
+                    operacoes_duplicadas.append({
+                        'linha_arquivo': idx + 1,
+                        'data': operacao.date.isoformat() if hasattr(operacao.date, 'isoformat') else operacao.date,
+                        'ticker': operacao.ticker,
+                        'operacao': operacao.operation,
+                        'quantidade': operacao.quantity,
+                        'preco': operacao.price,
+                        'motivo_duplicacao': "Operação idêntica já existe no banco de dados",
+                        'operacao_existente_id': operacao_existente['id']
+                    })
+                    continue
+                
+                # Inserir operação
+                inserir_operacao(
+                    operacao=operacao.model_dump(),
+                    usuario_id=usuario_id,
+                    importacao_id=importacao_id
+                )
+                operacoes_importadas += 1
+                
+            except Exception as e:
+                erros_processamento.append(f"Linha {idx + 1}: {str(e)}")
+        
+        # Calcular tempo de processamento
+        tempo_processamento = int((time.time() - inicio_tempo) * 1000)
+        
+        # Atualizar status da importação
+        status = "concluida" if not erros_processamento else "erro"
+        observacoes = None
+        if operacoes_duplicadas:
+            observacoes = f"{len(operacoes_duplicadas)} operações duplicadas ignoradas"
+        if erros_processamento:
+            if observacoes:
+                observacoes += f"; {len(erros_processamento)} erros de processamento"
+            else:
+                observacoes = f"{len(erros_processamento)} erros de processamento"
+        
+        atualizar_status_importacao(
+            importacao_id=importacao_id,
+            status=status,
+            total_importadas=operacoes_importadas,
+            total_duplicadas=len(operacoes_duplicadas),
+            total_erro=len(erros_processamento),
+            observacoes=observacoes,
+            tempo_processamento_ms=tempo_processamento
+        )
+        
+        # Recalcular carteira e resultados se houve operações importadas
+        if operacoes_importadas > 0:
+            recalcular_carteira(usuario_id=usuario_id)
+            recalcular_resultados(usuario_id=usuario_id)
+        
+        # Obter dados atualizados da importação
+        importacao_final = obter_importacao_por_id(importacao_id)
+        
+        return {
+            'importacao': importacao_final,
+            'operacoes_duplicadas': operacoes_duplicadas,
+            'erros_processamento': erros_processamento,
+            'sucesso': len(erros_processamento) == 0,
+            'mensagem': f"Importação concluída: {operacoes_importadas} operações importadas, "
+                       f"{len(operacoes_duplicadas)} duplicadas ignoradas, "
+                       f"{len(erros_processamento)} erros"
+        }
+        
+    except Exception as e:
+        # Em caso de erro crítico, marcar importação como erro
+        atualizar_status_importacao(
+            importacao_id=importacao_id,
+            status="erro",
+            observacoes=f"Erro crítico durante processamento: {str(e)}"
+        )
+        raise HTTPException(status_code=500, detail=f"Erro durante importação: {str(e)}")
+
+
+def listar_historico_importacoes_service(usuario_id: int, limite: int = 50) -> List[Dict[str, Any]]:
+    """Lista o histórico de importações do usuário"""
+    return listar_importacoes_usuario(usuario_id, limite)
+
+
+def obter_detalhes_importacao_service(importacao_id: int, usuario_id: int) -> Dict[str, Any]:
+    """Obtém detalhes completos de uma importação"""
+    importacao = obter_importacao_por_id(importacao_id)
+    if not importacao:
+        raise HTTPException(status_code=404, detail="Importação não encontrada")
+    
+    if importacao['usuario_id'] != usuario_id:
+        raise HTTPException(status_code=403, detail="Acesso negado a esta importação")
+    
+    # Obter operações da importação
+    operacoes = obter_operacoes_por_importacao(importacao_id)
+    
+    return {
+        "importacao": importacao,
+        "operacoes": operacoes
+    }
+
+
+def reverter_importacao_service(importacao_id: int, usuario_id: int) -> Dict[str, Any]:
+    """Reverte uma importação, removendo todas as operações importadas"""
+    importacao = obter_importacao_por_id(importacao_id)
+    if not importacao:
+        raise HTTPException(status_code=404, detail="Importação não encontrada")
+    
+    if importacao['usuario_id'] != usuario_id:
+        raise HTTPException(status_code=403, detail="Acesso negado a esta importação")
+    
+    if importacao['status'] != 'concluida':
+        raise HTTPException(status_code=400, detail="Apenas importações concluídas podem ser revertidas")
+    
+    # Remover operações
+    operacoes_removidas = remover_operacoes_por_importacao(importacao_id, usuario_id)
+    
+    # Atualizar status da importação
+    atualizar_status_importacao(
+        importacao_id=importacao_id,
+        status="cancelada",
+        observacoes=f"Importação revertida. {operacoes_removidas} operações removidas."
+    )
+    
+    return {
+        "mensagem": f"Importação {importacao_id} revertida com sucesso",
+        "operacoes_removidas": operacoes_removidas
+    }
 def parse_date_to_iso(date_val):
     if not date_val:
         return None
@@ -1848,3 +2070,27 @@ def parse_date_to_iso(date_val):
             return datetime.strptime(str(date_val), '%d/%m/%Y').date().isoformat()
         except Exception:
             return None
+
+def analisar_duplicatas_service(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    Serviço para analisar duplicatas de operações de um usuário.
+    """
+    return analisar_duplicatas_usuario(usuario_id)
+
+def verificar_estrutura_importacao_service() -> Dict[str, Any]:
+    """
+    Serviço para verificar se a estrutura de importação está correta.
+    Função temporária para debug.
+    """
+    return verificar_estrutura_importacao()
+
+def limpar_importacoes_service(usuario_id: int) -> Dict[str, Any]:
+    """
+    Serviço para limpar todas as importações de um usuário.
+    Isso permite reutilizar os mesmos arquivos de importação no futuro.
+    """
+    importacoes_removidas = limpar_importacoes_usuario(usuario_id)
+    return {
+        "mensagem": f"{importacoes_removidas} importações foram removidas com sucesso. Agora você pode reutilizar os mesmos arquivos.",
+        "importacoes_removidas": importacoes_removidas
+    }

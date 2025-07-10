@@ -2,6 +2,8 @@ import sqlite3
 from datetime import date, datetime
 from contextlib import contextmanager
 from typing import Dict, List, Any, Optional
+import hashlib
+import time
 # Unused imports json, Union, defaultdict removed
 
 # Caminho para o banco de dados SQLite
@@ -62,6 +64,12 @@ def criar_tabelas():
     with get_db() as conn:
         cursor = conn.cursor()
         
+        # NOVA SEÇÃO: Tabela de importações
+        print("INFO: Criando/verificando tabela de importações...")
+
+
+
+                
         # Tabela de operações
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS operacoes (
@@ -505,6 +513,10 @@ def criar_tabelas():
             cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN valor_total_recebido REAL')
         if 'data_calculo' not in colunas_usr_prov:
             cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN data_calculo DATETIME')
+        
+        # ADICIONAR ESTA LINHA ANTES DO FINAL DA FUNÇÃO, ANTES DE conn.commit()
+        criar_tabela_importacoes()
+        
         conn.commit()
     
     # Inicializa o sistema de autenticação
@@ -519,7 +531,7 @@ def date_converter(obj):
         return obj.isoformat()
     raise TypeError(f"Type {type(obj)} not serializable")
 
-def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None) -> int:
+def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None, importacao_id: Optional[int] = None) -> int:
     """
     Insere uma operação no banco de dados.
     Verifica se o ticker da operação existe na tabela `acoes`.
@@ -527,6 +539,7 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
     Args:
         operacao: Dicionário com os dados da operação.
         usuario_id: ID do usuário que está criando a operação (opcional).
+        importacao_id: ID da importação de origem (opcional).
         
     Returns:
         int: ID da operação inserida.
@@ -543,10 +556,10 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
         if cursor.fetchone() is None:
             raise ValueError(f"Ticker {ticker_value} não encontrado na tabela de ações (acoes).")
 
-        # Adiciona usuario_id e corretora_id ao INSERT
+        # Adiciona usuario_id, corretora_id e importacao_id ao INSERT
         cursor.execute('''
-        INSERT INTO operacoes (date, ticker, operation, quantity, price, fees, usuario_id, corretora_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO operacoes (date, ticker, operation, quantity, price, fees, usuario_id, corretora_id, importacao_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             operacao["date"].isoformat() if isinstance(operacao["date"], (datetime, date)) else operacao["date"],
             operacao["ticker"],
@@ -555,7 +568,8 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
             operacao["price"],
             operacao.get("fees", 0.0),
             usuario_id, # Garante que usuario_id seja passado
-            operacao.get("corretora_id") # Pode ser None
+            operacao.get("corretora_id"), # Pode ser None
+            importacao_id  # NOVA LINHA ADICIONADA
         ))
         
         conn.commit()
@@ -563,7 +577,7 @@ def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None)
 
 def obter_operacao_por_id(operacao_id: int, usuario_id: int) -> Optional[Dict[str, Any]]:
     """
-    Obtém uma operação pelo ID e usuario_id.
+    Obtém uma operação pelo ID e usuario_id, incluindo informações de importação.
     
     Args:
         operacao_id: ID da operação.
@@ -576,9 +590,11 @@ def obter_operacao_por_id(operacao_id: int, usuario_id: int) -> Optional[Dict[st
         cursor = conn.cursor()
         
         cursor.execute('''
-        SELECT id, date, ticker, operation, quantity, price, fees, usuario_id
-        FROM operacoes
-        WHERE id = ? AND usuario_id = ?
+        SELECT o.id, o.date, o.ticker, o.operation, o.quantity, o.price, o.fees, o.usuario_id, o.importacao_id,
+               i.data_importacao, i.nome_arquivo_original
+        FROM operacoes o
+        LEFT JOIN importacoes i ON o.importacao_id = i.id
+        WHERE o.id = ? AND o.usuario_id = ?
         ''', (operacao_id, usuario_id))
         
         operacao = cursor.fetchone()
@@ -594,12 +610,15 @@ def obter_operacao_por_id(operacao_id: int, usuario_id: int) -> Optional[Dict[st
             "quantity": operacao["quantity"],
             "price": operacao["price"],
             "fees": operacao["fees"],
-            "usuario_id": operacao["usuario_id"]
+            "usuario_id": operacao["usuario_id"],
+            "importacao_id": operacao["importacao_id"],
+            "data_importacao": operacao["data_importacao"],
+            "nome_arquivo_original": operacao["nome_arquivo_original"]
         }
 
 def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
     """
-    Obtém todas as operações de um usuário específico, incluindo o nome da corretora.
+    Obtém todas as operações de um usuário específico, incluindo o nome da corretora e informações de importação.
     
     Args:
         usuario_id: ID do usuário para filtrar operações.
@@ -609,11 +628,14 @@ def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
     """
     with get_db() as conn:
         cursor = conn.cursor()
-        # Agora faz join com corretoras
+        # Agora faz join com corretoras e importacoes
         query = '''
-        SELECT o.id, o.date, o.ticker, o.operation, o.quantity, o.price, o.fees, o.usuario_id, o.corretora_id, c.nome as corretora_nome
+        SELECT o.id, o.date, o.ticker, o.operation, o.quantity, o.price, o.fees, o.usuario_id, o.corretora_id, o.importacao_id,
+               c.nome as corretora_nome,
+               i.data_importacao, i.nome_arquivo_original
         FROM operacoes o
         LEFT JOIN corretoras c ON o.corretora_id = c.id
+        LEFT JOIN importacoes i ON o.importacao_id = i.id
         WHERE o.usuario_id = ?
         ORDER BY o.date
         '''
@@ -630,7 +652,10 @@ def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
                 "fees": operacao["fees"],
                 "usuario_id": operacao["usuario_id"],
                 "corretora_id": operacao["corretora_id"],
-                "corretora_nome": operacao["corretora_nome"]
+                "corretora_nome": operacao["corretora_nome"],
+                "importacao_id": operacao["importacao_id"],
+                "data_importacao": operacao["data_importacao"],
+                "nome_arquivo_original": operacao["nome_arquivo_original"]
             })
         return operacoes
 
@@ -1285,6 +1310,14 @@ def inserir_usuario_provento_recebido_db(usuario_id: int, provento_global_id: in
         if not acao:
             raise ValueError(f"Ação com id {prov['id_acao']} não encontrada.")
 
+        # Converter valor_unitario de string com vírgula para float se necessário
+        valor_unitario = prov['valor_unitario']
+        if isinstance(valor_unitario, str):
+            try:
+                valor_unitario = float(valor_unitario.replace(',', '.'))
+            except (ValueError, AttributeError):
+                valor_unitario = 0.0
+
         campos = [
             'usuario_id', 'provento_global_id', 'id_acao', 'ticker_acao',
             'nome_acao', 'tipo_provento', 'data_ex', 'dt_pagamento',
@@ -1300,7 +1333,7 @@ def inserir_usuario_provento_recebido_db(usuario_id: int, provento_global_id: in
             prov['tipo'],
             prov['data_ex'],
             prov['dt_pagamento'],
-            prov['valor_unitario'],
+            valor_unitario,  # Usando o valor convertido
             quantidade,
             valor_total,
             dt.now().isoformat()
@@ -1401,7 +1434,7 @@ def obter_resumo_por_acao_proventos_recebidos_db(usuario_id: int) -> List[Dict[s
 
 def inserir_provento(provento_data: Dict[str, Any]) -> int:
     """
-    Insere um novo provento no banco de dados.
+    Ins
     Espera que as datas já estejam no formato YYYY-MM-DD e valor como float.
     """
     with get_db() as conn:
@@ -1623,6 +1656,185 @@ def obter_data_primeira_operacao_usuario_ticker(usuario_id: int, ticker: str) ->
             return row['primeira_data']
         return None
 
+# Funções para Importações
+
+def criar_tabela_importacoes():
+    """Cria a tabela de importações e adiciona a coluna importacao_id em operacoes"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Criar tabela importacoes
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS importacoes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            nome_arquivo TEXT NOT NULL,
+            nome_arquivo_original TEXT,
+            tamanho_arquivo INTEGER,
+            data_importacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            total_operacoes_arquivo INTEGER NOT NULL,
+            total_operacoes_importadas INTEGER NOT NULL DEFAULT 0,
+            total_operacoes_duplicadas INTEGER NOT NULL DEFAULT 0,
+            total_operacoes_erro INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'em_andamento',
+            hash_arquivo TEXT,
+            observacoes TEXT,
+            tempo_processamento_ms INTEGER,
+            FOREIGN KEY(usuario_id) REFERENCES usuarios(id)
+        )
+        ''')
+        
+        # Verificar se a coluna importacao_id existe na tabela operacoes
+        cursor.execute("PRAGMA table_info(operacoes)")
+        colunas = [info[1] for info in cursor.fetchall()]
+        
+        if 'importacao_id' not in colunas:
+            cursor.execute('ALTER TABLE operacoes ADD COLUMN importacao_id INTEGER REFERENCES importacoes(id)')
+        
+        # Criar índices
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_importacoes_usuario_id ON importacoes(usuario_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_importacoes_data ON importacoes(data_importacao)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_importacoes_status ON importacoes(status)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_importacoes_hash ON importacoes(hash_arquivo)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_importacao_id ON operacoes(importacao_id)')
+        
+        conn.commit()
+
+def calcular_hash_arquivo(conteudo_bytes: bytes) -> str:
+    """Calcula hash SHA256 do conteúdo do arquivo"""
+    return hashlib.sha256(conteudo_bytes).hexdigest()
+
+def verificar_arquivo_ja_importado(usuario_id: int, hash_arquivo: str) -> Optional[Dict[str, Any]]:
+    """Verifica se um arquivo com o mesmo hash já foi importado pelo usuário"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM importacoes 
+            WHERE usuario_id = ? AND hash_arquivo = ? AND status = 'concluida'
+            ORDER BY data_importacao DESC LIMIT 1
+        ''', (usuario_id, hash_arquivo))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def inserir_importacao(
+    usuario_id: int, 
+    nome_arquivo: str, 
+    total_operacoes_arquivo: int,
+    nome_arquivo_original: Optional[str] = None,
+    tamanho_arquivo: Optional[int] = None,
+    hash_arquivo: Optional[str] = None
+) -> int:
+    """Registra uma nova importação e retorna o ID"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO importacoes (
+                usuario_id, nome_arquivo, nome_arquivo_original, tamanho_arquivo,
+                total_operacoes_arquivo, hash_arquivo
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        ''', (usuario_id, nome_arquivo, nome_arquivo_original, tamanho_arquivo, 
+              total_operacoes_arquivo, hash_arquivo))
+        conn.commit()
+        return cursor.lastrowid
+
+def atualizar_status_importacao(
+    importacao_id: int,
+    status: str,
+    total_importadas: int = 0,
+    total_duplicadas: int = 0,
+    total_erro: int = 0,
+    observacoes: Optional[str] = None,
+    tempo_processamento_ms: Optional[int] = None
+) -> bool:
+    """Atualiza o status e estatísticas de uma importação"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE importacoes SET
+                status = ?,
+                total_operacoes_importadas = ?,
+                total_operacoes_duplicadas = ?,
+                total_operacoes_erro = ?,
+                observacoes = ?,
+                tempo_processamento_ms = ?
+            WHERE id = ?
+        ''', (status, total_importadas, total_duplicadas, total_erro, 
+              observacoes, tempo_processamento_ms, importacao_id))
+        conn.commit()
+        return cursor.rowcount > 0
+
+def obter_importacao_por_id(importacao_id: int) -> Optional[Dict[str, Any]]:
+    """Obtém uma importação pelo ID"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM importacoes WHERE id = ?', (importacao_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def listar_importacoes_usuario(usuario_id: int, limite: int = 50) -> List[Dict[str, Any]]:
+    """Lista as importações de um usuário, ordenadas por data (mais recentes primeiro)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT * FROM importacoes 
+            WHERE usuario_id = ? 
+            ORDER BY data_importacao DESC 
+            LIMIT ?
+        ''', (usuario_id, limite))
+        return [dict(row) for row in cursor.fetchall()]
+
+def detectar_operacao_duplicada(
+    usuario_id: int, 
+    data: str, 
+    ticker: str, 
+    operacao: str, 
+    quantidade: int, 
+    preco: float,
+    tolerancia_preco: float = 0.01
+) -> Optional[Dict[str, Any]]:
+    """
+    Detecta se uma operação já existe no banco de dados
+    Considera duplicata se todos os campos principais são iguais
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT id, date, ticker, operation, quantity, price 
+            FROM operacoes 
+            WHERE usuario_id = ? 
+                AND date = ? 
+                AND ticker = ? 
+                AND operation = ? 
+                AND quantity = ?
+                AND ABS(price - ?) <= ?
+        ''', (usuario_id, data, ticker, operacao, quantidade, preco, tolerancia_preco))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def obter_operacoes_por_importacao(importacao_id: int) -> List[Dict[str, Any]]:
+    """Obtém todas as operações de uma importação específica"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT o.*, i.nome_arquivo_original, i.data_importacao
+            FROM operacoes o
+            JOIN importacoes i ON o.importacao_id = i.id
+            WHERE o.importacao_id = ?
+            ORDER BY o.date, o.id
+        ''', (importacao_id,))
+        return [dict(row) for row in cursor.fetchall()]
+
+def remover_operacoes_por_importacao(importacao_id: int, usuario_id: int) -> int:
+    """Remove todas as operações de uma importação específica (para reverter)"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM operacoes 
+            WHERE importacao_id = ? AND usuario_id = ?
+        ''', (importacao_id, usuario_id))
+        conn.commit()
+        return cursor.rowcount
+
 def get_sum_proventos_by_month_for_user(user_id: int, start_date: date, end_date: date) -> List[Dict[str, Any]]:
     """
     Calcula a soma total de proventos recebidos por mês para um usuário dentro de um período.
@@ -1656,3 +1868,112 @@ def get_sum_proventos_by_month_for_user(user_id: int, start_date: date, end_date
         cursor.execute(query, (user_id, start_date_str, end_date_str))
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
+
+def analisar_duplicatas_usuario(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    Analisa todas as operações de um usuário para encontrar possíveis duplicatas.
+    Retorna grupos de operações que podem ser duplicatas.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Busca operações agrupadas por características similares
+        cursor.execute('''
+            SELECT 
+                ticker, date, operation, quantity, price, fees,
+                GROUP_CONCAT(id) as ids,
+                GROUP_CONCAT(importacao_id) as importacao_ids,
+                COUNT(*) as count
+            FROM operacoes 
+            WHERE usuario_id = ?
+            GROUP BY ticker, date, operation, quantity, price, fees
+            HAVING COUNT(*) > 1
+            ORDER BY date DESC, ticker
+        ''', (usuario_id,))
+        
+        grupos_duplicatas = []
+        for row in cursor.fetchall():
+            ids = [int(id_str) for id_str in row["ids"].split(",")]
+            importacao_ids = [int(imp_id) if imp_id else None for imp_id in row["importacao_ids"].split(",")]
+            
+            # Busca detalhes completos de cada operação duplicata
+            operacoes_detalhes = []
+            for op_id in ids:
+                cursor.execute('''
+                    SELECT o.*, i.nome_arquivo_original, i.data_importacao
+                    FROM operacoes o
+                    LEFT JOIN importacoes i ON o.importacao_id = i.id
+                    WHERE o.id = ?
+                ''', (op_id,))
+                op_detalhe = cursor.fetchone()
+                if op_detalhe:
+                    operacoes_detalhes.append(dict(op_detalhe))
+            
+            grupos_duplicatas.append({
+                "ticker": row["ticker"],
+                "date": row["date"],
+                "operation": row["operation"],
+                "quantity": row["quantity"],
+                "price": row["price"],
+                "fees": row["fees"],
+                "count": row["count"],
+                "operacoes": operacoes_detalhes
+            })
+        
+        return grupos_duplicatas
+
+def verificar_estrutura_importacao() -> Dict[str, Any]:
+    """
+    Verifica se a tabela importacoes e coluna importacao_id existem.
+    Função temporária para debug.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Verifica se tabela importacoes existe
+        cursor.execute('''
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name='importacoes'
+        ''')
+        tabela_importacoes_existe = cursor.fetchone() is not None
+        
+        # Verifica se coluna importacao_id existe na tabela operacoes
+        cursor.execute("PRAGMA table_info(operacoes)")
+        colunas_operacoes = [col[1] for col in cursor.fetchall()]
+        coluna_importacao_id_existe = 'importacao_id' in colunas_operacoes
+        
+        # Conta registros nas tabelas
+        cursor.execute("SELECT COUNT(*) as count FROM operacoes")
+        total_operacoes = cursor.fetchone()["count"]
+        
+        total_importacoes = 0
+        if tabela_importacoes_existe:
+            cursor.execute("SELECT COUNT(*) as count FROM importacoes")
+            total_importacoes = cursor.fetchone()["count"]
+        
+        return {
+            "tabela_importacoes_existe": tabela_importacoes_existe,
+            "coluna_importacao_id_existe": coluna_importacao_id_existe,
+            "total_operacoes": total_operacoes,
+            "total_importacoes": total_importacoes,
+            "colunas_operacoes": colunas_operacoes
+        }
+
+def limpar_importacoes_usuario(usuario_id: int) -> int:
+    """
+    Remove todas as importações de um usuário específico.
+    Isso permite reutilizar os mesmos arquivos de importação no futuro.
+    
+    Args:
+        usuario_id: ID do usuário cujas importações serão removidas.
+        
+    Returns:
+        int: Número de importações removidas.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM importacoes 
+            WHERE usuario_id = ?
+        ''', (usuario_id,))
+        conn.commit()
+        return cursor.rowcount

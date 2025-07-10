@@ -318,20 +318,19 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                     </div>
                   </div>
                   <DialogDescription className="text-gray-700 leading-relaxed">
-                    Você está prestes a <strong className="text-red-600">remover permanentemente</strong> todas as suas operações registradas.
-                    <br /><br />
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Info className="h-4 w-4 text-yellow-600" />
-                        <span className="font-medium text-yellow-800">Isso também removerá:</span>
-                      </div>
-                      <ul className="text-sm text-yellow-700 space-y-1 ml-6">
-                        <li>• Todos os proventos relacionados</li>
-                        <li>• Resultados calculados automaticamente</li>
-                        <li>• Histórico de performance</li>
-                      </ul>
-                    </div>
+                    Você está prestes a remover permanentemente todas as suas operações registradas.
                   </DialogDescription>
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Info className="h-4 w-4 text-yellow-600" />
+                      <span className="font-medium text-yellow-800">Isso também removerá:</span>
+                    </div>
+                    <ul className="text-sm text-yellow-700 space-y-1 ml-6">
+                      <li>• Todos os proventos relacionados</li>
+                      <li>• Resultados calculados automaticamente</li>
+                      <li>• Histórico de performance</li>
+                    </ul>
+                  </div>
                 </DialogHeader>
                 <DialogFooter className="flex gap-3 pt-4">
                   <Button 
@@ -560,19 +559,18 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
             
             <DialogDescription className="text-gray-700 leading-relaxed mt-4">
               Tem certeza que deseja remover esta operação do seu histórico?
-              <br /><br />
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <Shield className="h-4 w-4 text-amber-600" />
-                  <span className="font-medium text-amber-800">Impactos da remoção:</span>
-                </div>
-                <ul className="text-sm text-amber-700 space-y-1 ml-6">
-                  <li>• Recálculo automático da carteira</li>
-                  <li>• Atualização dos resultados</li>
-                  <li>• Ajuste nos impostos calculados</li>
-                </ul>
-              </div>
             </DialogDescription>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="h-4 w-4 text-amber-600" />
+                <span className="font-medium text-amber-800">Impactos da remoção:</span>
+              </div>
+              <ul className="text-sm text-amber-700 space-y-1 ml-6">
+                <li>• Recálculo automático da carteira</li>
+                <li>• Atualização dos resultados</li>
+                <li>• Ajuste nos impostos calculados</li>
+              </ul>
+            </div>
           </DialogHeader>
           <DialogFooter className="flex gap-3 pt-4">
             <Button 

@@ -1,7 +1,8 @@
 from datetime import date, datetime
 import re # Added
+from enum import Enum
 from pydantic import BaseModel, Field, field_validator, ConfigDict, EmailStr # Updated for Pydantic 2.x
-from typing import Optional, Any, List, Dict # Ensured Any, List, Dict
+from typing import Optional, Any, List, Dict, Union # Ensured Any, List, Dict, Union
 
 # Modelos para autenticação
 
@@ -167,6 +168,7 @@ class Operacao(OperacaoBase):
     id: int
     usuario_id: Optional[int] = None
     corretora_nome: Optional[str] = None  # Nome da corretora para exibição
+    importacao_id: Optional[int] = None  # NOVA LINHA ADICIONADA
 
 class ResultadoMensal(BaseModel):
     mes: str  # Formato: YYYY-MM
@@ -523,3 +525,66 @@ class Corretora(BaseModel):
     nome: str
     cnpj: str | None = None  # Agora opcional
     model_config = ConfigDict(from_attributes=True)
+
+# Novos modelos para importações
+
+class StatusImportacao(str, Enum):
+    EM_ANDAMENTO = "em_andamento"
+    CONCLUIDA = "concluida"
+    ERRO = "erro"
+    CANCELADA = "cancelada"
+
+class ImportacaoCreate(BaseModel):
+    nome_arquivo: str
+    nome_arquivo_original: Optional[str] = None
+    tamanho_arquivo: Optional[int] = None
+    total_operacoes_arquivo: int
+    hash_arquivo: Optional[str] = None
+
+class ImportacaoResponse(BaseModel):
+    id: int
+    usuario_id: int
+    nome_arquivo: str
+    nome_arquivo_original: Optional[str] = None
+    tamanho_arquivo: Optional[int] = None
+    data_importacao: datetime
+    total_operacoes_arquivo: int
+    total_operacoes_importadas: int
+    total_operacoes_duplicadas: int
+    total_operacoes_erro: int
+    status: StatusImportacao
+    hash_arquivo: Optional[str] = None
+    observacoes: Optional[str] = None
+    tempo_processamento_ms: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+class ImportacaoResumo(BaseModel):
+    """Resumo de uma importação para listagens"""
+    id: int
+    nome_arquivo: str
+    data_importacao: datetime
+    total_operacoes_importadas: int
+    total_operacoes_duplicadas: int
+    status: StatusImportacao
+    observacoes: Optional[str] = None
+
+class OperacaoDuplicada(BaseModel):
+    """Detalhes de uma operação duplicada detectada"""
+    linha_arquivo: int
+    data: str
+    ticker: str
+    operacao: str
+    quantidade: int
+    preco: float
+    motivo_duplicacao: str
+    operacao_existente_id: Optional[int] = None
+
+class ResultadoImportacao(BaseModel):
+    """Resultado completo de uma importação"""
+    importacao: ImportacaoResponse
+    operacoes_duplicadas: List[OperacaoDuplicada] = []
+    erros_processamento: List[str] = []
+    sucesso: bool
+    mensagem: str
