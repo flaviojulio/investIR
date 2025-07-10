@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { TrendingUp, TrendingDown, Search, Filter, Plus, Eye, MoreHorizontal } from "lucide-react"
+import { TrendingUp, TrendingDown, Search, Filter, Plus, Eye, MoreHorizontal, Edit3 } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import Link from "next/link"
 
@@ -21,6 +21,7 @@ const acoes = [
     variacaoDia: 2.34,
     volume: 45230000,
     dividendos: 2.45,
+    preco_editado_pelo_usuario: true, // Preço foi editado manualmente
   },
   {
     codigo: "VALE3",
@@ -34,6 +35,7 @@ const acoes = [
     variacaoDia: -1.23,
     volume: 23450000,
     dividendos: 8.9,
+    preco_editado_pelo_usuario: false, // Preço automático
   },
   {
     codigo: "ITUB4",
@@ -47,6 +49,7 @@ const acoes = [
     variacaoDia: 0.87,
     volume: 34560000,
     dividendos: 1.25,
+    preco_editado_pelo_usuario: false, // Preço automático
   },
   {
     codigo: "BBDC4",
@@ -60,6 +63,7 @@ const acoes = [
     variacaoDia: 1.12,
     volume: 28900000,
     dividendos: 0.95,
+    preco_editado_pelo_usuario: true, // Preço foi editado manualmente
   },
   {
     codigo: "WEGE3",
@@ -73,6 +77,7 @@ const acoes = [
     variacaoDia: 0.45,
     volume: 12340000,
     dividendos: 1.8,
+    preco_editado_pelo_usuario: false, // Preço automático
   },
 ]
 
@@ -238,7 +243,15 @@ export default function CarteiraPage() {
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Preço Médio</p>
-                        <p className="font-semibold">R$ {acao.precoMedio.toFixed(2)}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold">R$ {acao.precoMedio.toFixed(2)}</p>
+                          {acao.preco_editado_pelo_usuario && (
+                            <Badge variant="outline" className="text-xs px-1 py-0 h-4 bg-blue-50 text-blue-600 border-blue-200">
+                              <Edit3 className="h-3 w-3 mr-1" />
+                              Editado
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                       <div>
                         <p className="text-xs text-muted-foreground">Preço Atual</p>

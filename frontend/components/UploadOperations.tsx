@@ -168,7 +168,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
                      file.name.endsWith(".xlsx") || 
                      file.name.endsWith(".xls")
       
-      let formData = new FormData()
+      const formData = new FormData()
       
       if (isExcel) {
         const data = await file.arrayBuffer()

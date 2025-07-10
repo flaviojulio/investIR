@@ -81,7 +81,7 @@ export function LoginForm() {
             </div>
             
             <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-800 bg-clip-text text-transparent leading-tight">
-              Sua Jornada de Investimento em Ações Começa Aqui
+              Sua Jornada de Investimento em Ações é Melhor Aqui
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl mx-auto leading-relaxed">
               Imposta de Renda de Ações nunca foi tão <strong className="text-emerald-600">fácil</strong>. Você vai ver!.

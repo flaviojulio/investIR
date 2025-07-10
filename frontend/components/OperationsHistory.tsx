@@ -98,7 +98,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
   const sortedOperations = useMemo(() => {
     if (!sortConfig) return filteredOperations;
 
-    let sortableItems = [...filteredOperations];
+    const sortableItems = [...filteredOperations];
 
     sortableItems.sort((a, b) => {
       let aValue: any, bValue: any;

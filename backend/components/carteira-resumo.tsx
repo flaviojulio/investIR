@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Eye } from "lucide-react"
+import { Eye, Edit3 } from "lucide-react"
 import Link from "next/link"
 import type { CarteiraItem } from "@/lib/api"
 
@@ -54,10 +54,18 @@ export function CarteiraResumo({ carteira }: CarteiraResumoProps) {
                     </div>
                     <p className="text-sm text-muted-foreground">
                       {item.quantidade} ações • Preço médio:{" "}
-                      {item.preco_medio.toLocaleString("pt-BR", {
-                        style: "currency",
-                        currency: "BRL",
-                      })}
+                      <span className="inline-flex items-center gap-1">
+                        {item.preco_medio.toLocaleString("pt-BR", {
+                          style: "currency",
+                          currency: "BRL",
+                        })}
+                        {item.preco_editado_pelo_usuario && (
+                          <Badge variant="outline" className="text-xs px-1 py-0 h-4 bg-blue-50 text-blue-600 border-blue-200">
+                            <Edit3 className="h-3 w-3 mr-1" />
+                            Editado
+                          </Badge>
+                        )}
+                      </span>
                     </p>
                   </div>
                 </div>

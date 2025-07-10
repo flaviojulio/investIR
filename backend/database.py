@@ -222,8 +222,15 @@ def criar_tabelas():
         cursor.execute("PRAGMA table_info(carteira_atual)")
         colunas = [info[1] for info in cursor.fetchall()]
         
-        # Adicionar a coluna usuario_id se ela não existir
+        # Verificar se precisa adicionar novas colunas
+        precisa_recriar = False
         if 'usuario_id' not in colunas:
+            precisa_recriar = True
+        if 'preco_editado_pelo_usuario' not in colunas:
+            precisa_recriar = True
+        
+        # Adicionar as colunas se elas não existirem
+        if precisa_recriar:
             # Primeiro, remover a restrição UNIQUE existente
             cursor.execute('''
             CREATE TABLE carteira_atual_temp (
@@ -233,14 +240,17 @@ def criar_tabelas():
                 custo_total REAL NOT NULL,
                 preco_medio REAL NOT NULL,
                 usuario_id INTEGER DEFAULT NULL,
+                preco_editado_pelo_usuario BOOLEAN DEFAULT 0,
                 UNIQUE(ticker, usuario_id)
             )
             ''')
             
             # Copiar dados da tabela antiga para a nova
             cursor.execute('''
-            INSERT INTO carteira_atual_temp (id, ticker, quantidade, custo_total, preco_medio)
-            SELECT id, ticker, quantidade, custo_total, preco_medio FROM carteira_atual
+            INSERT INTO carteira_atual_temp (id, ticker, quantidade, custo_total, preco_medio, usuario_id)
+            SELECT id, ticker, quantidade, custo_total, preco_medio, 
+                   CASE WHEN EXISTS(SELECT 1 FROM pragma_table_info('carteira_atual') WHERE name='usuario_id') 
+                        THEN usuario_id ELSE NULL END FROM carteira_atual
             ''')
             
             # Remover tabela antiga
@@ -248,280 +258,326 @@ def criar_tabelas():
             
             # Renomear tabela temporária
             cursor.execute('ALTER TABLE carteira_atual_temp RENAME TO carteira_atual')
-        
-        # Tabela de operações fechadas
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS operacoes_fechadas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            data_abertura TEXT NOT NULL,
-            data_fechamento TEXT NOT NULL,
-            ticker TEXT NOT NULL,
-            quantidade INTEGER NOT NULL,
-            valor_compra REAL NOT NULL,
-            valor_venda REAL NOT NULL,
-            resultado REAL NOT NULL,
-            percentual_lucro REAL NOT NULL
-        )
-        ''')
-        
-        # Verificar se a coluna usuario_id existe na tabela operacoes_fechadas
-        cursor.execute("PRAGMA table_info(operacoes_fechadas)")
-        colunas = [info[1] for info in cursor.fetchall()]
-        
-        # Adicionar a coluna usuario_id se ela não existir
-        if 'usuario_id' not in colunas:
-            cursor.execute('ALTER TABLE operacoes_fechadas ADD COLUMN usuario_id INTEGER DEFAULT NULL')
-        
-        # Criar índices para melhorar performance nas consultas
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_date ON operacoes(date)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_ticker ON operacoes(ticker)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_mes ON resultados_mensais(mes)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_ticker ON operacoes_fechadas(ticker)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_data_fechamento ON operacoes_fechadas(data_fechamento)')
-
-        # Remover a tabela 'stocks' antiga se existir
-        cursor.execute('DROP TABLE IF EXISTS stocks;')
-
-        # Nova tabela 'acoes'
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS acoes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ticker TEXT NOT NULL UNIQUE,
-            nome TEXT,
-            razao_social TEXT,
-            cnpj TEXT,
-            ri TEXT,
-            classificacao TEXT,
-            isin TEXT
-        )
-        ''')
-
-        # Criar índice para a coluna ticker na tabela acoes
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_acoes_ticker ON acoes(ticker);')
-
-        # Tabela de proventos
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS proventos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            id_acao INTEGER,
-            tipo TEXT,
-            valor REAL,
-            data_registro TEXT,
-            data_ex TEXT,
-            dt_pagamento TEXT,
-            FOREIGN KEY(id_acao) REFERENCES acoes(id)
-        )
-        ''')
-
-        # Criar índice para a coluna id_acao na tabela proventos
-        # Tabela de proventos - MIGRATION LOGIC
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proventos';")
-        proventos_table_exists = cursor.fetchone()
-        needs_migration = False
-
-        if proventos_table_exists:
-            cursor.execute("PRAGMA table_info(proventos);")
-            columns_info = {row['name']: str(row['type']).upper() for row in cursor.fetchall()}
-            if not (columns_info.get('data_ex') == 'DATE' and \
-                    columns_info.get('dt_pagamento') == 'DATE' and \
-                    columns_info.get('data_registro') == 'DATE'):
-                needs_migration = True
-
-        final_proventos_schema = """
-        CREATE TABLE proventos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            id_acao INTEGER,
-            tipo TEXT,
-            valor REAL,
-            data_registro DATE,
-            data_ex DATE,
-            dt_pagamento DATE,
-            FOREIGN KEY(id_acao) REFERENCES acoes(id)
-        )
-        """
-
-        if needs_migration:
-            print("INFO: Migrating 'proventos' table to new schema with DATE types...")
-            try:
-                cursor.execute("CREATE TABLE proventos_old AS SELECT * FROM proventos;") # Backup old data safely
-                cursor.execute("DROP TABLE proventos;") # Drop the old table
-
-                # Create the new table with the final schema
-                cursor.execute(final_proventos_schema)
-
-                cursor.execute("SELECT id, id_acao, tipo, valor, data_registro, data_ex, dt_pagamento FROM proventos_old;")
-                old_proventos_rows = cursor.fetchall()
-
-                migrated_count = 0
-                for row_dict in old_proventos_rows: # Assumes conn.row_factory = sqlite3.Row
-                    transformed_data_registro = _transform_date_string_to_iso(row_dict['data_registro'])
-                    transformed_data_ex = _transform_date_string_to_iso(row_dict['data_ex'])
-                    transformed_dt_pagamento = _transform_date_string_to_iso(row_dict['dt_pagamento'])
-
-                    cursor.execute("""
-                        INSERT INTO proventos (id_acao, tipo, valor, data_registro, data_ex, dt_pagamento)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    """, (row_dict['id_acao'], row_dict['tipo'], row_dict['valor'],
-                          transformed_data_registro, transformed_data_ex, transformed_dt_pagamento))
-                    migrated_count +=1
-
-                cursor.execute("DROP TABLE proventos_old;")
-                print(f"INFO: 'proventos' table migration complete. {migrated_count} rows migrated.")
-            except Exception as e:
-                print(f"ERROR: Failed to migrate 'proventos' table: {e}")
-                try:
-                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proventos_old';")
-                    if cursor.fetchone():
-                        cursor.execute("DROP TABLE IF EXISTS proventos;")
-                        cursor.execute("ALTER TABLE proventos_old RENAME TO proventos;")
-                        print("INFO: Attempted to restore 'proventos' table from backup.")
-                except Exception as restore_e:
-                    print(f"ERROR: Failed to restore 'proventos' table from backup: {restore_e}")
-                raise
         else:
-            # If no migration needed, just ensure table exists with the correct schema
-            cursor.execute(final_proventos_schema.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
+            # Tabela de operações fechadas
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS operacoes_fechadas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                data_abertura TEXT NOT NULL,
+                data_fechamento TEXT NOT NULL,
+                ticker TEXT NOT NULL,
+                quantidade INTEGER NOT NULL,
+                valor_compra REAL NOT NULL,
+                valor_venda REAL NOT NULL,
+                resultado REAL NOT NULL,
+                percentual_lucro REAL NOT NULL
+            )
+            ''')
+            
+            # Verificar se a coluna usuario_id existe na tabela operacoes_fechadas
+            cursor.execute("PRAGMA table_info(operacoes_fechadas)")
+            colunas = [info[1] for info in cursor.fetchall()]
+            
+            # Adicionar a coluna usuario_id se ela não existir
+            if 'usuario_id' not in colunas:
+                cursor.execute('ALTER TABLE operacoes_fechadas ADD COLUMN usuario_id INTEGER DEFAULT NULL')
+            
+            # Criar índices para melhorar performance nas consultas
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_date ON operacoes(date)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_ticker ON operacoes(ticker)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_mes ON resultados_mensais(mes)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_ticker ON operacoes_fechadas(ticker)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_data_fechamento ON operacoes_fechadas(data_fechamento)')
 
-        # Criar índice para a coluna id_acao na tabela proventos
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_proventos_id_acao ON proventos(id_acao);')
+            # Remover a tabela 'stocks' antiga se existir
+            cursor.execute('DROP TABLE IF EXISTS stocks;')
 
-        # Tabela de eventos corporativos - Migration Logic
-        eventos_corporativos_final_schema = """
-        CREATE TABLE eventos_corporativos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            id_acao INTEGER NOT NULL,
-            evento TEXT NOT NULL,
-            data_aprovacao DATE,
-            data_registro DATE,
-            data_ex DATE,
-            razao TEXT,
-            FOREIGN KEY(id_acao) REFERENCES acoes(id)
-        )
-        """
+            # Nova tabela 'acoes'
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS acoes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ticker TEXT NOT NULL UNIQUE,
+                nome TEXT,
+                razao_social TEXT,
+                cnpj TEXT,
+                ri TEXT,
+                classificacao TEXT,
+                isin TEXT
+            )
+            ''')
 
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eventos_corporativos';")
-        eventos_table_exists = cursor.fetchone()
-        eventos_needs_migration = False
+            # Criar índice para a coluna ticker na tabela acoes
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_acoes_ticker ON acoes(ticker);')
 
-        if eventos_table_exists:
-            cursor.execute("PRAGMA table_info(eventos_corporativos);")
-            columns_info = {row['name']: str(row['type']).upper() for row in cursor.fetchall()}
-            # Check if any of the date columns are TEXT, indicating need for migration
-            if columns_info.get('data_aprovacao') == 'TEXT' or \
-               columns_info.get('data_registro') == 'TEXT' or \
-               columns_info.get('data_ex') == 'TEXT':
-                eventos_needs_migration = True
+            # Tabela de proventos
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS proventos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_acao INTEGER,
+                tipo TEXT,
+                valor REAL,
+                data_registro TEXT,
+                data_ex TEXT,
+                dt_pagamento TEXT,
+                FOREIGN KEY(id_acao) REFERENCES acoes(id)
+            )
+            ''')
 
-        if eventos_needs_migration:
-            print("INFO: Migrating 'eventos_corporativos' table to use DATE types for date columns...")
-            try:
-                cursor.execute("ALTER TABLE eventos_corporativos RENAME TO eventos_corporativos_old;")
-                cursor.execute(eventos_corporativos_final_schema) # Create new table with DATE types
-                # Data is NOT copied from _old to new as per requirements
-                cursor.execute("DROP TABLE eventos_corporativos_old;")
-                print("INFO: 'eventos_corporativos' table migrated (data not copied).")
-            except Exception as e:
-                print(f"ERROR: Failed to migrate 'eventos_corporativos' table: {e}")
-                # Attempt to restore if rename succeeded but subsequent steps failed
+            # Criar índice para a coluna id_acao na tabela proventos
+            # Tabela de proventos - MIGRATION LOGIC
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proventos';")
+            proventos_table_exists = cursor.fetchone()
+            needs_migration = False
+
+            if proventos_table_exists:
+                cursor.execute("PRAGMA table_info(proventos);")
+                columns_info = {row['name']: str(row['type']).upper() for row in cursor.fetchall()}
+                if not (columns_info.get('data_ex') == 'DATE' and \
+                        columns_info.get('dt_pagamento') == 'DATE' and \
+                        columns_info.get('data_registro') == 'DATE'):
+                    needs_migration = True
+
+            final_proventos_schema = """
+            CREATE TABLE proventos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_acao INTEGER,
+                tipo TEXT,
+                valor REAL,
+                data_registro DATE,
+                data_ex DATE,
+                dt_pagamento DATE,
+                FOREIGN KEY(id_acao) REFERENCES acoes(id)
+            )
+            """
+
+            if needs_migration:
+                print("INFO: Migrating 'proventos' table to new schema with DATE types...")
                 try:
-                    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eventos_corporativos_old';")
-                    if cursor.fetchone():
-                        # If new table was created, drop it before renaming old one back
-                        cursor.execute("DROP TABLE IF EXISTS eventos_corporativos;")
-                        cursor.execute("ALTER TABLE eventos_corporativos_old RENAME TO eventos_corporativos;")
-                        print("INFO: Attempted to restore 'eventos_corporativos' table from backup due to migration error.")
-                except Exception as restore_e:
-                    print(f"ERROR: Failed to restore 'eventos_corporativos' table from backup: {restore_e}")
-                raise # Re-raise the original migration error
-        else:
-            # If no migration needed, just ensure table exists with the correct schema (DATE types)
-            # Replace "CREATE TABLE" with "CREATE TABLE IF NOT EXISTS"
-            cursor.execute(eventos_corporativos_final_schema.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1))
+                    cursor.execute("CREATE TABLE proventos_old AS SELECT * FROM proventos;") # Backup old data safely
+                    cursor.execute("DROP TABLE proventos;") # Drop the old table
 
-        # Criar índice para a coluna id_acao na tabela eventos_corporativos
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_eventos_corporativos_id_acao ON eventos_corporativos(id_acao);')
+                    # Create the new table with the final schema
+                    cursor.execute(final_proventos_schema)
+
+                    cursor.execute("SELECT id, id_acao, tipo, valor, data_registro, data_ex, dt_pagamento FROM proventos_old;")
+                    old_proventos_rows = cursor.fetchall()
+
+                    migrated_count = 0
+                    for row_dict in old_proventos_rows: # Assumes conn.row_factory = sqlite3.Row
+                        transformed_data_registro = _transform_date_string_to_iso(row_dict['data_registro'])
+                        transformed_data_ex = _transform_date_string_to_iso(row_dict['data_ex'])
+                        transformed_dt_pagamento = _transform_date_string_to_iso(row_dict['dt_pagamento'])
+
+                        cursor.execute("""
+                            INSERT INTO proventos (id_acao, tipo, valor, data_registro, data_ex, dt_pagamento)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        """, (row_dict['id_acao'], row_dict['tipo'], row_dict['valor'],
+                              transformed_data_registro, transformed_data_ex, transformed_dt_pagamento))
+                        migrated_count +=1
+
+                    cursor.execute("DROP TABLE proventos_old;")
+                    print(f"INFO: 'proventos' table migration complete. {migrated_count} rows migrated.")
+                except Exception as e:
+                    print(f"ERROR: Failed to migrate 'proventos' table: {e}")
+                    try:
+                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='proventos_old';")
+                        if cursor.fetchone():
+                            cursor.execute("DROP TABLE IF EXISTS proventos;")
+                            cursor.execute("ALTER TABLE proventos_old RENAME TO proventos;")
+                            print("INFO: Attempted to restore 'proventos' table from backup.")
+                    except Exception as restore_e:
+                        print(f"ERROR: Failed to restore 'proventos' table from backup: {restore_e}")
+                    raise
+            else:
+                # If no migration needed, just ensure table exists with the correct schema
+                cursor.execute(final_proventos_schema.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"))
+
+            # Criar índice para a coluna id_acao na tabela proventos
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_proventos_id_acao ON proventos(id_acao);')
+
+            # Tabela de eventos corporativos - Migration Logic
+            eventos_corporativos_final_schema = """
+            CREATE TABLE eventos_corporativos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                id_acao INTEGER NOT NULL,
+                evento TEXT NOT NULL,
+                data_aprovacao DATE,
+                data_registro DATE,
+                data_ex DATE,
+                razao TEXT,
+                FOREIGN KEY(id_acao) REFERENCES acoes(id)
+            )
+            """
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eventos_corporativos';")
+            eventos_table_exists = cursor.fetchone()
+            eventos_needs_migration = False
+
+            if eventos_table_exists:
+                cursor.execute("PRAGMA table_info(eventos_corporativos);")
+                columns_info = {row['name']: str(row['type']).upper() for row in cursor.fetchall()}
+                # Check if any of the date columns are TEXT, indicating need for migration
+                if columns_info.get('data_aprovacao') == 'TEXT' or \
+                   columns_info.get('data_registro') == 'TEXT' or \
+                   columns_info.get('data_ex') == 'TEXT':
+                    eventos_needs_migration = True
+
+            if eventos_needs_migration:
+                print("INFO: Migrating 'eventos_corporativos' table to use DATE types for date columns...")
+                try:
+                    cursor.execute("ALTER TABLE eventos_corporativos RENAME TO eventos_corporativos_old;")
+                    cursor.execute(eventos_corporativos_final_schema) # Create new table with DATE types
+                    # Data is NOT copied from _old to new as per requirements
+                    cursor.execute("DROP TABLE eventos_corporativos_old;")
+                    print("INFO: 'eventos_corporativos' table migrated (data not copied).")
+                except Exception as e:
+                    print(f"ERROR: Failed to migrate 'eventos_corporativos' table: {e}")
+                    # Attempt to restore if rename succeeded but subsequent steps failed
+                    try:
+                        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='eventos_corporativos_old';")
+                        if cursor.fetchone():
+                            # If new table was created, drop it before renaming old one back
+                            cursor.execute("DROP TABLE IF EXISTS eventos_corporativos;")
+                            cursor.execute("ALTER TABLE eventos_corporativos_old RENAME TO eventos_corporativos;")
+                            print("INFO: Attempted to restore 'eventos_corporativos' table from backup due to migration error.")
+                    except Exception as restore_e:
+                        print(f"ERROR: Failed to restore 'eventos_corporativos' table from backup: {restore_e}")
+                    raise # Re-raise the original migration error
+            else:
+                # If no migration needed, just ensure table exists with the correct schema (DATE types)
+                # Replace "CREATE TABLE" with "CREATE TABLE IF NOT EXISTS"
+                cursor.execute(eventos_corporativos_final_schema.replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS", 1))
+
+            # Criar índice para a coluna id_acao na tabela eventos_corporativos
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_eventos_corporativos_id_acao ON eventos_corporativos(id_acao);')
+            
+            # Adiciona índices para as colunas usuario_id
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_id ON operacoes(usuario_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_ticker_date ON operacoes(usuario_id, ticker, date);') # New composite index
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_usuario_id ON resultados_mensais(usuario_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_carteira_atual_usuario_id ON carteira_atual(usuario_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_usuario_id ON operacoes_fechadas(usuario_id)')
+
+            # Tabela usuario_proventos_recebidos
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS usuario_proventos_recebidos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                usuario_id INTEGER NOT NULL,
+                provento_global_id INTEGER NOT NULL,
+                id_acao INTEGER NOT NULL,
+                ticker_acao TEXT NOT NULL,
+                nome_acao TEXT,
+                tipo_provento TEXT NOT NULL,
+                data_ex DATE NOT NULL,
+                dt_pagamento DATE,
+                valor_unitario_provento REAL NOT NULL,
+                quantidade_possuida_na_data_ex INTEGER NOT NULL,
+                valor_total_recebido REAL NOT NULL,
+                data_calculo DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY(usuario_id) REFERENCES usuarios(id),
+                FOREIGN KEY(provento_global_id) REFERENCES proventos(id),
+                FOREIGN KEY(id_acao) REFERENCES acoes(id)
+            )
+            ''')
+
+            # Índices para usuario_proventos_recebidos
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_usuario_id ON usuario_proventos_recebidos(usuario_id);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_acao_id ON usuario_proventos_recebidos(id_acao);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_dt_pagamento ON usuario_proventos_recebidos(dt_pagamento);')
+            cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_usr_prov_rec_usr_prov_glob ON usuario_proventos_recebidos(usuario_id, provento_global_id);')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_uid_dtpag_dataex ON usuario_proventos_recebidos(usuario_id, dt_pagamento DESC, data_ex DESC);') # New composite index
+            
+            # Tabela de corretoras
+            cursor.execute('''
+            CREATE TABLE IF NOT EXISTS corretoras (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nome TEXT NOT NULL,
+                cnpj TEXT UNIQUE
+            )
+            ''')
+
+            # Adicionar coluna corretora_id em operacoes, se não existir
+            cursor.execute("PRAGMA table_info(operacoes)")
+            colunas_operacoes = [info[1] for info in cursor.fetchall()]
+            if 'corretora_id' not in colunas_operacoes:
+                cursor.execute('ALTER TABLE operacoes ADD COLUMN corretora_id INTEGER REFERENCES corretoras(id)')
+
+            # --- MIGRATION: Adicionar colunas ausentes em usuario_proventos_recebidos ---
+            cursor.execute("PRAGMA table_info(usuario_proventos_recebidos)")
+            colunas_usr_prov = [info[1] for info in cursor.fetchall()]
+            if 'ticker_acao' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN ticker_acao TEXT')
+            if 'nome_acao' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN nome_acao TEXT')
+            if 'tipo_provento' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN tipo_provento TEXT')
+            if 'data_ex' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN data_ex DATE')
+            if 'dt_pagamento' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN dt_pagamento DATE')
+            if 'valor_unitario_provento' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN valor_unitario_provento REAL')
+            if 'quantidade_possuida_na_data_ex' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN quantidade_possuida_na_data_ex INTEGER')
+            if 'valor_total_recebido' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN valor_total_recebido REAL')
+            if 'data_calculo' not in colunas_usr_prov:
+                cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN data_calculo DATETIME')
         
-        # Adiciona índices para as colunas usuario_id
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_id ON operacoes(usuario_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_usuario_ticker_date ON operacoes(usuario_id, ticker, date);') # New composite index
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_resultados_mensais_usuario_id ON resultados_mensais(usuario_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_carteira_atual_usuario_id ON carteira_atual(usuario_id)')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_fechadas_usuario_id ON operacoes_fechadas(usuario_id)')
-
-        # Tabela usuario_proventos_recebidos
+        # Criar tabela de importações
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS usuario_proventos_recebidos (
+        CREATE TABLE IF NOT EXISTS importacoes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             usuario_id INTEGER NOT NULL,
-            provento_global_id INTEGER NOT NULL,
-            id_acao INTEGER NOT NULL,
-            ticker_acao TEXT NOT NULL,
-            nome_acao TEXT,
-            tipo_provento TEXT NOT NULL,
-            data_ex DATE NOT NULL,
-            dt_pagamento DATE,
-            valor_unitario_provento REAL NOT NULL,
-            quantidade_possuida_na_data_ex INTEGER NOT NULL,
-            valor_total_recebido REAL NOT NULL,
-            data_calculo DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(usuario_id) REFERENCES usuarios(id),
-            FOREIGN KEY(provento_global_id) REFERENCES proventos(id),
-            FOREIGN KEY(id_acao) REFERENCES acoes(id)
+            nome_arquivo TEXT NOT NULL,
+            nome_arquivo_original TEXT,
+            tamanho_arquivo INTEGER,
+            data_importacao DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            total_operacoes_arquivo INTEGER NOT NULL,
+            total_operacoes_importadas INTEGER NOT NULL DEFAULT 0,
+            total_operacoes_duplicadas INTEGER NOT NULL DEFAULT 0,
+            total_operacoes_erro INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'em_andamento',
+            hash_arquivo TEXT,
+            observacoes TEXT,
+            tempo_processamento_ms INTEGER,
+            FOREIGN KEY(usuario_id) REFERENCES usuarios(id)
         )
         ''')
-
-        # Índices para usuario_proventos_recebidos
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_usuario_id ON usuario_proventos_recebidos(usuario_id);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_acao_id ON usuario_proventos_recebidos(id_acao);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_dt_pagamento ON usuario_proventos_recebidos(dt_pagamento);')
-        cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_usr_prov_rec_usr_prov_glob ON usuario_proventos_recebidos(usuario_id, provento_global_id);')
-        cursor.execute('CREATE INDEX IF NOT EXISTS idx_usr_prov_rec_uid_dtpag_dataex ON usuario_proventos_recebidos(usuario_id, dt_pagamento DESC, data_ex DESC);') # New composite index
         
-        # Tabela de corretoras
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS corretoras (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            nome TEXT NOT NULL,
-            cnpj TEXT UNIQUE
-        )
-        ''')
-
-        # Adicionar coluna corretora_id em operacoes, se não existir
+        # Verificar se a coluna importacao_id existe na tabela operacoes
         cursor.execute("PRAGMA table_info(operacoes)")
-        colunas_operacoes = [info[1] for info in cursor.fetchall()]
-        if 'corretora_id' not in colunas_operacoes:
-            cursor.execute('ALTER TABLE operacoes ADD COLUMN corretora_id INTEGER REFERENCES corretoras(id)')
-
-        # --- MIGRATION: Adicionar colunas ausentes em usuario_proventos_recebidos ---
-        cursor.execute("PRAGMA table_info(usuario_proventos_recebidos)")
-        colunas_usr_prov = [info[1] for info in cursor.fetchall()]
-        if 'ticker_acao' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN ticker_acao TEXT')
-        if 'nome_acao' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN nome_acao TEXT')
-        if 'tipo_provento' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN tipo_provento TEXT')
-        if 'data_ex' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN data_ex DATE')
-        if 'dt_pagamento' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN dt_pagamento DATE')
-        if 'valor_unitario_provento' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN valor_unitario_provento REAL')
-        if 'quantidade_possuida_na_data_ex' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN quantidade_possuida_na_data_ex INTEGER')
-        if 'valor_total_recebido' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN valor_total_recebido REAL')
-        if 'data_calculo' not in colunas_usr_prov:
-            cursor.execute('ALTER TABLE usuario_proventos_recebidos ADD COLUMN data_calculo DATETIME')
+        colunas_importacao = [info[1] for info in cursor.fetchall()]
         
-        # ADICIONAR ESTA LINHA ANTES DO FINAL DA FUNÇÃO, ANTES DE conn.commit()
-        criar_tabela_importacoes()
+        if 'importacao_id' not in colunas_importacao:
+            cursor.execute('ALTER TABLE operacoes ADD COLUMN importacao_id INTEGER REFERENCES importacoes(id)')
+        
+        # Criar índices para importações
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_importacoes_usuario_id ON importacoes(usuario_id)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_importacoes_data ON importacoes(data_importacao)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_importacoes_status ON importacoes(status)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_importacoes_hash ON importacoes(hash_arquivo)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_importacao_id ON operacoes(importacao_id)')
+        
+        # Tabela de histórico de alterações de preço médio
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS historico_preco_medio (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticker TEXT NOT NULL,
+            usuario_id INTEGER NOT NULL,
+            preco_medio_anterior REAL NOT NULL,
+            preco_medio_novo REAL NOT NULL,
+            data_alteracao TEXT NOT NULL,
+            observacao TEXT,
+            FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
+        )
+        ''')
         
         conn.commit()
     
     # Inicializa o sistema de autenticação
-    from auth import inicializar_autenticacao # Relative import
-    inicializar_autenticacao()
+    import auth
+    auth.inicializar_autenticacao()
     
 def date_converter(obj):
     """
@@ -740,7 +796,7 @@ def remover_operacao(operacao_id: int, usuario_id: int) -> bool:
 
 # Comment about duplicate function already removed as the function itself was removed in prior step.
 
-def atualizar_carteira(ticker: str, quantidade: int, preco_medio: float, custo_total: float, usuario_id: int) -> None:
+def atualizar_carteira(ticker: str, quantidade: int, preco_medio: float, custo_total: float, usuario_id: int, preco_editado_pelo_usuario: bool = False) -> None:
     """
     Atualiza ou insere um item na carteira atual de um usuário.
     
@@ -750,6 +806,7 @@ def atualizar_carteira(ticker: str, quantidade: int, preco_medio: float, custo_t
         preco_medio: Preço médio das ações.
         custo_total: Custo total da posição.
         usuario_id: ID do usuário.
+        preco_editado_pelo_usuario: Flag indicando se o preço foi editado manualmente pelo usuário.
     """
     with get_db() as conn:
         cursor = conn.cursor()
@@ -758,14 +815,15 @@ def atualizar_carteira(ticker: str, quantidade: int, preco_medio: float, custo_t
         # A tabela carteira_atual já deve ter a restrição UNIQUE(ticker, usuario_id)
         # e a coluna usuario_id, conforme definido em criar_tabelas e auth.modificar_tabelas_existentes
         cursor.execute('''
-        INSERT OR REPLACE INTO carteira_atual (ticker, quantidade, custo_total, preco_medio, usuario_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO carteira_atual (ticker, quantidade, custo_total, preco_medio, usuario_id, preco_editado_pelo_usuario)
+        VALUES (?, ?, ?, ?, ?, ?)
         ''', (
             ticker,
             quantidade,
             custo_total,
             preco_medio,
-            usuario_id
+            usuario_id,
+            preco_editado_pelo_usuario
         ))
         
         conn.commit()
@@ -783,13 +841,14 @@ def obter_carteira_atual(usuario_id: int) -> List[Dict[str, Any]]:
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # Modificado para incluir o nome da ação da tabela 'acoes'
+        # Modificado para incluir o nome da ação da tabela 'acoes' e o flag de edição
         query = """
         SELECT
             ca.ticker,
             ca.quantidade,
             ca.custo_total,
             ca.preco_medio,
+            ca.preco_editado_pelo_usuario,
             a.nome
         FROM carteira_atual ca
         LEFT JOIN acoes a ON ca.ticker = a.ticker
@@ -942,6 +1001,7 @@ def limpar_banco_dados_usuario(usuario_id: int) -> None:
         cursor.execute('DELETE FROM resultados_mensais WHERE usuario_id = ?', (usuario_id,))
         cursor.execute('DELETE FROM carteira_atual WHERE usuario_id = ?', (usuario_id,))
         cursor.execute('DELETE FROM operacoes_fechadas WHERE usuario_id = ?', (usuario_id,)) # Adicionado
+        cursor.execute('DELETE FROM historico_preco_medio WHERE usuario_id = ?', (usuario_id,)) # Adicionado
         
         # Não reseta sqlite_sequence aqui, pois é global.
         # Se precisar resetar para um usuário, seria mais complexo e geralmente não é feito.
@@ -955,14 +1015,22 @@ def limpar_banco_dados() -> None:
     with get_db() as conn:
         cursor = conn.cursor()
         
+def limpar_banco_dados() -> None:
+    """
+    Remove todos os dados de TODAS as tabelas (usado por admin).
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
         # Limpa todas as tabelas
         cursor.execute('DELETE FROM operacoes')
         cursor.execute('DELETE FROM resultados_mensais')
         cursor.execute('DELETE FROM carteira_atual')
         cursor.execute('DELETE FROM operacoes_fechadas') # Adicionado
+        cursor.execute('DELETE FROM historico_preco_medio') # Adicionado
         
         # Reseta os contadores de autoincremento
-        cursor.execute('DELETE FROM sqlite_sequence WHERE name IN ("operacoes", "resultados_mensais", "carteira_atual", "operacoes_fechadas")')
+        cursor.execute('DELETE FROM sqlite_sequence WHERE name IN ("operacoes", "resultados_mensais", "carteira_atual", "operacoes_fechadas", "historico_preco_medio")')
         
         conn.commit()
 
@@ -1625,7 +1693,7 @@ def obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao: int, da
 
 def inserir_corretora_se_nao_existir(nome: str) -> int:
     """
-    Insere uma corretora apenas com o nome, se não existir. Retorna o id.
+Insere uma corretora apenas com o nome, se não existir. Retorna o id.
     """
     with get_db() as conn:
         cursor = conn.cursor()
@@ -1973,6 +2041,82 @@ def limpar_importacoes_usuario(usuario_id: int) -> int:
         cursor = conn.cursor()
         cursor.execute('''
             DELETE FROM importacoes 
+            WHERE usuario_id = ?
+        ''', (usuario_id,))
+        conn.commit()
+        return cursor.rowcount
+
+def obter_preco_medio_carteira(ticker: str, usuario_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Obtém o preço médio e informações de edição de um ticker na carteira atual.
+    
+    Args:
+        ticker: Código da ação.
+        usuario_id: ID do usuário.
+        
+    Returns:
+        Dict com preco_medio, preco_editado_pelo_usuario ou None se não encontrado.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+        SELECT preco_medio, preco_editado_pelo_usuario
+        FROM carteira_atual 
+        WHERE ticker = ? AND usuario_id = ?
+        ''', (ticker, usuario_id))
+        
+        result = cursor.fetchone()
+        if result:
+            return {
+                'preco_medio': result[0],
+                'preco_editado_pelo_usuario': bool(result[1])
+            }
+        return None
+
+def registrar_alteracao_preco_medio(ticker: str, usuario_id: int, preco_anterior: float, preco_novo: float, observacao: str = None) -> None:
+    """
+    Registra uma alteração de preço médio no histórico.
+    
+    Args:
+        ticker: Código da ação.
+        usuario_id: ID do usuário.
+        preco_anterior: Preço médio anterior.
+        preco_novo: Novo preço médio.
+        observacao: Observação opcional sobre a alteração.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        from datetime import datetime
+        data_alteracao = datetime.now().isoformat()
+        
+        cursor.execute('''
+        INSERT INTO historico_preco_medio (
+            ticker, usuario_id, preco_medio_anterior, preco_medio_novo, 
+            data_alteracao, observacao
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            ticker, usuario_id, preco_anterior, preco_novo, 
+            data_alteracao, observacao
+        ))
+        
+        conn.commit()
+
+def limpar_historico_preco_medio_usuario(usuario_id: int) -> int:
+    """
+    Remove todo o histórico de alterações de preço médio de um usuário específico.
+    
+    Args:
+        usuario_id: ID do usuário cujo histórico será removido.
+        
+    Returns:
+        int: Número de registros removidos.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            DELETE FROM historico_preco_medio 
             WHERE usuario_id = ?
         ''', (usuario_id,))
         conn.commit()

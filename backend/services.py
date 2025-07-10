@@ -34,6 +34,7 @@ from database import (
     limpar_operacoes_fechadas_usuario,
     remover_operacao,  # Added import for remover_operacao
     remover_todas_operacoes_usuario, # Added import for new function
+    limpar_historico_preco_medio_usuario, # Added import for clearing price history
     atualizar_status_darf_db, # Added for DARF status update
     limpar_carteira_usuario_db, # Added for clearing portfolio before recalc
     limpar_resultados_mensais_usuario_db, # Added for clearing monthly results before recalc
@@ -70,6 +71,9 @@ from database import (
     obter_resumo_anual_proventos_recebidos_db,
     obter_resumo_mensal_proventos_recebidos_db,
     obter_resumo_por_acao_proventos_recebidos_db,
+    # Novas funções para preço médio da carteira
+    obter_preco_medio_carteira,
+    registrar_alteracao_preco_medio,
     # Import database functions for importation
     inserir_importacao,
     atualizar_status_importacao,
@@ -351,6 +355,10 @@ def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None
         dados: Novos dados do item da carteira (ticker, quantidade e preço médio).
         usuario_id: ID do usuário.
     """
+    # Obter preço médio anterior para histórico
+    info_carteira_anterior = obter_preco_medio_carteira(dados.ticker, usuario_id)
+    preco_anterior = info_carteira_anterior['preco_medio'] if info_carteira_anterior else 0.0
+    
     custo_total_calculado: float
     if dados.quantidade < 0:
         # Para posições vendidas editadas manualmente, o custo_total deve ser o valor (positivo) da posição vendida.
@@ -360,8 +368,18 @@ def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None
         # Para posições compradas ou zeradas (quantidade >= 0)
         custo_total_calculado = dados.quantidade * dados.preco_medio
 
-    # Atualiza o item na carteira
-    atualizar_carteira(dados.ticker, dados.quantidade, dados.preco_medio, custo_total_calculado, usuario_id=usuario_id)
+    # Registrar no histórico se houve mudança de preço
+    if preco_anterior != dados.preco_medio:
+        registrar_alteracao_preco_medio(
+            dados.ticker, 
+            usuario_id, 
+            preco_anterior, 
+            dados.preco_medio, 
+            "Alteração manual pelo usuário"
+        )
+
+    # Atualiza o item na carteira, marcando como editado pelo usuário
+    atualizar_carteira(dados.ticker, dados.quantidade, dados.preco_medio, custo_total_calculado, usuario_id=usuario_id, preco_editado_pelo_usuario=True)
     
     # Adiciona chamadas para recalcular tudo após a atualização manual da carteira
     # REMOVED: recalcular_carteira(usuario_id=usuario_id) 
@@ -430,7 +448,8 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                         op_abertura=venda_pendente, 
                         op_fechamento=op_atual, 
                         quantidade_fechada=qtd_fechar,
-                        tipo_fechamento="venda_descoberta_fechada_com_compra"
+                        tipo_fechamento="venda_descoberta_fechada_com_compra",
+                        usuario_id=usuario_id
                     )
                     operacoes_fechadas_para_salvar.append(op_fechada)
                     
@@ -455,7 +474,8 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                         op_abertura=compra_pendente, 
                         op_fechamento=op_atual, 
                         quantidade_fechada=qtd_fechar,
-                        tipo_fechamento="compra_fechada_com_venda"
+                        tipo_fechamento="compra_fechada_com_venda",
+                        usuario_id=usuario_id
                     )
                     operacoes_fechadas_para_salvar.append(op_fechada)
                     
@@ -517,13 +537,30 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     return operacoes_fechadas_para_salvar
 
 
-def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, quantidade_fechada: int, tipo_fechamento: str) -> Dict:
+def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, quantidade_fechada: int, tipo_fechamento: str, usuario_id: int) -> Dict:
     """
     Cria um dicionário detalhado para uma operação fechada, alinhado com OperacaoFechada e OperacaoDetalhe.
+    Agora usa o preço médio da carteira para operações de VENDA quando editado pelo usuário.
     """
-    # Preços unitários
-    preco_unitario_abertura = op_abertura["price"]
-    preco_unitario_fechamento = op_fechamento["price"]
+    ticker = op_abertura["ticker"]
+    
+    # Obter informações do preço médio da carteira atual
+    info_carteira = obter_preco_medio_carteira(ticker, usuario_id)
+    
+    # LÓGICA CORRIGIDA: Usar preço médio da carteira apenas para VENDAS (fechamento de posições)
+    preco_unitario_abertura = op_abertura["price"]  # Sempre usar preço original da abertura
+    preco_fonte_abertura = "operacao_original"
+    
+    # Para fechamento, verificar se deve usar preço da carteira (apenas para vendas)
+    if (info_carteira and info_carteira['preco_editado_pelo_usuario'] and 
+        op_fechamento["operation"] == "sell"):
+        # Usar preço médio da carteira para vendas quando editado
+        preco_unitario_fechamento = info_carteira['preco_medio']
+        preco_fonte_fechamento = "carteira_editada"
+    else:
+        # Usar preço original da operação
+        preco_unitario_fechamento = op_fechamento["price"]
+        preco_fonte_fechamento = "operacao_original"
     
     # Taxas proporcionais
     taxas_proporcionais_abertura = (op_abertura["fees"] / op_abertura["quantity"]) * quantidade_fechada if op_abertura["quantity"] > 0 else 0
@@ -580,6 +617,7 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
             "operation": op_abertura["operation"],
             "quantity": quantidade_fechada,
             "price": preco_unitario_abertura,
+            "price_fonte": preco_fonte_abertura,
             "fees": taxas_proporcionais_abertura,
             "valor_total": preco_unitario_abertura * quantidade_fechada
         },
@@ -589,6 +627,7 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
             "operation": op_fechamento["operation"],
             "quantity": quantidade_fechada,
             "price": preco_unitario_fechamento,
+            "price_fonte": preco_fonte_fechamento,
             "fees": taxas_proporcionais_fechamento,
             "valor_total": preco_unitario_fechamento * quantidade_fechada
         }
@@ -604,20 +643,36 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
         "valor_venda": preco_unitario_fechamento,
         "taxas_total": taxas_proporcionais_abertura + taxas_proporcionais_fechamento,
         "resultado": resultado_liquido,
-        "percentual_lucro": percentual_lucro, # Added this key
+        "percentual_lucro": percentual_lucro,
         "operacoes_relacionadas": operacoes_relacionadas,
-        "day_trade": op_abertura["date"] == op_fechamento["date"]
+        "day_trade": op_abertura["date"] == op_fechamento["date"],
+        "preco_fonte_abertura": preco_fonte_abertura,  # Campo para auditoria
+        "preco_fonte_fechamento": preco_fonte_fechamento  # Novo campo para auditoria
     }
 
 
 def recalcular_carteira(usuario_id: int) -> None:
     """
     Recalcula a carteira atual de um usuário com base em todas as suas operações.
-    A carteira existente do usuário é limpa antes do recálculo.
+    A carteira existente do usuário é limpa antes do recálculo, mas preserva informações de preços editados.
     """
     import logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    # Limpa a carteira atual do usuário no banco de dados antes de recalcular
+    
+    # IMPORTANTE: Salvar informações de preços editados ANTES de limpar a carteira
+    carteira_atual = obter_carteira_atual(usuario_id)
+    precos_editados = {}
+    
+    for item in carteira_atual:
+        if item.get('preco_editado_pelo_usuario'):
+            ticker = item['ticker']
+            precos_editados[ticker] = {
+                'preco_medio': item['preco_medio'],
+                'editado': True
+            }
+            print(f"[recalcular_carteira] Salvando preço editado para {ticker}: R$ {item['preco_medio']:.2f}")
+    
+    # Agora limpa a carteira atual do usuário no banco de dados
     limpar_carteira_usuario_db(usuario_id=usuario_id)
 
     # Obtém todas as operações do usuário
@@ -809,13 +864,21 @@ def recalcular_carteira(usuario_id: int) -> None:
             
     # Atualiza a carteira no banco de dados para o usuário
     for ticker, dados in carteira_temp.items():
-        # Salva mesmo se a quantidade for zero para remover da carteira no DB,
-        # ou a função atualizar_carteira pode decidir não salvar se quantidade for zero.
-        # A função `atualizar_carteira` do database usa INSERT OR REPLACE, 
-        # então se a quantidade for 0, ela ainda será salva assim.
-        # Se quisermos remover, precisaríamos de uma lógica de DELETE no DB.
-        # Por ora, salvar com quantidade zero é aceitável.
-        atualizar_carteira(ticker, dados["quantidade"], dados["preco_medio"], dados["custo_total"], usuario_id=usuario_id)
+        # Verificar se o usuário editou manualmente este ticker (usar dados salvos)
+        if ticker in precos_editados:
+            # Preservar o preço médio editado pelo usuário
+            preco_medio_final = precos_editados[ticker]['preco_medio']
+            custo_total_final = dados["quantidade"] * preco_medio_final
+            preco_editado = True
+            
+            print(f"[recalcular_carteira] Preservando preço editado para {ticker}: PM={preco_medio_final}")
+        else:
+            # Usar o preço médio calculado
+            preco_medio_final = dados["preco_medio"]
+            custo_total_final = dados["custo_total"]
+            preco_editado = False
+        
+        atualizar_carteira(ticker, dados["quantidade"], preco_medio_final, custo_total_final, usuario_id=usuario_id, preco_editado_pelo_usuario=preco_editado)
 
 
 def recalcular_resultados(usuario_id: int) -> None:
@@ -1158,7 +1221,7 @@ def gerar_resumo_operacoes_fechadas(usuario_id: int) -> Dict[str, Any]:
         "lucro_swing_trade": lucro_swing_trade,
         "total_day_trade": len(operacoes_day_trade),
         "total_swing_trade": len(operacoes_swing_trade),
-        "top_lucrativas": top_lucrativas,
+               "top_lucrativas": top_lucrativas,
         "top_prejuizo": top_prejuizo,
         "resumo_por_ticker": dict(resumo_por_ticker) # Converte defaultdict para dict para a resposta
     }
@@ -1200,7 +1263,7 @@ def gerar_resumo_operacoes_fechadas(usuario_id: int) -> Dict[str, Any]:
 def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
     """
     Serviço para deletar todas as operações de um usuário e limpar todos os dados relacionados 
-    (proventos, carteira, resultados, resumos e importações).
+    (proventos, carteira, resultados, resumos, histórico de preços e importações).
     
     A limpeza das importações permite reutilizar os mesmos arquivos no futuro.
     """
@@ -1211,6 +1274,12 @@ def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
     limpar_carteira_usuario_db(usuario_id=usuario_id)
     limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
     
+    # Limpa operações fechadas
+    limpar_operacoes_fechadas_usuario(usuario_id=usuario_id)
+    
+    # Limpa histórico de alterações de preço médio
+    historico_removido = limpar_historico_preco_medio_usuario(usuario_id=usuario_id)
+    
     # Limpa todas as importações do usuário para permitir reutilização dos arquivos
     importacoes_removidas = limpar_importacoes_usuario(usuario_id=usuario_id)
     
@@ -1220,9 +1289,10 @@ def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
     # limpar_resumo_por_acao_proventos_usuario_db(usuario_id=usuario_id)
 
     return {
-        "mensagem": f"{deleted_count} operações, {importacoes_removidas} importações e todos os dados relacionados foram removidos com sucesso.",
+        "mensagem": f"{deleted_count} operações, {importacoes_removidas} importações, {historico_removido} registros de histórico de preços e todos os dados relacionados foram removidos com sucesso.",
         "deleted_count": deleted_count,
-        "importacoes_removidas": importacoes_removidas
+        "importacoes_removidas": importacoes_removidas,
+        "historico_preco_removido": historico_removido
     }
 
 def atualizar_status_darf_service(usuario_id: int, year_month: str, darf_type: str, new_status: str) -> Dict[str, str]:
@@ -2094,3 +2164,36 @@ def limpar_importacoes_service(usuario_id: int) -> Dict[str, Any]:
         "mensagem": f"{importacoes_removidas} importações foram removidas com sucesso. Agora você pode reutilizar os mesmos arquivos.",
         "importacoes_removidas": importacoes_removidas
     }
+
+def obter_preco_medio_ponderado_carteira(usuario_id: int) -> float:
+    """
+    Obtém o preço médio ponderado da carteira atual de um usuário.
+    O preço médio é calculado como o custo total das ações dividido pela quantidade total de ações.
+    Apenas ações com quantidade positiva são consideradas.
+    
+    Args:
+        usuario_id: ID do usuário.
+        
+    Returns:
+        float: Preço médio ponderado da carteira.
+    """
+    carteira_atual = obter_carteira_atual(usuario_id)
+    
+    if not carteira_atual:
+        return 0.0
+    
+    custo_total = 0.0
+    quantidade_total = 0.0
+    
+    for acao in carteira_atual:
+        quantidade = acao.get("quantidade", 0)
+        preco_medio = acao.get("preco_medio", 0.0)
+        
+        if quantidade > 0:
+            custo_total += quantidade * preco_medio
+            quantidade_total += quantidade
+    
+    if quantidade_total == 0:
+        return 0.0
+    
+    return custo_total / quantidade_total

@@ -28,7 +28,7 @@ export function TabelaProventos({ data, showValues = true }: TabelaProventosProp
     if (!sortConfig) return data; // Should not happen with default sortConfig
 
     // Create a new array to avoid mutating the original data prop
-    let sortableItems = [...data];
+    const sortableItems = [...data];
 
     sortableItems.sort((a, b) => {
       const aValue = a[sortConfig.key];

@@ -214,6 +214,7 @@ class CarteiraAtual(BaseModel):
     quantidade: int
     custo_total: float
     preco_medio: float
+    preco_editado_pelo_usuario: Optional[bool] = False
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -78,7 +78,7 @@ export function TaxResults({ resultados, onUpdate }: TaxResultsProps) {
   };
 
   const filteredAndSortedData = useMemo(() => {
-    let filtered = resultados.filter(resultado => {
+    const filtered = resultados.filter(resultado => {
       const matchesSearch = formatMonth(resultado.mes).toLowerCase().includes(searchTerm.toLowerCase());
       
       if (!matchesSearch) return false;

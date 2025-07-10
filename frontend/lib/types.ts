@@ -18,6 +18,7 @@ export interface CarteiraItem {
   quantidade: number;
   preco_medio: number;
   custo_total: number;
+  preco_editado_pelo_usuario?: boolean; // Flag para indicar se foi editado manualmente
 }
 
 export interface ResultadoMensal {

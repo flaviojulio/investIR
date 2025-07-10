@@ -381,7 +381,17 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
                       </Link>
                     </TableCell>
                     <TableCell className="text-right">{formatNumber(typedItem.quantidade)}</TableCell>
-                    <TableCell className="text-right">{showValues ? formatCurrency(typedItem.preco_medio) : '***'}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        {showValues ? formatCurrency(typedItem.preco_medio) : '***'}
+                        {typedItem.preco_editado_pelo_usuario && (
+                          <Edit 
+                            className="h-3 w-3 text-amber-500 opacity-75" 
+                            title="Preço médio editado manualmente"
+                          />
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell className="text-right">{showValues ? formatCurrency(Math.abs(typedItem.custo_total)) : '***'}</TableCell>
                     <TableCell className="text-right">{showValues ? formatCurrency(currentPrice) : '***'}</TableCell>
                     <TableCell className="text-right font-medium">{showValues ? formatCurrency(valorAtualDisplay) : '***'}</TableCell>
@@ -550,8 +560,12 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
           })()}
         </div>
 
-        <div className="mt-4 text-xs text-muted-foreground">
-          * Preços atuais são simulados para demonstração. Em produção, seriam obtidos de uma API de cotações.
+        <div className="mt-4 text-xs text-muted-foreground space-y-1">
+          <p>* Preços atuais são simulados para demonstração. Em produção, seriam obtidos de uma API de cotações.</p>
+          <div className="flex items-center gap-1">
+            <Edit className="h-3 w-3 text-amber-500 opacity-75" />
+            <span>Indica preço médio editado manualmente</span>
+          </div>
         </div>
       </CardContent>
 
@@ -560,9 +574,28 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
         <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>Editar Ação: {editingItem.ticker}</DialogTitle>
+              <DialogTitle className="flex items-center gap-2">
+                Editar Ação: {editingItem.ticker}
+                {editingItem.preco_editado_pelo_usuario && (
+                  <Badge variant="secondary" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                    <Edit className="h-3 w-3 mr-1" />
+                    Já editado
+                  </Badge>
+                )}
+              </DialogTitle>
               <DialogDescription>
                 Ajuste a quantidade e o preço médio da sua posição.
+                {editingItem.preco_editado_pelo_usuario && (
+                  <div className="mt-2 text-sm text-amber-600 bg-amber-50 p-2 rounded-md border border-amber-200">
+                    <div className="flex items-center gap-1">
+                      <Edit className="h-3 w-3" />
+                      <span className="font-medium">Preço já foi editado manualmente.</span>
+                    </div>
+                    <span className="text-xs text-amber-700">
+                      Esta alteração será registrada no histórico de edições.
+                    </span>
+                  </div>
+                )}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
