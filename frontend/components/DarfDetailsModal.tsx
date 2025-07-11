@@ -11,6 +11,12 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { OperacaoFechada, ResultadoMensal } from "@/lib/types"; 
 import { api } from '@/lib/api'; 
 import { useToast } from '@/hooks/use-toast'; 
@@ -341,7 +347,24 @@ export function DarfDetailsModal({
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                  <span className="text-xs text-gray-600">Valor Total:</span>
+                  <span className="flex items-center gap-1">
+                    <span className="text-xs text-gray-600">Valor Total:</span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-xs">
+                            {tipoDarf === 'daytrade' 
+                              ? 'Valor já descontado do IRRF retido na fonte (0,01% sobre as vendas)'
+                              : 'Valor total do imposto devido sobre ganhos de capital swing trade'
+                            }
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </span>
                   <span className="font-bold text-gray-900 text-sm">
                     {formatCurrency(darfValorMensal)}
                   </span>

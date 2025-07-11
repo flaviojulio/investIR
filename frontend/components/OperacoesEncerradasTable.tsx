@@ -197,6 +197,52 @@ export default function OperacoesEncerradasTable({
   // Estado para controlar mudanças no status do DARF
   const [darfStatusMap, setDarfStatusMap] = useState<Map<string, string>>(new Map());
 
+  // Console.log para debug das operações encerradas
+  useEffect(() => {
+    console.log('=== OPERAÇÕES ENCERRADAS DEBUG ===');
+    console.log('Total de operações:', operacoesFechadas.length);
+    console.log('Operações recebidas:', operacoesFechadas);
+    
+    // Analisa cada operação
+    operacoesFechadas.forEach((op, index) => {
+      console.log(`\n--- Operação ${index + 1} ---`);
+      console.log('Ticker:', op.ticker);
+      console.log('Data Abertura:', op.data_abertura);
+      console.log('Data Fechamento:', op.data_fechamento);
+      console.log('Tipo:', op.tipo);
+      console.log('Quantidade:', op.quantidade);
+      console.log('Valor Compra:', op.valor_compra);
+      console.log('Valor Venda:', op.valor_venda);
+      console.log('Taxas Total:', op.taxas_total);
+      console.log('Resultado:', op.resultado);
+      console.log('Day Trade:', op.day_trade);
+      console.log('Status IR:', op.status_ir);
+      console.log('Operações Relacionadas:', op.operacoes_relacionadas);
+    });
+
+    // Estatísticas resumidas
+    const totalLucro = operacoesFechadas
+      .filter(op => op.resultado > 0)
+      .reduce((acc, op) => acc + op.resultado, 0);
+    
+    const totalPrejuizo = operacoesFechadas
+      .filter(op => op.resultado < 0)
+      .reduce((acc, op) => acc + Math.abs(op.resultado), 0);
+    
+    const dayTrades = operacoesFechadas.filter(op => op.day_trade);
+    const swingTrades = operacoesFechadas.filter(op => !op.day_trade);
+    const tributaveis = operacoesFechadas.filter(op => op.status_ir?.includes('Tributável'));
+    
+    console.log('\n=== ESTATÍSTICAS ===');
+    console.log('Total de lucros:', totalLucro);
+    console.log('Total de prejuízos:', totalPrejuizo);
+    console.log('Resultado líquido:', totalLucro - totalPrejuizo);
+    console.log('Day trades:', dayTrades.length);
+    console.log('Swing trades:', swingTrades.length);
+    console.log('Operações tributáveis:', tributaveis.length);
+    console.log('==============================\n');
+  }, [operacoesFechadas]);
+
   // Inicializa o mapa de status DARF com os valores padrão
   useEffect(() => {
     const initialMap = new Map<string, string>();
@@ -369,7 +415,7 @@ export default function OperacoesEncerradasTable({
                 </span>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Lucro compensado por prejuízos acumulados anteriormente</p>
+                <p>Lucro compensado por prejuízos acumulados anteriormente ou no mesmo mês</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

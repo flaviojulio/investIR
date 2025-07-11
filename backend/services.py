@@ -187,6 +187,9 @@ def _eh_day_trade(operacoes_dia: List[Dict[str, Any]], ticker: str) -> bool:
     """
     Verifica se houve day trade para um ticker específico em um dia.
     
+    Day trade ocorre quando há compra e venda do mesmo ticker no mesmo dia,
+    mas apenas a quantidade que foi efetivamente zerada no dia é considerada day trade.
+    
     Args:
         operacoes_dia: Lista de operações do dia.
         ticker: Ticker a ser verificado.
@@ -201,6 +204,27 @@ def _eh_day_trade(operacoes_dia: List[Dict[str, Any]], ticker: str) -> bool:
     
     # Se houve compra e venda do mesmo ticker no mesmo dia, é day trade
     return compras > 0 and vendas > 0
+
+def _calcular_quantidade_day_trade(operacoes_dia: List[Dict[str, Any]], ticker: str) -> int:
+    """
+    Calcula a quantidade efetiva de day trade para um ticker em um dia.
+    
+    A quantidade de day trade é a menor entre compras e vendas do mesmo dia.
+    
+    Args:
+        operacoes_dia: Lista de operações do dia.
+        ticker: Ticker a ser verificado.
+        
+    Returns:
+        int: Quantidade de ações que foram efetivamente day trade.
+    """
+    compras = sum(op["quantity"] for op in operacoes_dia 
+                 if op["ticker"] == ticker and op["operation"] == "buy")
+    vendas = sum(op["quantity"] for op in operacoes_dia 
+                if op["ticker"] == ticker and op["operation"] == "sell")
+    
+    # Day trade é a menor quantidade entre compras e vendas
+    return min(compras, vendas)
 
 def _calcular_resultado_dia(operacoes_dia: List[Dict[str, Any]], usuario_id: int) -> tuple[Dict[str, float], Dict[str, float]]: # Changed Tuple to tuple
     """
@@ -223,25 +247,42 @@ def _calcular_resultado_dia(operacoes_dia: List[Dict[str, Any]], usuario_id: int
     }
     
     # Identifica os tickers com day trade DENTRO DAS OPERAÇÕES FORNECIDAS (operacoes_dia)
-    # Esta parte é crucial: _eh_day_trade deve ser chamada com as operações do dia para aquele ticker.
-    tickers_day_trade_neste_conjunto = set()
     ops_por_ticker_no_dia = defaultdict(list)
     for op_dt_check in operacoes_dia: # Renomeado para evitar conflito de nome
         ops_por_ticker_no_dia[op_dt_check["ticker"]].append(op_dt_check)
 
-    for ticker_dt, ops_do_ticker_neste_conjunto in ops_por_ticker_no_dia.items(): # Renomeado para evitar conflito
-        if _eh_day_trade(ops_do_ticker_neste_conjunto, ticker_dt): # Passa a lista filtrada por ticker
-            tickers_day_trade_neste_conjunto.add(ticker_dt)
-
-    for op in operacoes_dia: # Processa apenas as operações que efetivamente são day trade
-        if op["ticker"] in tickers_day_trade_neste_conjunto:
-            valor = op["quantity"] * op["price"]
-            fees = op.get("fees", 0.0)
-            if op["operation"] == "buy":
-                resultado_day["custo_total"] += valor + fees
-            else:  # sell
-                resultado_day["vendas_total"] += valor - fees
-                resultado_day["irrf"] += (op["quantity"] * op["price"]) * 0.01 # IRRF is on gross sale value
+    # Calcula day trade apenas para a quantidade efetivamente zerada no dia
+    for ticker_dt, ops_do_ticker_neste_conjunto in ops_por_ticker_no_dia.items():
+        if _eh_day_trade(ops_do_ticker_neste_conjunto, ticker_dt):
+            # Calcula a quantidade de day trade (menor entre compras e vendas)
+            quantidade_day_trade = _calcular_quantidade_day_trade(ops_do_ticker_neste_conjunto, ticker_dt)
+            
+            # Processa compras para day trade
+            compras_ticker = [op for op in ops_do_ticker_neste_conjunto if op["operation"] == "buy"]
+            vendas_ticker = [op for op in ops_do_ticker_neste_conjunto if op["operation"] == "sell"]
+            
+            # Calcula preço médio de compra e venda para day trade
+            if compras_ticker and vendas_ticker:
+                valor_compra_total = sum(op["quantity"] * op["price"] for op in compras_ticker)
+                quantidade_compra_total = sum(op["quantity"] for op in compras_ticker)
+                preco_medio_compra = valor_compra_total / quantidade_compra_total if quantidade_compra_total > 0 else 0
+                
+                valor_venda_total = sum(op["quantity"] * op["price"] for op in vendas_ticker)
+                quantidade_venda_total = sum(op["quantity"] for op in vendas_ticker)
+                preco_medio_venda = valor_venda_total / quantidade_venda_total if quantidade_venda_total > 0 else 0
+                
+                # Calcula resultado day trade apenas para a quantidade zerada
+                custo_day_trade = quantidade_day_trade * preco_medio_compra
+                receita_day_trade = quantidade_day_trade * preco_medio_venda
+                
+                # Calcula taxas proporcionais
+                taxas_compra = sum(op.get("fees", 0.0) for op in compras_ticker)
+                taxas_venda = sum(op.get("fees", 0.0) for op in vendas_ticker)
+                taxas_proporcionais = (taxas_compra + taxas_venda) * (quantidade_day_trade / max(quantidade_compra_total, quantidade_venda_total))
+                
+                resultado_day["custo_total"] += custo_day_trade + (taxas_proporcionais / 2)
+                resultado_day["vendas_total"] += receita_day_trade - (taxas_proporcionais / 2)
+                resultado_day["irrf"] += receita_day_trade * 0.0001  # IRRF is 0.01% on gross sale value
     
     resultado_day["ganho_liquido"] = resultado_day["vendas_total"] - resultado_day["custo_total"]
     return None, resultado_day # Retorna None para resultado_swing
@@ -505,30 +546,32 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
             op_f["status_ir"] = "Prejuízo Acumulado"
         else: # op_f["resultado"] > 0
             if op_f["day_trade"]:
-                ir_pagar_mensal_day_trade = 0.0
-                if resultado_do_mes_dict and isinstance(resultado_do_mes_dict.get("ir_pagar_day"), (int, float)):
-                    ir_pagar_mensal_day_trade = resultado_do_mes_dict["ir_pagar_day"]
+                # CORREÇÃO: Para day trade, verificar se há IR a pagar
+                ir_pagar_day = 0.0
+                if resultado_do_mes_dict:
+                    ir_pagar_day = resultado_do_mes_dict.get("ir_pagar_day", 0.0)
                 
-                if ir_pagar_mensal_day_trade > 0:
+                if ir_pagar_day > 0:
                     op_f["status_ir"] = "Tributável Day Trade"
-                else: 
+                else:
                     op_f["status_ir"] = "Lucro Compensado"
                     
             else: # Swing Trade
-                is_exempt_swing_mensal = False 
-                if resultado_do_mes_dict and isinstance(resultado_do_mes_dict.get("isento_swing"), bool):
-                    is_exempt_swing_mensal = resultado_do_mes_dict["isento_swing"]
+                # Verificar isenção primeiro
+                is_exempt = False
+                if resultado_do_mes_dict:
+                    is_exempt = resultado_do_mes_dict.get("isento_swing", False)
 
-                if is_exempt_swing_mensal:
+                if is_exempt:
                     op_f["status_ir"] = "Isento"
-                else: 
-                    ir_pagar_mensal_swing_trade = 0.0
-                    if resultado_do_mes_dict and isinstance(resultado_do_mes_dict.get("ir_pagar_swing"), (int, float)):
-                        ir_pagar_mensal_swing_trade = resultado_do_mes_dict["ir_pagar_swing"]
+                else:
+                    ir_pagar_swing = 0.0
+                    if resultado_do_mes_dict:
+                        ir_pagar_swing = resultado_do_mes_dict.get("ir_pagar_swing", 0.0)
                     
-                    if ir_pagar_mensal_swing_trade > 0:
+                    if ir_pagar_swing > 0:
                         op_f["status_ir"] = "Tributável Swing"
-                    else: 
+                    else:
                         op_f["status_ir"] = "Lucro Compensado"
         
         # Salva a operação fechada (que agora inclui status_ir, though salvar_operacao_fechada might not save it yet)
@@ -912,10 +955,11 @@ def recalcular_resultados(usuario_id: int) -> None:
         mes = op_date.strftime("%Y-%m")
         operacoes_por_mes[mes].append(op)
     
-    prejuizo_acumulado_swing = 0.0
-    prejuizo_acumulado_day = 0.0
-    
     for mes_str, ops_mes_original in sorted(operacoes_por_mes.items()): # Renomeado para clareza
+        # CORREÇÃO: Buscar prejuízos acumulados dos meses anteriores ao mês atual
+        prejuizo_acumulado_swing = obter_prejuizo_acumulado_anterior(usuario_id, "swing", mes_str)
+        prejuizo_acumulado_day = obter_prejuizo_acumulado_anterior(usuario_id, "day", mes_str)
+        
         resultado_mes_swing = {"vendas": 0.0, "custo": 0.0, "ganho_liquido": 0.0}
         resultado_mes_day = {"vendas_total": 0.0, "custo_total": 0.0, "ganho_liquido": 0.0, "irrf": 0.0}
         
@@ -937,7 +981,56 @@ def recalcular_resultados(usuario_id: int) -> None:
 
             for ticker_dia, lista_ops_ticker_dia in ops_por_ticker_neste_dia.items():
                 if _eh_day_trade(lista_ops_ticker_dia, ticker_dia):
-                    ops_day_trade_dia.extend(lista_ops_ticker_dia)
+                    # Separar quantidades para day trade e swing trade
+                    quantidade_day_trade = _calcular_quantidade_day_trade(lista_ops_ticker_dia, ticker_dia)
+                    
+                    # Processar compras
+                    compras_ticker = [op for op in lista_ops_ticker_dia if op["operation"] == "buy"]
+                    vendas_ticker = [op for op in lista_ops_ticker_dia if op["operation"] == "sell"]
+                    
+                    # Calcular quantidade total de compras e vendas
+                    quantidade_total_compras = sum(op["quantity"] for op in compras_ticker)
+                    quantidade_total_vendas = sum(op["quantity"] for op in vendas_ticker)
+                    
+                    # Separar proporcionalmente as operações em day trade e swing trade
+                    if quantidade_total_compras > 0 and quantidade_total_vendas > 0:
+                        # Criar operações day trade (apenas a quantidade zerada)
+                        for op in compras_ticker:
+                            proporcao_day_trade = quantidade_day_trade / quantidade_total_compras
+                            quantidade_op_day_trade = int(op["quantity"] * proporcao_day_trade)
+                            quantidade_op_swing_trade = op["quantity"] - quantidade_op_day_trade
+                            
+                            if quantidade_op_day_trade > 0:
+                                op_day_trade = op.copy()
+                                op_day_trade["quantity"] = quantidade_op_day_trade
+                                ops_day_trade_dia.append(op_day_trade)
+                            
+                            if quantidade_op_swing_trade > 0:
+                                op_swing_trade = op.copy()
+                                op_swing_trade["quantity"] = quantidade_op_swing_trade
+                                ops_swing_trade_dia_compras.append(op_swing_trade)
+                        
+                        for op in vendas_ticker:
+                            proporcao_day_trade = quantidade_day_trade / quantidade_total_vendas
+                            quantidade_op_day_trade = int(op["quantity"] * proporcao_day_trade)
+                            quantidade_op_swing_trade = op["quantity"] - quantidade_op_day_trade
+                            
+                            if quantidade_op_day_trade > 0:
+                                op_day_trade = op.copy()
+                                op_day_trade["quantity"] = quantidade_op_day_trade
+                                ops_day_trade_dia.append(op_day_trade)
+                            
+                            if quantidade_op_swing_trade > 0:
+                                op_swing_trade = op.copy()
+                                op_swing_trade["quantity"] = quantidade_op_swing_trade
+                                ops_swing_trade_dia_vendas.append(op_swing_trade)
+                    else:
+                        # Caso especial: se não há compra ou venda, todas são swing trade
+                        for op_swing in lista_ops_ticker_dia:
+                            if op_swing["operation"] == "buy":
+                                ops_swing_trade_dia_compras.append(op_swing)
+                            else:
+                                ops_swing_trade_dia_vendas.append(op_swing)
                 else: # Não é day trade para este ticker, são swing trades
                     for op_swing in lista_ops_ticker_dia:
                         if op_swing["operation"] == "buy":
@@ -1221,7 +1314,7 @@ def gerar_resumo_operacoes_fechadas(usuario_id: int) -> Dict[str, Any]:
         "lucro_swing_trade": lucro_swing_trade,
         "total_day_trade": len(operacoes_day_trade),
         "total_swing_trade": len(operacoes_swing_trade),
-               "top_lucrativas": top_lucrativas,
+                             "top_lucrativas": top_lucrativas,
         "top_prejuizo": top_prejuizo,
         "resumo_por_ticker": dict(resumo_por_ticker) # Converte defaultdict para dict para a resposta
     }
@@ -1864,7 +1957,8 @@ def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict
         nome_da_acao = acao_info.get('nome') # nome_acao pode ser None
 
         # data_ex já é um objeto date aqui, vindo de ProventoInfo
-        data_para_saldo = provento_global.data_ex - timedelta(days=1)
+        # CORREÇÃO: Usar data_ex diretamente sem subtrair 1 dia
+        data_para_saldo = provento_global.data_ex
 
         quantidade_na_data_ex = obter_saldo_acao_em_data(
             usuario_id=usuario_id,
@@ -2197,3 +2291,60 @@ def obter_preco_medio_ponderado_carteira(usuario_id: int) -> float:
         return 0.0
     
     return custo_total / quantidade_total
+
+def obter_prejuizo_acumulado_anterior(usuario_id: int, tipo: str, mes_atual: str = None) -> float:
+    """
+    Obtém o prejuízo acumulado de meses anteriores para um tipo específico.
+    
+    Args:
+        usuario_id: ID do usuário
+        tipo: Tipo de operação ('swing' ou 'day')
+        mes_atual: Mês atual no formato YYYY-MM (opcional)
+    
+    Returns:
+        float: Valor do prejuízo acumulado
+    """
+    from database import get_db
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        if mes_atual:
+            # Buscar apenas meses anteriores ao mês atual
+            if tipo == "swing":
+                cursor.execute('''
+                    SELECT COALESCE(prejuizo_acumulado_swing, 0.0) as prejuizo
+                    FROM resultados_mensais 
+                    WHERE usuario_id = ? AND mes < ?
+                    ORDER BY mes DESC 
+                    LIMIT 1
+                ''', (usuario_id, mes_atual))
+            else:  # day trade
+                cursor.execute('''
+                    SELECT COALESCE(prejuizo_acumulado_day, 0.0) as prejuizo
+                    FROM resultados_mensais 
+                    WHERE usuario_id = ? AND mes < ?
+                    ORDER BY mes DESC 
+                    LIMIT 1
+                ''', (usuario_id, mes_atual))
+        else:
+            # Buscar o último mês disponível (comportamento antigo)
+            if tipo == "swing":
+                cursor.execute('''
+                    SELECT COALESCE(prejuizo_acumulado_swing, 0.0) as prejuizo
+                    FROM resultados_mensais 
+                    WHERE usuario_id = ? 
+                    ORDER BY mes DESC 
+                    LIMIT 1
+                ''', (usuario_id,))
+            else:  # day trade
+                cursor.execute('''
+                    SELECT COALESCE(prejuizo_acumulado_day, 0.0) as prejuizo
+                    FROM resultados_mensais 
+                    WHERE usuario_id = ? 
+                    ORDER BY mes DESC 
+                    LIMIT 1
+                ''', (usuario_id,))
+        
+        result = cursor.fetchone()
+        return result['prejuizo'] if result else 0.0
