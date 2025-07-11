@@ -81,8 +81,8 @@ import auth # Keep this for other auth functions
 # auth.get_db removed from here
 
 # Import the new router
-from routers import analysis_router
-from routers import proventos_router # Added proventos_router import
+from routers import analysis_router  # Incluído novamente para funcionalidade de gráficos
+from routers import proventos_router # Incluído novamente para funcionalidade de gráficos
 from routers import usuario_router # Added usuario_router import
 from dependencies import get_current_user, oauth2_scheme # Import from dependencies
 
@@ -106,8 +106,8 @@ app.add_middleware(
 )
 
 # Include the analysis router
-app.include_router(analysis_router.router, prefix="/api") # Assuming all API routes are prefixed with /api
-app.include_router(proventos_router.router, prefix="/api") # Added proventos_router
+app.include_router(analysis_router.router, prefix="/api") # Incluído novamente para funcionalidade de gráficos
+app.include_router(proventos_router.router, prefix="/api") # Incluído novamente para funcionalidade de gráficos
 app.include_router(usuario_router.router, prefix="/api") # Added usuario_router
 
 # Endpoint para listar todas as ações (acoes)
@@ -688,39 +688,118 @@ async def upload_operacoes(
     Agora com detecção de duplicatas e rastreamento completo.
     """
     try:
+        print(f"🚀 [BACKEND] Upload iniciado por usuário {usuario.id} ({usuario.email})")
+        print(f"📄 [BACKEND] Arquivo: {file.filename}")
+        print(f"📋 [BACKEND] Content-Type: {file.content_type}")
+        print(f"📊 [BACKEND] Tamanho: {file.size if hasattr(file, 'size') else 'N/A'} bytes")
+        
         # Lê o conteúdo do arquivo
+        print("📖 [BACKEND] Lendo conteúdo do arquivo...")
         conteudo = await file.read()
+        print(f"📊 [BACKEND] Conteúdo lido: {len(conteudo)} bytes")
         
         # Converte o JSON para uma lista de dicionários
-        operacoes_json = json.loads(conteudo)
+        print("🔄 [BACKEND] Convertendo JSON...")
+        try:
+            operacoes_json = json.loads(conteudo)
+            print(f"📋 [BACKEND] JSON parseado com sucesso. Tipo: {type(operacoes_json)}")
+            if isinstance(operacoes_json, list):
+                print(f"📋 [BACKEND] Lista com {len(operacoes_json)} operações")
+                if len(operacoes_json) > 0:
+                    print(f"📋 [BACKEND] Primeira operação: {operacoes_json[0]}")
+            else:
+                print(f"📋 [BACKEND] JSON não é uma lista: {operacoes_json}")
+        except json.JSONDecodeError as e:
+            print(f"❌ [BACKEND] Erro ao parsear JSON: {e}")
+            raise HTTPException(status_code=400, detail="Formato de arquivo JSON inválido")
         
         # Valida e processa as operações
-        operacoes = [OperacaoCreate(**preprocess_imported_operation(op)) for op in operacoes_json]
+        print("🔍 [BACKEND] Validando operações...")
+        try:
+            operacoes = []
+            operacoes_ignoradas = 0
+            for i, op in enumerate(operacoes_json):
+                print(f"🔄 [BACKEND] Processando operação {i+1}/{len(operacoes_json)}: {op}")
+                try:
+                    processed_op = preprocess_imported_operation(op)
+                    print(f"✅ [BACKEND] Operação {i+1} processada: {processed_op}")
+                    
+                    # Ignora operações com quantidade zero ou negativa
+                    if processed_op.get("quantity", 0) <= 0:
+                        print(f"⚠️ [BACKEND] Operação {i+1} ignorada: quantidade inválida ({processed_op.get('quantity', 0)})")
+                        operacoes_ignoradas += 1
+                        continue
+                    
+                    operacao_create = OperacaoCreate(**processed_op)
+                    operacoes.append(operacao_create)
+                    print(f"✅ [BACKEND] Operação {i+1} validada com sucesso")
+                except Exception as e:
+                    print(f"❌ [BACKEND] Erro ao processar operação {i+1}: {e}")
+                    print(f"❌ [BACKEND] Operação problemática: {op}")
+                    print(f"⚠️ [BACKEND] Ignorando operação {i+1} e continuando...")
+                    operacoes_ignoradas += 1
+                    continue
+            
+            print(f"✅ [BACKEND] {len(operacoes)} operações processadas com sucesso")
+            if operacoes_ignoradas > 0:
+                print(f"⚠️ [BACKEND] {operacoes_ignoradas} operações ignoradas por problemas de validação")
+            
+            # Se não há operações válidas, retorna erro
+            if len(operacoes) == 0:
+                print("❌ [BACKEND] Nenhuma operação válida encontrada")
+                raise HTTPException(status_code=400, detail="Nenhuma operação válida encontrada no arquivo")
+                
+        except HTTPException as e:
+            raise e
+        except Exception as e:
+            print(f"❌ [BACKEND] Erro na validação das operações: {e}")
+            raise HTTPException(status_code=400, detail=f"Erro ao validar operações: {str(e)}")
         
         # Processa com detecção de duplicatas
-        resultado = processar_importacao_com_deteccao_duplicatas(
-            operacoes=operacoes,
-            usuario_id=usuario.id,
-            nome_arquivo=file.filename,
-            conteudo_arquivo=conteudo,
-            nome_arquivo_original=file.filename
-        )
+        print("🔍 [BACKEND] Iniciando processamento com detecção de duplicatas...")
+        try:
+            resultado = processar_importacao_com_deteccao_duplicatas(
+                operacoes=operacoes,
+                usuario_id=usuario.id,
+                nome_arquivo=file.filename,
+                conteudo_arquivo=conteudo,
+                nome_arquivo_original=file.filename
+            )
+            
+            # Adiciona informações sobre operações ignoradas
+            if operacoes_ignoradas > 0:
+                resultado["operacoes_ignoradas"] = operacoes_ignoradas
+                resultado["aviso"] = f"{operacoes_ignoradas} operações foram ignoradas por problemas de validação (quantidade zero ou inválida)"
+            
+            print(f"✅ [BACKEND] Processamento concluído: {resultado}")
+        except Exception as e:
+            print(f"❌ [BACKEND] Erro no processamento: {e}")
+            raise HTTPException(status_code=500, detail=f"Erro ao processar importação: {str(e)}")
         
         # Recalcula proventos apenas se houver operações importadas
         if resultado.get('importacao', {}).get('total_operacoes_importadas', 0) > 0:
-            import logging
+            print(f"🔄 [BACKEND] Recalculando proventos para {resultado.get('importacao', {}).get('total_operacoes_importadas', 0)} operações...")
             from services import recalcular_proventos_recebidos_rapido
             logging.info(f"[PROVENTO-TRACE] Iniciando recálculo rápido de proventos para usuário {usuario.id} após upload. ORIGEM: upload_operacoes. Operações inseridas: {resultado.get('importacao', {}).get('total_operacoes_importadas', 0)}")
-            recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
-            logging.info(f"[PROVENTO-TRACE] Recálculo rápido de proventos para usuário {usuario.id} após upload concluído.")
+            try:
+                recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
+                print("✅ [BACKEND] Recálculo de proventos concluído")
+                logging.info(f"[PROVENTO-TRACE] Recálculo rápido de proventos para usuário {usuario.id} após upload concluído.")
+            except Exception as e:
+                print(f"❌ [BACKEND] Erro no recálculo de proventos: {e}")
+                # Não falha o upload por causa do recálculo de proventos
         
+        print(f"🎉 [BACKEND] Upload concluído com sucesso para usuário {usuario.id}")
         return resultado
         
     except json.JSONDecodeError:
+        print("❌ [BACKEND] Erro: Formato de arquivo JSON inválido")
         raise HTTPException(status_code=400, detail="Formato de arquivo JSON inválido")
     except HTTPException as e:
+        print(f"❌ [BACKEND] HTTPException: {e.detail}")
         raise e
     except Exception as e:
+        print(f"❌ [BACKEND] Erro inesperado: {e}")
         logging.error(f"Error in upload for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
 
@@ -1198,6 +1277,8 @@ async def test_importacoes_table():
 # ==================== UTILITY FUNCTIONS ====================
 
 def preprocess_imported_operation(op: dict) -> dict:
+    print(f"🔄 [PREPROCESS] Processando operação: {op}")
+    
     # Mapeamento de campos
     field_map = {
         "Data do Negócio": "date",
@@ -1208,31 +1289,79 @@ def preprocess_imported_operation(op: dict) -> dict:
         "Instituição": "corretora_nome",
         # Outros campos podem ser mapeados conforme necessário
     }
+    
     new_op = {}
     for k, v in op.items():
         key = field_map.get(k, k)
         new_op[key] = v
+        print(f"🔄 [PREPROCESS] Mapeando campo '{k}' -> '{key}' = '{v}'")
+    
+    print(f"🔄 [PREPROCESS] Operação após mapeamento: {new_op}")
+    
     # Conversão de valores
     if "price" in new_op and isinstance(new_op["price"], str):
-        new_op["price"] = float(new_op["price"].replace("R$", "").replace(",", "."))
+        original_price = new_op["price"]
+        try:
+            # Remove R$, espaços e converte vírgula para ponto
+            price_str = new_op["price"].replace("R$", "").replace(",", ".").strip()
+            if price_str == "":
+                print(f"❌ [PREPROCESS] Preço vazio, definindo como 0.0")
+                new_op["price"] = 0.0
+            else:
+                new_op["price"] = float(price_str)
+            print(f"💰 [PREPROCESS] Preço convertido: '{original_price}' -> {new_op['price']}")
+        except (ValueError, TypeError) as e:
+            print(f"❌ [PREPROCESS] Erro ao converter preço '{original_price}': {e}")
+            new_op["price"] = 0.0
+        
     if "quantity" in new_op:
-        new_op["quantity"] = int(new_op["quantity"])
+        original_quantity = new_op["quantity"]
+        try:
+            # Se for string, converte para int
+            if isinstance(original_quantity, str):
+                # Remove espaços e converte
+                quantity_str = original_quantity.strip()
+                if quantity_str == "":
+                    print(f"❌ [PREPROCESS] Quantidade vazia")
+                    new_op["quantity"] = 0  # Será filtrado depois
+                else:
+                    new_op["quantity"] = int(quantity_str)
+            else:
+                new_op["quantity"] = int(original_quantity)
+            print(f"📊 [PREPROCESS] Quantidade convertida: '{original_quantity}' -> {new_op['quantity']}")
+        except (ValueError, TypeError) as e:
+            print(f"❌ [PREPROCESS] Erro ao converter quantidade '{original_quantity}': {e}")
+            new_op["quantity"] = 0  # Será filtrado depois
+        
     if "operation" in new_op:
+        original_operation = new_op["operation"]
         if new_op["operation"].lower().startswith("compra"):
             new_op["operation"] = "buy"
         elif new_op["operation"].lower().startswith("venda"):
             new_op["operation"] = "sell"
+        print(f"📈 [PREPROCESS] Operação convertida: '{original_operation}' -> '{new_op['operation']}'")
+        
     if "ticker" in new_op:
+        original_ticker = new_op["ticker"]
         new_op["ticker"] = str(new_op["ticker"]).replace("F", "")
+        print(f"🏷️ [PREPROCESS] Ticker convertido: '{original_ticker}' -> '{new_op['ticker']}'")
+        
     if "date" in new_op:
+        original_date = new_op["date"]
         # Converte para ISO
         try:
             new_op["date"] = datetime.strptime(new_op["date"], "%d/%m/%Y").date().isoformat()
-        except Exception:
+            print(f"📅 [PREPROCESS] Data convertida: '{original_date}' -> '{new_op['date']}'")
+        except Exception as e:
+            print(f"❌ [PREPROCESS] Erro ao converter data '{original_date}': {e}")
             pass
+    
     # Taxas e fees default
     if "fees" not in new_op:
         new_op["fees"] = 0.0
+        print(f"💸 [PREPROCESS] Taxa padrão adicionada: {new_op['fees']}")
+    
+    print(f"✅ [PREPROCESS] Operação final: {new_op}")
     return new_op
 
 if __name__ == "__main__":

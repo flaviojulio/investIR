@@ -10,6 +10,9 @@ export interface Operacao {
   usuario_id?: number;
   corretora_id?: number | null;
   corretora_nome?: string | null; // Adicionado para refletir o backend
+  importacao_id?: number | null; // ID da importação de origem
+  data_importacao?: string | null; // Data da importação
+  nome_arquivo_original?: string | null; // Nome original do arquivo importado
 }
 
 export interface CarteiraItem {

@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Trash2, Search, ArrowUpDown, AlertTriangle, Shield, FileX, Zap, Info } from "lucide-react"
+import { Trash2, Search, ArrowUpDown, AlertTriangle, Shield, FileX, Zap, Info, Edit3, Upload, Cloud } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import type { Operacao, Corretora } from "@/lib/types"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { formatCurrency, formatDate, formatNumber } from "@/lib/utils"
 
 interface OperationsHistoryProps {
@@ -52,6 +53,9 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       corretora_id: operacao.corretora_id ?? null,
       corretora_nome: operacao.corretora_nome ?? null,
       usuario_id: operacao.usuario_id ?? null,
+      importacao_id: operacao.importacao_id ?? null,
+      data_importacao: operacao.data_importacao ?? null,
+      nome_arquivo_original: operacao.nome_arquivo_original ?? null,
     };
   }
 
@@ -72,6 +76,8 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       const ticker = typeof op.ticker === "string" ? op.ticker : "";
       const corretoraNome = typeof op.corretora_nome === "string" ? op.corretora_nome : "";
       const operation = typeof op.operation === "string" ? op.operation : "";
+      const nomeArquivo = typeof op.nome_arquivo_original === "string" ? op.nome_arquivo_original : "";
+      
       const matchesTicker = ticker.toLowerCase().includes(lowerSearch);
       const matchesCorretora = corretoraNome.toLowerCase().includes(lowerSearch);
       const matchesOperation = operation === "buy"
@@ -80,8 +86,12 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
       const matchesQuantity = String(op.quantity).includes(lowerSearch);
       const matchesPrice = String(op.price).includes(lowerSearch);
       const matchesFees = String(op.fees).includes(lowerSearch);
+      const matchesArquivo = nomeArquivo.toLowerCase().includes(lowerSearch);
+      
       // Permite busca por data (formato brasileiro)
       const matchesDate = op.date && new Date(op.date).toLocaleDateString("pt-BR").includes(lowerSearch);
+      const matchesDataImportacao = op.data_importacao && new Date(op.data_importacao).toLocaleDateString("pt-BR").includes(lowerSearch);
+      
       return (
         !searchTerm ||
         matchesTicker ||
@@ -90,7 +100,9 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
         matchesQuantity ||
         matchesPrice ||
         matchesFees ||
-        matchesDate
+        matchesDate ||
+        matchesArquivo ||
+        matchesDataImportacao
       ) && (filterOperation === "all" || operation === filterOperation);
     });
   }, [operacoesPadronizadas, searchTerm, filterOperation]);
@@ -200,18 +212,95 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
     }
   };
 
-  // Configuration for table headers
+  // Configuration for table headers - ATUALIZADA
   const headerConfig: { key?: SortableKeys; label: string; className?: string; isSortable: boolean }[] = [
     { key: 'date', label: 'Data', isSortable: true },
-    { key: 'ticker', label: 'Ticker', isSortable: true },
-    { key: 'operation', label: 'Tipo', isSortable: true },
-    { key: 'quantity', label: 'Quantidade', className: 'text-right', isSortable: true },
+    { key: 'ticker', label: 'Ticker', className: 'font-bold text-center w-32 max-w-[120px] truncate', isSortable: true },
+    { key: 'operation', label: 'Tipo', className: 'text-center w-20', isSortable: true },
+    { key: 'quantity', label: 'Qtd', className: 'text-center w-16', isSortable: true },
     { key: 'price', label: 'Preço', className: 'text-right', isSortable: true },
-    { key: 'fees', label: 'Taxas', className: 'text-right hidden sm:table-cell', isSortable: true },
+    { key: 'fees', label: 'Taxas', className: 'text-right w-16 hidden sm:table-cell', isSortable: true },
     { key: 'total', label: 'Total', className: 'text-right', isSortable: true },
-    { label: 'Corretora', className: 'hidden lg:table-cell', isSortable: false },
-    { label: 'Ações', className: 'text-center', isSortable: false },
+    { label: 'Corretora', className: 'hidden lg:table-cell min-w-[120px] max-w-[160px] truncate', isSortable: false },
+    { label: '', className: 'text-center w-24 max-w-[80px] flex flex-row items-center justify-center gap-2 p-0', isSortable: false },
   ];
+
+  // Componente para o ícone de status da importação
+  const ImportStatusIcon = ({ operacao }: { operacao: Operacao }) => {
+    const isManual = !operacao.nome_arquivo_original;
+    
+    if (isManual) {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-gray-100 to-white dark:from-gray-800 dark:to-gray-900 rounded-full cursor-help transition-all duration-200 hover:scale-110 hover:shadow-md">
+                <Edit3 className="h-4 w-4 text-gray-400 dark:text-gray-300" />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent 
+              side="left" 
+              className="max-w-xs p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg"
+            >
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <Edit3 className="h-4 w-4 text-gray-400 dark:text-gray-300" />
+                  <span className="font-semibold text-gray-900 dark:text-gray-100">Inserção Manual</span>
+                </div>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Esta operação foi adicionada manualmente através do formulário.
+                </p>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center justify-center w-8 h-8 bg-gradient-to-br from-gray-100 to-white dark:from-gray-800 dark:to-gray-900 rounded-full cursor-help transition-all duration-200 hover:scale-110 hover:shadow-md">
+              <Upload className="h-4 w-4 text-gray-400 dark:text-gray-300" />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent 
+            side="left" 
+            className="max-w-xs p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg"
+          >
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Upload className="h-4 w-4 text-gray-400 dark:text-gray-300" />
+                <span className="font-semibold text-gray-900 dark:text-gray-100">Upload de Arquivo</span>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between items-start gap-3">
+                  <span className="text-gray-600 dark:text-gray-400 font-medium">Arquivo:</span>
+                  <span className="font-medium text-gray-900 dark:text-gray-100 text-right break-all">
+                    {operacao.nome_arquivo_original}
+                  </span>
+                </div>
+                {operacao.data_importacao && (
+                  <div className="flex justify-between items-center gap-3">
+                    <span className="text-gray-600 dark:text-gray-400 font-medium">Importado em:</span>
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                      {formatDate(operacao.data_importacao)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Operação processada automaticamente durante a importação.
+                </p>
+              </div>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  };
 
   if (!operacoesPadronizadas || operacoesPadronizadas.length === 0) {
     return (
@@ -260,7 +349,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-blue-500" />
                   <Input
-                    placeholder="Buscar por ticker, corretora, quantidade, preço, taxa ou data..."
+                    placeholder="Buscar por ticker, corretora, arquivo de importação, data..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="pl-10 bg-white dark:bg-gray-800 border-2 border-blue-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-200 rounded-xl transition-all duration-300"
@@ -299,7 +388,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                   ) : (
                     <div className="flex items-center gap-2">
                       <Trash2 className="h-4 w-4" />
-                      Excluir Todas
+                      Excluir Todas as Operações
                     </div>
                   )}
                 </Button>
@@ -409,50 +498,92 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                           ${index % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/30 dark:bg-gray-800/30'}
                         `}
                       >
-                        <TableCell className="text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100">
-                          {formatDate(operacao.date)}
+                        <TableCell className="text-center w-16 max-w-[70px] text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100">
+                          {operacao.date ? new Date(operacao.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : ''}
                         </TableCell>
-                        <TableCell className="font-bold text-xs sm:text-sm text-blue-600 dark:text-blue-400">
-                          {operacao.ticker}
+                        <TableCell className="font-bold text-center w-32 max-w-[120px] truncate text-xs sm:text-sm text-blue-600 dark:text-blue-400">
+                          {typeof operacao.ticker === 'string' && operacao.ticker.length > 8
+                            ? operacao.ticker.substring(0, 8) + '...'
+                            : operacao.ticker}
                         </TableCell>
-                        <TableCell className="text-xs sm:text-sm">
+                        <TableCell className="text-center w-20 text-xs sm:text-sm">
                           <span className={
                             operacao.operation === "buy" 
-                              ? 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
-                              : 'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
+                              ? 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' 
+                              : 'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                           }>
-                            {operacao.operation === "buy" ? "🟢 Compra" : "🔴 Venda"}
+                            {operacao.operation === "buy" ? "Compra" : "Venda"}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100">
+                        <TableCell className="text-center w-16 text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100">
                           {formatNumber(operacao.quantity)}
                         </TableCell>
                         <TableCell className="text-right text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100">
                           {formatCurrency(operacao.price)}
                         </TableCell>
-                        <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                        <TableCell className="text-right w-16 hidden sm:table-cell text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                           {formatCurrency(operacao.fees)}
                         </TableCell>
                         <TableCell className="text-right font-bold text-xs sm:text-sm text-gray-900 dark:text-gray-100">
                           {formatCurrency(totalWithFees)}
                         </TableCell>
-                        <TableCell className="hidden lg:table-cell text-xs sm:text-sm text-gray-600 dark:text-gray-400">
-                          {operacao.corretora_nome || '-'}
+                        <TableCell className="hidden lg:table-cell min-w-[120px] max-w-[160px] truncate text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                          {operacao.corretora_nome ? (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="truncate cursor-help hover:underline decoration-dotted">
+                                    {operacao.corretora_nome.length > 12
+                                      ? operacao.corretora_nome.substring(0, 12) + '...'
+                                      : operacao.corretora_nome}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="max-w-xs p-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+                                  <span className="font-medium text-gray-900 dark:text-gray-100 break-all">{operacao.corretora_nome}</span>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          ) : (
+                            '-'
+                          )}
                         </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSingleDeleteClick(operacao)}
-                            disabled={loading === operacao.id}
-                            className="h-9 w-9 p-0 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200 rounded-lg group"
-                          >
-                            {loading === operacao.id ? (
-                              <div className="animate-spin rounded-full h-4 w-4 border-2 border-red-500 border-t-transparent"></div>
-                            ) : (
-                              <Trash2 className="h-4 w-4 text-red-500 group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors" />
-                            )}
-                          </Button>
+                        {/* Coluna unificada de status e ação */}
+                        <TableCell className="w-24 max-w-[80px] p-0">
+                          <div className="flex items-center justify-center h-full min-h-[48px] gap-2">
+                            <div className="flex items-center justify-center">
+                              <ImportStatusIcon operacao={operacao} />
+                            </div>
+                            <div className="flex items-center justify-center">
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleSingleDeleteClick(operacao)}
+                                      disabled={loading === operacao.id}
+                                      className="h-9 w-9 p-0 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-200 rounded-lg group"
+                                    >
+                                      {loading === operacao.id ? (
+                                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-red-500 border-t-transparent"></div>
+                                      ) : (
+                                        <Trash2 className="h-4 w-4 text-red-500 group-hover:text-red-700 dark:group-hover:text-red-400 transition-colors" />
+                                      )}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left" className="max-w-xs p-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+                                    <div className="space-y-2">
+                                      <div className="flex items-center gap-2">
+                                        <Trash2 className="h-4 w-4 text-red-500" />
+                                        <span className="font-semibold text-gray-900 dark:text-gray-100">Excluir operação</span>
+                                      </div>
+                                      <p className="text-sm text-gray-600 dark:text-gray-400">Remova esta operação do histórico. Esta ação não pode ser desfeita.</p>
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                          </div>
                         </TableCell>
                       </TableRow>
                     )
@@ -542,6 +673,26 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                     <span className="text-gray-600">Data:</span>
                     <span className="font-semibold text-gray-800">{formatDate(operationToDelete.date)}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Origem:</span>
+                    <span className="font-semibold text-gray-800">
+                      {operationToDelete.nome_arquivo_original ? "Upload de arquivo" : "Inserção manual"}
+                    </span>
+                  </div>
+                  {operationToDelete.nome_arquivo_original && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Arquivo:</span>
+                      <span className="font-semibold text-gray-800 max-w-[120px] truncate">
+                        {operationToDelete.nome_arquivo_original}
+                      </span>
+                    </div>
+                  )}
+                  {operationToDelete.data_importacao && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Data Import.:</span>
+                      <span className="font-semibold text-gray-800">{formatDate(operationToDelete.data_importacao)}</span>
+                    </div>
+                  )}
                   <div className="border-t border-blue-200 pt-2 mt-2">
                     <div className="flex justify-between">
                       <span className="font-medium text-gray-700">Valor Total:</span>

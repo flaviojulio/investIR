@@ -169,6 +169,8 @@ class Operacao(OperacaoBase):
     usuario_id: Optional[int] = None
     corretora_nome: Optional[str] = None  # Nome da corretora para exibição
     importacao_id: Optional[int] = None  # NOVA LINHA ADICIONADA
+    data_importacao: Optional[datetime] = None  # Data da importação
+    nome_arquivo_original: Optional[str] = None  # Nome original do arquivo
 
 class ResultadoMensal(BaseModel):
     mes: str  # Formato: YYYY-MM

@@ -141,6 +141,8 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
   const handleUpload = async () => {
     if (!file) return
     
+    console.log("🚀 [UPLOAD] Iniciando upload do arquivo:", file.name)
+    
     setLoading(true)
     setCurrentStep(3)
     setError("")
@@ -162,34 +164,188 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
     try {
       // Esperar a animação terminar antes de fazer o upload real
       await animateProgress()
+      
+      console.log("🎬 [UPLOAD] Animação concluída, iniciando processamento real")
 
       const isExcel = file.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || 
                      file.type === "application/vnd.ms-excel" || 
                      file.name.endsWith(".xlsx") || 
                      file.name.endsWith(".xls")
       
+      console.log("📝 [UPLOAD] Tipo de arquivo detectado:", isExcel ? "Excel" : "JSON")
+      console.log("📝 [UPLOAD] Tipo MIME:", file.type)
+      
       const formData = new FormData()
       
       if (isExcel) {
+        console.log("🔄 [UPLOAD] Processando arquivo Excel...")
         const data = await file.arrayBuffer()
+        console.log("📊 [UPLOAD] Arquivo lido, tamanho:", data.byteLength, "bytes")
+        
         const workbook = XLSX.read(data, { type: "array" })
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
-        const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" })
-        const jsonBlob = new Blob([JSON.stringify(jsonData)], { type: "application/json" })
+        let jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" })
+        
+        console.log("📋 [UPLOAD] Dados convertidos para JSON, total de linhas:", jsonData.length)
+        console.log("📋 [UPLOAD] Primeira linha de exemplo (antes da limpeza):", jsonData[0])
+        
+        // Limpar valores monetários e validar
+        const jsonDataOriginal = [...jsonData]
+        jsonData = jsonData.map((operation: any) => {
+          const cleanOperation = { ...operation }
+          
+          // Limpar campo Preço
+          if (cleanOperation["Preço"] && typeof cleanOperation["Preço"] === "string") {
+            const originalPrice = cleanOperation["Preço"]
+            cleanOperation["Preço"] = cleanOperation["Preço"]
+              .replace(/R\$\s?/, "") // Remove R$
+              .replace(/\./g, "") // Remove pontos dos milhares
+              .replace(",", ".") // Converte vírgula decimal para ponto
+              .trim()
+            console.log("💰 [UPLOAD] Preço limpo:", originalPrice, "->", cleanOperation["Preço"])
+          }
+          
+          // Limpar campo Valor
+          if (cleanOperation["Valor"] && typeof cleanOperation["Valor"] === "string") {
+            const originalValue = cleanOperation["Valor"]
+            cleanOperation["Valor"] = cleanOperation["Valor"]
+              .replace(/R\$\s?/, "") // Remove R$
+              .replace(/\./g, "") // Remove pontos dos milhares
+              .replace(",", ".") // Converte vírgula decimal para ponto
+              .trim()
+            console.log("💰 [UPLOAD] Valor limpo:", originalValue, "->", cleanOperation["Valor"])
+          }
+          
+          return cleanOperation
+        })
+        
+        // Filtrar operações com quantidade zero ou inválida
+        const operacoesValidas = jsonData.filter((operation: any) => {
+          const quantidade = operation["Quantidade"]
+          if (!quantidade || quantidade === "0" || quantidade === 0) {
+            console.log("⚠️ [UPLOAD] Operação ignorada por quantidade zero:", operation)
+            return false
+          }
+          return true
+        })
+        
+        console.log("📋 [UPLOAD] Operações válidas após filtro:", operacoesValidas.length, "de", jsonDataOriginal.length)
+        console.log("📋 [UPLOAD] Primeira linha após limpeza:", operacoesValidas[0])
+        
+        // Se não há operações válidas, mostra erro
+        if (operacoesValidas.length === 0) {
+          console.error("❌ [UPLOAD] Nenhuma operação válida encontrada após filtros")
+          setError('Nenhuma operação válida encontrada no arquivo. Verifique se as quantidades estão preenchidas corretamente.')
+          return
+        }
+        
+        const jsonBlob = new Blob([JSON.stringify(operacoesValidas)], { type: "application/json" })
+        console.log("📦 [UPLOAD] Blob JSON criado, tamanho:", jsonBlob.size, "bytes")
         formData.append("file", jsonBlob, file.name.replace(/\.(xlsx|xls)$/i, ".json"))
+        console.log("📤 [UPLOAD] Arquivo anexado ao FormData como:", file.name.replace(/\.(xlsx|xls)$/i, ".json"))
       } else {
-        formData.append("file", file)
+        console.log("🔄 [UPLOAD] Processando arquivo JSON...")
+        // Para arquivos JSON, também limpar os valores monetários
+        const fileText = await file.text()
+        console.log("📄 [UPLOAD] Arquivo JSON lido, tamanho:", fileText.length, "caracteres")
+        
+        let jsonData = JSON.parse(fileText)
+        console.log("📋 [UPLOAD] JSON parseado, total de linhas:", Array.isArray(jsonData) ? jsonData.length : "não é array")
+        
+        if (Array.isArray(jsonData)) {
+          console.log("📋 [UPLOAD] Primeira linha de exemplo (antes da limpeza):", jsonData[0])
+          
+          const jsonDataOriginal = [...jsonData]
+          jsonData = jsonData.map((operation: any) => {
+            const cleanOperation = { ...operation }
+            
+            // Limpar campo Preço
+            if (cleanOperation["Preço"] && typeof cleanOperation["Preço"] === "string") {
+              const originalPrice = cleanOperation["Preço"]
+              cleanOperation["Preço"] = cleanOperation["Preço"]
+                .replace(/R\$\s?/, "") // Remove R$
+                .replace(/\./g, "") // Remove pontos dos milhares
+                .replace(",", ".") // Converte vírgula decimal para ponto
+                .trim()
+              console.log("💰 [UPLOAD] Preço limpo:", originalPrice, "->", cleanOperation["Preço"])
+            }
+            
+            // Limpar campo Valor
+            if (cleanOperation["Valor"] && typeof cleanOperation["Valor"] === "string") {
+              const originalValue = cleanOperation["Valor"]
+              cleanOperation["Valor"] = cleanOperation["Valor"]
+                .replace(/R\$\s?/, "") // Remove R$
+                .replace(/\./g, "") // Remove pontos dos milhares
+                .replace(",", ".") // Converte vírgula decimal para ponto
+                .trim()
+              console.log("💰 [UPLOAD] Valor limpo:", originalValue, "->", cleanOperation["Valor"])
+            }
+            
+            return cleanOperation
+          })
+          
+          // Filtrar operações com quantidade zero ou inválida
+          const operacoesValidas = jsonData.filter((operation: any) => {
+            const quantidade = operation["Quantidade"]
+            if (!quantidade || quantidade === "0" || quantidade === 0) {
+              console.log("⚠️ [UPLOAD] Operação ignorada por quantidade zero:", operation)
+              return false
+            }
+            return true
+          })
+          
+          console.log("📋 [UPLOAD] Operações válidas após filtro:", operacoesValidas.length, "de", jsonDataOriginal.length)
+          console.log("📋 [UPLOAD] Primeira linha após limpeza:", operacoesValidas[0])
+          
+          // Se não há operações válidas, mostra erro
+          if (operacoesValidas.length === 0) {
+            console.error("❌ [UPLOAD] Nenhuma operação válida encontrada após filtros")
+            setError('Nenhuma operação válida encontrada no arquivo. Verifique se as quantidades estão preenchidas corretamente.')
+            return
+          }
+          
+          jsonData = operacoesValidas
+        }
+        
+        const cleanedJsonBlob = new Blob([JSON.stringify(jsonData)], { type: "application/json" })
+        console.log("📦 [UPLOAD] Blob JSON limpo criado, tamanho:", cleanedJsonBlob.size, "bytes")
+        formData.append("file", cleanedJsonBlob, file.name)
+        console.log("📤 [UPLOAD] Arquivo anexado ao FormData como:", file.name)
       }
 
+      console.log("🌐 [UPLOAD] Enviando requisição para /upload...")
       const response = await api.post("/upload", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       })
+      
+      console.log("✅ [UPLOAD] Resposta recebida:", response.status, response.data)
+      
+      // Verifica se há avisos sobre operações ignoradas
+      if (response.data.operacoes_ignoradas && response.data.operacoes_ignoradas > 0) {
+        console.log("⚠️ [UPLOAD] Operações ignoradas:", response.data.operacoes_ignoradas)
+        toast({
+          title: "Aviso",
+          description: response.data.aviso || `${response.data.operacoes_ignoradas} operações foram ignoradas`,
+          variant: "default",
+        })
+      }
 
       // Mostrar tela de sucesso - usuário controla quando sair
       setCurrentStep(4)
 
     } catch (error: any) {
+      console.error("❌ [UPLOAD] Erro capturado:", error)
+      console.error("❌ [UPLOAD] Erro completo:", {
+        message: error.message,
+        response: error.response,
+        responseData: error.response?.data,
+        responseStatus: error.response?.status,
+        responseStatusText: error.response?.statusText
+      })
+      
       const errorMessage = error.response?.data?.detail || "Erro ao fazer upload do arquivo"
+      console.error("❌ [UPLOAD] Mensagem de erro final:", errorMessage)
+      
       setError(errorMessage)
       toast({
         title: "Erro",
@@ -199,6 +355,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
       setCurrentStep(2) // Volta para a etapa de upload
     } finally {
       setLoading(false)
+      console.log("🏁 [UPLOAD] Processo finalizado")
     }
   }
 
