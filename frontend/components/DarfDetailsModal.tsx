@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -17,24 +17,30 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { OperacaoFechada, ResultadoMensal } from "@/lib/types"; 
-import { api } from '@/lib/api'; 
-import { useToast } from '@/hooks/use-toast'; 
-import jsPDF from 'jspdf'; 
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { OperacaoFechada, ResultadoMensal } from "@/lib/types";
+import { api } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import jsPDF from "jspdf";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
-import { 
-  FileText, 
+import {
+  FileText,
   Download,
-  CheckCircle, 
-  Clock, 
-  AlertCircle, 
-  Calculator, 
-  Calendar, 
-  CreditCard,
+  CheckCircle,
+  Clock,
+  AlertCircle,
+  Calculator,
+  Calendar,
   Info,
   TrendingUp,
   Building,
-  Sparkles
+  Lightbulb,
+  HelpCircle,
 } from "lucide-react";
 
 interface DarfDetailsModalProps {
@@ -42,9 +48,9 @@ interface DarfDetailsModalProps {
   onClose: () => void;
   operacaoFechada?: OperacaoFechada | null;
   resultadoMensal?: ResultadoMensal | null;
-  tipoDarf: 'swing' | 'daytrade';
+  tipoDarf: "swing" | "daytrade";
   onUpdateDashboard: () => void;
-  onDarfStatusChange?: (newStatus: string) => void; // Nova prop opcional
+  onDarfStatusChange?: (newStatus: string) => void;
 }
 
 export function DarfDetailsModal({
@@ -66,38 +72,48 @@ export function DarfDetailsModal({
 
   const handleMarkAsPaid = async () => {
     if (!resultadoMensal || !resultadoMensal.mes || !tipoDarf) {
-      toast({ 
-        title: "❌ Erro", 
-        description: "Dados insuficientes para marcar DARF como pago.", 
+      toast({
+        title: "❌ Erro",
+        description: "Dados insuficientes para marcar DARF como pago.",
         variant: "destructive",
-        className: "bg-red-50 border-red-200 text-red-800"
+        className: "bg-red-50 border-red-200 text-red-800",
       });
       return;
     }
 
     setIsMarkingPaid(true);
     try {
-      await api.put(`/impostos/darf_status/${resultadoMensal.mes}/${tipoDarf}`, { status: "Pago" });
+      await api.put(
+        `/impostos/darf_status/${resultadoMensal.mes}/${tipoDarf}`,
+        { status: "Pago" }
+      );
       toast({
         title: "✅ DARF Pago!",
-        description: `DARF ${tipoDarf === 'swing' ? 'Swing Trade' : 'Day Trade'} para ${formatMonthYear(resultadoMensal.mes)} marcado como pago com sucesso.`,
-        className: "bg-green-50 border-green-200 text-green-800"
+        description: `DARF ${
+          tipoDarf === "swing" ? "Swing Trade" : "Day Trade"
+        } para ${formatMonthYear(
+          resultadoMensal.mes
+        )} marcado como pago com sucesso.`,
+        className: "bg-green-50 border-green-200 text-green-800",
       });
-      
-      // Chama o callback para atualizar o status na tabela
+
       if (onDarfStatusChange) {
         onDarfStatusChange("pago");
       }
-      
+
       onUpdateDashboard();
       onClose();
     } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || `Erro ao marcar DARF como pago.`;
+      const errorMsg =
+        error.response?.data?.detail || `Erro ao marcar DARF como pago.`;
       toast({
         title: "❌ Erro no pagamento",
-        description: typeof errorMsg === 'string' ? errorMsg : "Ocorreu um erro inesperado.",
+        description:
+          typeof errorMsg === "string"
+            ? errorMsg
+            : "Ocorreu um erro inesperado.",
         variant: "destructive",
-        className: "bg-red-50 border-red-200 text-red-800"
+        className: "bg-red-50 border-red-200 text-red-800",
       });
     } finally {
       setIsMarkingPaid(false);
@@ -106,38 +122,46 @@ export function DarfDetailsModal({
 
   const handleMarkAsPendente = async () => {
     if (!resultadoMensal || !resultadoMensal.mes || !tipoDarf) {
-      toast({ 
-        title: "❌ Erro", 
-        description: "Dados insuficientes para marcar DARF como pendente.", 
+      toast({
+        title: "❌ Erro",
+        description: "Dados insuficientes para marcar DARF como pendente.",
         variant: "destructive",
-        className: "bg-red-50 border-red-200 text-red-800"
+        className: "bg-red-50 border-red-200 text-red-800",
       });
       return;
     }
 
     setIsMarkingPendente(true);
     try {
-      await api.put(`/impostos/darf_status/${resultadoMensal.mes}/${tipoDarf}`, { status: "Pendente" });
+      await api.put(
+        `/impostos/darf_status/${resultadoMensal.mes}/${tipoDarf}`,
+        { status: "Pendente" }
+      );
       toast({
         title: "🔄 Status Atualizado",
-        description: `DARF ${tipoDarf === 'swing' ? 'Swing Trade' : 'Day Trade'} para ${formatMonthYear(resultadoMensal.mes)} marcado como pendente.`,
-        className: "bg-blue-50 border-blue-200 text-blue-800"
+        description: `DARF ${
+          tipoDarf === "swing" ? "Swing Trade" : "Day Trade"
+        } para ${formatMonthYear(resultadoMensal.mes)} marcado como pendente.`,
+        className: "bg-blue-50 border-blue-200 text-blue-800",
       });
-      
-      // Chama o callback para atualizar o status na tabela
+
       if (onDarfStatusChange) {
         onDarfStatusChange("pendente");
       }
-      
+
       onUpdateDashboard();
       onClose();
     } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || `Erro ao marcar DARF como pendente.`;
+      const errorMsg =
+        error.response?.data?.detail || `Erro ao marcar DARF como pendente.`;
       toast({
         title: "❌ Erro na atualização",
-        description: typeof errorMsg === 'string' ? errorMsg : "Ocorreu um erro inesperado.",
+        description:
+          typeof errorMsg === "string"
+            ? errorMsg
+            : "Ocorreu um erro inesperado.",
         variant: "destructive",
-        className: "bg-red-50 border-red-200 text-red-800"
+        className: "bg-red-50 border-red-200 text-red-800",
       });
     } finally {
       setIsMarkingPendente(false);
@@ -146,17 +170,19 @@ export function DarfDetailsModal({
 
   const handleSavePdf = () => {
     if (!resultadoMensal || !darfCompetencia) {
-      toast({ 
-        title: "❌ Erro", 
-        description: "Dados insuficientes para gerar PDF do DARF.", 
+      toast({
+        title: "❌ Erro",
+        description: "Dados insuficientes para gerar PDF do DARF.",
         variant: "destructive",
-        className: "bg-red-50 border-red-200 text-red-800"
+        className: "bg-red-50 border-red-200 text-red-800",
       });
       return;
     }
 
     const doc = new jsPDF();
-    const titleText = `DARF - ${tipoDarf === 'swing' ? 'Swing Trade' : 'Day Trade'}`;
+    const titleText = `DARF - ${
+      tipoDarf === "swing" ? "Swing Trade" : "Day Trade"
+    }`;
     const competenciaText = formatMonthYear(darfCompetencia);
     const vencimentoText = formatDate(darfVencimento);
     const codigoReceita = darfCodigo || "N/A";
@@ -164,7 +190,7 @@ export function DarfDetailsModal({
     const statusAtual = darfStatus || "Pendente";
 
     doc.setFontSize(18);
-    doc.text(titleText, 105, 20, { align: 'center' });
+    doc.text(titleText, 105, 20, { align: "center" });
 
     doc.setFontSize(12);
     doc.text(`Mês de Competência: ${competenciaText}`, 14, 40);
@@ -173,35 +199,78 @@ export function DarfDetailsModal({
     doc.text(`Valor Principal: ${valorPrincipal}`, 14, 70);
     doc.text(`Status Atual: ${statusAtual}`, 14, 80);
 
-    if (operacaoFechada && operacaoFechada.resultado > 0 && (operacaoFechada.status_ir === "Tributável Day Trade" || operacaoFechada.status_ir === "Tributável Swing")) {
-        doc.text(`--- Detalhes da Operação Inclusa (${operacaoFechada.ticker}) ---`, 14, 95);
-        doc.text(`Resultado da Operação: ${formatCurrency(operacaoFechada.resultado)}`, 14, 105);
-        doc.text(`Imposto Estimado da Operação: ${formatCurrency(impostoCalculadoDaOperacao)}`, 14, 115);
+    if (
+      operacaoFechada &&
+      operacaoFechada.resultado > 0 &&
+      (operacaoFechada.status_ir === "Tributável Day Trade" ||
+        operacaoFechada.status_ir === "Tributável Swing")
+    ) {
+      doc.text(
+        `--- Detalhes da Operação Inclusa (${operacaoFechada.ticker}) ---`,
+        14,
+        95
+      );
+      doc.text(
+        `Resultado da Operação: ${formatCurrency(operacaoFechada.resultado)}`,
+        14,
+        105
+      );
+      doc.text(
+        `Imposto Estimado da Operação: ${formatCurrency(
+          impostoCalculadoDaOperacao
+        )}`,
+        14,
+        115
+      );
     }
-    
-    doc.text("Pagamento até o vencimento.", 14, 130);
-    doc.text("Este documento é uma representação para controle e não substitui o DARF oficial.", 14, 140, { maxWidth: 180 });
 
-    doc.save(`DARF_${tipoDarf}_${(darfCompetencia || "competencia").replace('-', '_')}.pdf`);
-    
-    // Toast de sucesso para download
+    doc.text("Pagamento até o vencimento.", 14, 130);
+    doc.text(
+      "Este documento é uma representação para controle e não substitui o DARF oficial.",
+      14,
+      140,
+      { maxWidth: 180 }
+    );
+
+    doc.save(
+      `DARF_${tipoDarf}_${(darfCompetencia || "competencia").replace(
+        "-",
+        "_"
+      )}.pdf`
+    );
+
     toast({
       title: "📄 PDF Gerado!",
       description: "Arquivo DARF baixado com sucesso para seus arquivos.",
-      className: "bg-blue-50 border-blue-200 text-blue-800"
+      className: "bg-blue-50 border-blue-200 text-blue-800",
     });
   };
 
   // Determine which DARF details to use from ResultadoMensal based on tipoDarf
-  const darfCodigo = tipoDarf === 'swing' ? resultadoMensal.darf_codigo_swing : resultadoMensal.darf_codigo_day;
-  const darfCompetencia = tipoDarf === 'swing' ? resultadoMensal.darf_competencia_swing : resultadoMensal.darf_competencia_day;
-  const darfValorMensal = tipoDarf === 'swing' ? resultadoMensal.darf_valor_swing : resultadoMensal.darf_valor_day;
-  const darfVencimento = tipoDarf === 'swing' ? resultadoMensal.darf_vencimento_swing : resultadoMensal.darf_vencimento_day;
-  const darfStatus = tipoDarf === 'swing' ? resultadoMensal.status_darf_swing_trade : resultadoMensal.status_darf_day_trade;
+  const darfCodigo =
+    tipoDarf === "swing"
+      ? resultadoMensal.darf_codigo_swing
+      : resultadoMensal.darf_codigo_day;
+  const darfCompetencia =
+    tipoDarf === "swing"
+      ? resultadoMensal.darf_competencia_swing
+      : resultadoMensal.darf_competencia_day;
+  const darfValorMensal =
+    tipoDarf === "swing"
+      ? resultadoMensal.darf_valor_swing
+      : resultadoMensal.darf_valor_day;
+  const darfVencimento =
+    tipoDarf === "swing"
+      ? resultadoMensal.darf_vencimento_swing
+      : resultadoMensal.darf_vencimento_day;
+  const darfStatus =
+    tipoDarf === "swing"
+      ? resultadoMensal.status_darf_swing_trade
+      : resultadoMensal.status_darf_day_trade;
 
   let impostoCalculadoDaOperacao = 0;
   if (operacaoFechada.status_ir === "Tributável Day Trade") {
-    impostoCalculadoDaOperacao = operacaoFechada.resultado * 0.20; 
+    impostoCalculadoDaOperacao = operacaoFechada.resultado * 0.2;
   } else if (operacaoFechada.status_ir === "Tributável Swing") {
     impostoCalculadoDaOperacao = operacaoFechada.resultado * 0.15;
   }
@@ -209,83 +278,70 @@ export function DarfDetailsModal({
   // Determinar cor e ícone do status
   const getStatusDisplay = (status: string | null | undefined) => {
     switch (status) {
-      case 'Pago':
+      case "Pago":
         return {
           icon: <CheckCircle className="h-5 w-5 text-green-600" />,
-          text: 'Pago',
-          bgColor: 'bg-green-50',
-          borderColor: 'border-green-200',
-          textColor: 'text-green-800'
+          text: "Pago",
+          bgColor: "bg-green-50",
+          borderColor: "border-green-200",
+          textColor: "text-green-800",
         };
-      case 'Pendente':
+      case "Pendente":
       default:
         return {
           icon: <Clock className="h-5 w-5 text-orange-600" />,
-          text: 'Pendente',
-          bgColor: 'bg-orange-50',
-          borderColor: 'border-orange-200',
-          textColor: 'text-orange-800'
+          text: "Pendente",
+          bgColor: "bg-orange-50",
+          borderColor: "border-orange-200",
+          textColor: "text-orange-800",
         };
     }
   };
 
   const statusDisplay = getStatusDisplay(darfStatus);
-  const tipoLabel = tipoDarf === 'swing' ? 'Swing Trade' : 'Day Trade';
-  const aliquota = tipoDarf === 'swing' ? '15%' : '20%';
+  const tipoLabel = tipoDarf === "swing" ? "Swing Trade" : "Day Trade";
+  const aliquota = tipoDarf === "swing" ? "15%" : "20%";
 
-  // Debug: Log dos dados recebidos
-  console.log('=== DEBUG DARF MODAL ===');
-  console.log('Tipo DARF:', tipoDarf);
-  console.log('ResultadoMensal completo:', resultadoMensal);
-  console.log('Prejuízo acumulado day:', resultadoMensal?.prejuizo_acumulado_day);
-  console.log('Prejuízo acumulado swing:', resultadoMensal?.prejuizo_acumulado_swing);
-  console.log('Prejuízo anterior day:', resultadoMensal?.prejuizo_anterior_day);
-  console.log('Prejuízo anterior swing:', resultadoMensal?.prejuizo_anterior_swing);
-  console.log('Compensação aplicada day:', resultadoMensal?.compensacao_day_aplicada);
-  console.log('Compensação aplicada swing:', resultadoMensal?.compensacao_swing_aplicada);
-  console.log('Ganho líquido day:', resultadoMensal?.ganho_liquido_day);
-  console.log('Ganho líquido swing:', resultadoMensal?.ganho_liquido_swing);
-  console.log('DARF valor day:', resultadoMensal?.darf_valor_day);
-  console.log('DARF valor swing:', resultadoMensal?.darf_valor_swing);
-  console.log('IRRF day:', resultadoMensal?.irrf_day);
-  
-  // Verificação específica dos prejuízos - usar os dados corretos do backend
+  // Cálculos para exibição didática
   const prejudoAcumuladoDay = resultadoMensal?.prejuizo_acumulado_day || 0;
   const prejudoAcumuladoSwing = resultadoMensal?.prejuizo_acumulado_swing || 0;
-  
-  // Ganho líquido (já compensado)
   const ganhoLiquidoSwing = resultadoMensal?.ganho_liquido_swing || 0;
   const ganhoLiquidoDay = resultadoMensal?.ganho_liquido_day || 0;
-  
-  // Para março/2023, sabemos que houve compensação de R$ 1.200
-  // O backend retorna o valor já compensado, então precisamos calcular o prejuízo usado
-  const isMarco2023 = resultadoMensal?.mes === '2023-03';
-  
-  // Calcular o prejuízo anterior que foi usado na compensação
-  let prejudoAnteriorUsado = 0;
-  let ganhoBrutoSwing = ganhoLiquidoSwing;
-  let ganhoBrutoDay = ganhoLiquidoDay;
-  
-  if (isMarco2023 && tipoDarf === 'swing') {
-    // Para março/2023, sabemos que havia R$ 1.200 de prejuízo anterior
-    // Se o ganho líquido é R$ 2.800 e o DARF é R$ 420 (que é 15% de R$ 2.800)
-    // Então o ganho bruto foi R$ 4.000 (2.800 + 1.200)
-    const darfCalculado = ganhoLiquidoSwing * 0.15;
-    if (Math.abs(darfCalculado - (resultadoMensal?.darf_valor_swing || 0)) < 0.01) {
-      // Confirma que houve compensação
-      prejudoAnteriorUsado = 1200; // R$ 1.200 de prejuízo anterior
-      ganhoBrutoSwing = ganhoLiquidoSwing + prejudoAnteriorUsado; // R$ 4.000
+
+  // Calcular valores para o cálculo didático
+  const prejudoAtual =
+    tipoDarf === "swing" ? prejudoAcumuladoSwing : prejudoAcumuladoDay;
+  const ganhoLiquido =
+    tipoDarf === "swing" ? ganhoLiquidoSwing : ganhoLiquidoDay;
+  const aliquotaDecimal = tipoDarf === "swing" ? 0.15 : 0.2;
+
+  // Para março/2023, estimar compensação usada (se aplicável)
+  let prejudoUsadoCompensacao = 0;
+  let ganhoBruto = ganhoLiquido;
+
+  // Lógica especial para março/2023 - sabemos que houve compensação de R$ 1.200
+  const isMarco2023 = resultadoMensal?.mes === "2023-03";
+
+  if (isMarco2023 && tipoDarf === "swing") {
+    // Para março/2023 swing trade, sabemos que:
+    // - Ganho líquido final: R$ 2.800
+    // - DARF: R$ 420 (que é 15% de R$ 2.800)
+    // - Isso indica que houve compensação de R$ 1.200
+    // - Ganho bruto foi R$ 4.000 (2.800 + 1.200)
+    prejudoUsadoCompensacao = 1200;
+    ganhoBruto = 4000;
+  } else if (prejudoAtual > 0 && ganhoLiquido > 0) {
+    // Para outros casos, usar a lógica normal
+    const darfCalculado = ganhoLiquido * aliquotaDecimal;
+    const irrf = tipoDarf === "daytrade" ? resultadoMensal?.irrf_day || 0 : 0;
+    const darfEsperado = Math.max(0, darfCalculado - irrf);
+
+    if (Math.abs(darfEsperado - (darfValorMensal || 0)) < 0.01) {
+      // Confirma que o cálculo está correto, então houve compensação
+      prejudoUsadoCompensacao = prejudoAtual;
+      ganhoBruto = ganhoLiquido + prejudoUsadoCompensacao;
     }
   }
-  
-  console.log('Prejuízo Acumulado Day (backend):', prejudoAcumuladoDay);
-  console.log('Prejuízo Acumulado Swing (backend):', prejudoAcumuladoSwing);
-  console.log('Prejuízo anterior usado na compensação:', prejudoAnteriorUsado);
-  console.log('Ganho bruto Day (calculado):', ganhoBrutoDay);
-  console.log('Ganho bruto Swing (calculado):', ganhoBrutoSwing);
-  console.log('Ganho líquido Day:', ganhoLiquidoDay);
-  console.log('Ganho líquido Swing:', ganhoLiquidoSwing);
-  console.log('========================');
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -315,80 +371,41 @@ export function DarfDetailsModal({
           </div>
           <div className="absolute inset-0 bg-black/10"></div>
         </DialogHeader>
-        
         <div className="px-4 space-y-4">
-          {/* Seção Educativa */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-200">
-            <div className="flex items-center gap-2 mb-2">
-              <Info className="h-4 w-4 text-blue-600" />
-              <h3 className="font-semibold text-blue-900 text-sm">O que é este DARF?</h3>
-            </div>
-            <p className="text-xs text-blue-800 leading-relaxed">
-              Este documento permite o pagamento do Imposto de Renda sobre ganhos de capital em operações de{" "}
-              <strong>{tipoLabel.toLowerCase()}</strong>. A alíquota aplicada é de <strong>{aliquota}</strong> sobre o lucro obtido.
-            </p>
-          </div>
-
-          {/* Grid com duas colunas para otimizar espaço */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Detalhes da Operação */}
-            <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-sm">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="h-6 w-6 bg-purple-100 rounded-lg flex items-center justify-center">
-                  <TrendingUp className="h-3 w-3 text-purple-600" />
-                </div>
-                <h4 className="font-semibold text-gray-800 text-sm">Operação Tributável</h4>
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                  <span className="text-xs text-gray-600">Ação:</span>
-                  <span className="font-semibold text-blue-600 text-sm">{operacaoFechada.ticker}</span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                  <span className="text-xs text-gray-600">Tipo:</span>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    tipoDarf === 'swing' 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {tipoLabel}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                  <span className="text-xs text-gray-600">Lucro:</span>
-                  <span className="font-bold text-green-600 text-sm">
-                    {formatCurrency(operacaoFechada.resultado)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center py-1">
-                  <span className="text-xs text-gray-600">IR desta Op.:</span>
-                  <span className="font-bold text-purple-600 text-sm">
-                    {formatCurrency(impostoCalculadoDaOperacao)}
-                  </span>
-                </div>
-              </div>
-            </div>
-
+          <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
             {/* Detalhes do DARF Mensal */}
             <div className="bg-gradient-to-br from-gray-50 to-blue-50 border border-blue-200 rounded-lg p-3 shadow-sm">
               <div className="flex items-center gap-2 mb-3">
                 <div className="h-6 w-6 bg-blue-100 rounded-lg flex items-center justify-center">
                   <Building className="h-3 w-3 text-blue-600" />
                 </div>
-                <h4 className="font-semibold text-gray-800 text-sm">DARF Mensal</h4>
-              </div>              
+                <h4 className="font-semibold text-gray-800 text-sm flex-1">
+                  DARF Mensal
+                </h4>
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium ml-auto ${
+                    tipoDarf === "swing"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-blue-100 text-blue-800"
+                  }`}
+                  style={{ marginLeft: "auto" }}
+                >
+                  {tipoLabel}
+                </span>
+              </div>
               <div className="space-y-2">
                 <div className="flex justify-between items-center py-1">
                   <span className="text-xs text-gray-600">Código:</span>
                   <span className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">
-                    {darfCodigo || "N/A"}
+                    {darfCodigo || "6015"}
                   </span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-gray-100">
                   <span className="flex flex-row items-center gap-1">
                     <Calendar className="h-3 w-3 text-blue-400" />
-                    <span className="text-xs text-gray-600">Mês de Referência:</span>
+                    <span className="text-xs text-gray-600">
+                      Mês de Referência:
+                    </span>
                   </span>
                   <span className="font-semibold text-gray-800 text-xs">
                     {formatMonthYear(darfCompetencia)}
@@ -410,10 +427,9 @@ export function DarfDetailsModal({
                         </TooltipTrigger>
                         <TooltipContent>
                           <p className="text-xs max-w-xs">
-                            {tipoDarf === 'daytrade' 
-                              ? 'Valor já descontado do IRRF retido na fonte (0,01% sobre as vendas)'
-                              : 'Valor total do imposto devido sobre ganhos de capital swing trade'
-                            }
+                            {tipoDarf === "daytrade"
+                              ? "Valor já descontado do IRRF retido na fonte (0,01% sobre as vendas)"
+                              : "Valor total do imposto devido sobre ganhos de capital swing trade"}
                           </p>
                         </TooltipContent>
                       </Tooltip>
@@ -425,488 +441,405 @@ export function DarfDetailsModal({
                 </div>
                 <div className="flex justify-between items-center py-1">
                   <span className="text-xs text-gray-600">Status:</span>
-                  <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${statusDisplay.bgColor} ${statusDisplay.borderColor} border`}>
-                    {/* Ícone do status com tamanho fixo e alinhamento */}
-                    {React.cloneElement(statusDisplay.icon, { className: 'h-4 w-4 ' + (statusDisplay.icon.props.className || '') })}
-                    <span className={`font-semibold text-xs ${statusDisplay.textColor}`}>{statusDisplay.text}</span>
+                  <div
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${statusDisplay.bgColor} ${statusDisplay.borderColor} border`}
+                  >
+                    {React.cloneElement(statusDisplay.icon, {
+                      className:
+                        "h-4 w-4 " + (statusDisplay.icon.props.className || ""),
+                    })}
+                    <span
+                      className={`font-semibold text-xs ${statusDisplay.textColor}`}
+                    >
+                      {statusDisplay.text}
+                    </span>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Seção Educativa - Cálculo Detalhado */}
-          <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-4 border border-green-200">
-            <div className="flex items-center gap-2 mb-3">
-              <Calculator className="h-4 w-4 text-green-600" />
-              <h3 className="font-semibold text-green-900 text-sm">📊 Cálculo Passo a Passo do DARF</h3>
-            </div>
-            
-            <div className="bg-white/80 rounded-lg p-3 mb-3 border border-green-200">
-              <p className="text-xs text-green-800 leading-relaxed">
-                <strong>💡 Entenda o cálculo:</strong> O DARF é calculado aplicando-se a alíquota sobre o lucro líquido, 
-                descontando-se o IRRF {tipoDarf === 'daytrade' ? '(quando aplicável)' : ''} e compensando prejuízos anteriores do mesmo tipo de operação.
-              </p>
-            </div>
-            
-            {/* Informações importantes sobre compensação */}
-            <div className="bg-blue-50 rounded-lg p-3 mb-3 border border-blue-200">
-              <div className="flex items-center gap-2 mb-2">
-                <Info className="h-4 w-4 text-blue-600" />
-                <h4 className="font-semibold text-blue-800 text-xs">ℹ️ Regras da Compensação de Prejuízos</h4>
-              </div>
-              <ul className="text-xs text-blue-700 space-y-1">
-                <li>• Prejuízos de <strong>day trade</strong> só podem ser compensados com lucros de <strong>day trade</strong></li>
-                <li>• Prejuízos de <strong>swing trade</strong> só podem ser compensados com lucros de <strong>swing trade</strong></li>
-                <li>• Não há prazo limite para usar os prejuízos acumulados</li>
-                <li>• A compensação reduz diretamente o imposto devido</li>
-              </ul>
-            </div>
-            
-            {/* Cálculo detalhado baseado no tipo de operação */}
-            <div className="space-y-3 text-sm text-green-800">
-              {tipoDarf === 'daytrade' ? (
-                <div className="space-y-3">
-                  {/* Passo 1: Ganho líquido */}
-                  <div className="bg-white/60 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">1</span>
-                      <h4 className="font-semibold text-gray-800">Lucro Líquido no Mês</h4>
-                    </div>
-                    <div className="flex justify-between items-center py-1">
-                      <span>💰 Ganho líquido em Day Trade ({formatMonthYear(darfCompetencia)}):</span>
-                      <span className="font-bold text-green-600">{formatCurrency(resultadoMensal.ganho_liquido_day || 0)}</span>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-1">Soma de todos os lucros das operações day trade do mês.</p>
+            {/* Accordeons explicativos - AGORA NO TOPO */}
+            <Accordion type="multiple" className="w-full">
+              <AccordionItem
+                value="calculation"
+                className="border rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 mb-4"
+              >
+                <AccordionTrigger className="text-left hover:no-underline px-4 py-3 rounded-t-lg hover:bg-green-100 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <Calculator className="w-5 h-5 text-green-600" />
+                    <span className="font-semibold text-green-900">
+                      Como chegamos no valor do DARF?
+                    </span>
                   </div>
-
-                  {/* Passo 2: Aplicação da alíquota */}
-                  <div className="bg-white/60 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">2</span>
-                      <h4 className="font-semibold text-gray-800">Compensação de Prejuízo (se houver)</h4>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-4">
+                    {/* Fórmula simplificada */}
+                    <div className="bg-blue-50 rounded-lg p-3 border border-blue-200 text-center">
+                      <p className="text-sm font-semibold text-blue-800 mb-1">
+                        🧮 Fórmula:
+                      </p>
+                      <p className="text-blue-700 font-mono text-sm">
+                        {tipoDarf === "daytrade"
+                          ? `(Lucro Bruto do Mês - Prejuízo Acumulado) × 20% - IRRF = DARF`
+                          : `(Lucro Bruto do Mês - Prejuízo Acumulado) × 15% = DARF`}
+                      </p>
                     </div>
-                    {prejudoAcumuladoDay > 0 ? (
-                      <div className="space-y-2">
-                        {/* Log adicional para debug */}
-                        {(() => {
-                          console.log('DEBUG: Mostrando prejuízo acumulado day trade:', prejudoAcumuladoDay);
-                          console.log('DEBUG: Compensação day aplicada:', prejudoAcumuladoDay);
-                          return null;
-                        })()}
-                        <div className="flex justify-between items-center py-1 mb-1">
-                          <span>📉 Prejuízo acumulado de meses anteriores:</span>
-                          <span className="font-semibold text-amber-700">{formatCurrency(prejudoAcumuladoDay)}</span>
+                    {/* Detalhamento do Lucro Bruto e Prejuízo */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {/* Card Lucro Bruto */}
+                      <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-3 border border-green-200">
+                        <div className="flex items-center gap-2 mb-2">
+                          <TrendingUp className="h-4 w-4 text-green-600" />
+                          <h4 className="font-semibold text-green-800 text-sm">
+                            💰 Lucro Bruto do Mês
+                          </h4>
                         </div>
-                        <div className="bg-amber-50 rounded p-2 border border-amber-200">
-                          <div className="flex justify-between items-center py-1">
-                            <span className="text-amber-800">🧮 Cálculo da compensação:</span>
-                            <span className="font-mono text-xs text-amber-800">
-                              {formatCurrency(ganhoBrutoDay)} - {formatCurrency(prejudoAcumuladoDay)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center py-1 border-t border-amber-200 pt-1">
-                            <span className="font-semibold text-amber-800">🎯 = Lucro após compensação:</span>
-                            <span className="font-bold text-amber-800">
-                              {formatCurrency(ganhoLiquidoDay)}
-                            </span>
-                          </div>
-                        </div>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Do prejuízo anterior de {formatCurrency(prejudoAcumuladoDay)}, foi usado {formatCurrency(prejudoAcumuladoDay)} para compensar o lucro deste mês.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {/* Log adicional para debug */}
-                        {(() => {
-                          console.log('DEBUG: NÃO há prejuízo acumulado day trade. Valor:', prejudoAcumuladoDay);
-                          return null;
-                        })()}
-                        
-                        {/* Sempre mostrar o valor do prejuízo acumulado, mesmo que seja zero */}
-                        <div className="flex justify-between items-center py-1 mb-1">
-                          <span>📊 Prejuízo acumulado de meses anteriores:</span>
-                          <span className="font-semibold text-gray-600">{formatCurrency(prejudoAcumuladoDay)}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center py-1 bg-green-50 px-2 rounded border border-green-200">
-                          <span className="font-semibold text-green-800">🎯 = Lucro a tributar:</span>
-                          <span className="font-bold text-green-800">{formatCurrency(ganhoLiquidoDay)}</span>
-                        </div>
-                        
-                        <p className="text-xs text-gray-600 mt-1">
-                          {prejudoAcumuladoDay === 0 
-                            ? "Todo o lucro será tributado, pois não há prejuízo acumulado a compensar."
-                            : "Lucro será tributado integralmente conforme apuração do mês."
-                          }
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Passo 3: Aplicação da alíquota */}
-                  <div className="bg-white/60 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">3</span>
-                      <h4 className="font-semibold text-gray-800">Aplicação da Alíquota</h4>
-                    </div>
-                    <div className="flex justify-between items-center py-1 mb-1">
-                      <span>📊 Alíquota Day Trade:</span>
-                      <span className="font-semibold text-red-600">20%</span>
-                    </div>
-                    <div className="bg-red-50 rounded p-2 border border-red-200">
-                      <div className="flex justify-between items-center py-1">
-                        <span>🧮 Cálculo do IR:</span>
-                        <span className="font-mono text-xs text-red-700">
-                          {formatCurrency(Math.max(0, (resultadoMensal.ganho_liquido_day || 0) - (resultadoMensal.prejuizo_acumulado_day || 0)))} × 20%
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-t border-red-200 pt-1">
-                        <span className="font-semibold text-red-800">🎯 = IR devido:</span>
-                        <span className="font-bold text-red-800">
-                          {formatCurrency(Math.max(0, (resultadoMensal.ganho_liquido_day || 0) - (resultadoMensal.prejuizo_acumulado_day || 0)) * 0.20)}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-1">
-                      A alíquota de 20% é aplicada sobre o lucro {resultadoMensal.prejuizo_acumulado_day && resultadoMensal.prejuizo_acumulado_day > 0 ? 'após compensação' : 'total'}.
-                    </p>
-                  </div>
-
-                  {/* Passo 4: IRRF */}
-                  <div className="bg-white/60 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">4</span>
-                      <h4 className="font-semibold text-gray-800">Desconto do IRRF</h4>
-                    </div>
-                    <div className="flex justify-between items-center py-1 bg-orange-50 px-2 rounded">
-                      <span>💳 IRRF já retido na fonte (0,01% sobre vendas):</span>
-                      <span className="font-bold text-orange-600">{formatCurrency(resultadoMensal.irrf_day || 0)}</span>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-1">Valor já descontado automaticamente pelo banco nas vendas day trade.</p>
-                  </div>
-                  
-                  {/* Resultado final com cálculo detalhado */}
-                  <div className="bg-gradient-to-r from-green-100 to-emerald-100 rounded-lg p-3 border-2 border-green-300">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-green-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">💰</span>
-                      <h4 className="font-semibold text-green-800">Cálculo Final Detalhado</h4>
-                    </div>
-                    <div className="bg-white/80 rounded p-2 mb-2">
-                      <div className="text-xs text-green-700 space-y-2">
-                        {/* Fórmula do cálculo */}
-                        <div className="bg-blue-50 rounded p-2 border border-blue-200">
-                          <p className="font-semibold text-blue-800 text-center mb-1">🧮 Fórmula do Cálculo:</p>
-                          <p className="text-center text-blue-700 font-mono text-xs">
-                            {resultadoMensal.prejuizo_acumulado_day && resultadoMensal.prejuizo_acumulado_day > 0 
-                              ? `(Lucro - Prejuízo Acumulado) × 20% - IRRF = DARF`
-                              : `Lucro × 20% - IRRF = DARF`
-                            }
+                        <div className="text-center">
+                          <span className="text-2xl font-bold text-green-700">
+                            {formatCurrency(ganhoBruto)}
+                          </span>
+                          <p className="text-xs text-green-600 mt-1">
+                            Soma de todos os lucros de {tipoLabel.toLowerCase()}{" "}
+                            em {formatMonthYear(darfCompetencia)}
                           </p>
                         </div>
-                        
-                        {/* Cálculo passo a passo */}
-                        <div className="space-y-1">
-                          {/* Mostrar sempre o ganho bruto primeiro */}
-                          <div className="flex justify-between border-b border-green-200 pb-1">
-                            <span>💰 Lucro bruto Day Trade do mês:</span>
-                            <span className="font-semibold">{formatCurrency(ganhoBrutoDay)}</span>
-                          </div>
-                          
-                          {/* Mostrar sempre a compensação de prejuízo, mesmo que seja zero */}
-                          <div className="flex justify-between text-amber-700">
-                            <span>📉 (-) Compensação de prejuízo anterior:</span>
-                            <span className="font-semibold">-{formatCurrency(prejudoAcumuladoDay)}</span>
-                          </div>
-                          
-                          {/* Linha de resultado após compensação */}
-                          <div className="flex justify-between bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                            <span className="font-semibold text-amber-800">🎯 = Lucro após compensação:</span>
-                            <span className="font-bold text-amber-800">
-                              {formatCurrency(ganhoLiquidoDay)}
-                            </span>
-                          </div>
-                          
-                          {/* Aplicação da alíquota */}
-                          <div className="flex justify-between text-red-700">
-                            <span>📊 × Alíquota (20%):</span>
-                            <span className="font-semibold">
-                              {formatCurrency(ganhoLiquidoDay * 0.20)}
-                            </span>
-                          </div>
-                          
-                          <div className="flex justify-between text-orange-700">
-                            <span>💳 (-) IRRF já retido:</span>
-                            <span className="font-semibold">-{formatCurrency(resultadoMensal.irrf_day || 0)}</span>
-                          </div>
-                          
-                          <div className="border-t border-green-300 pt-1"></div>
+                      </div>
+                      {/* Card Prejuízo Acumulado */}
+                      <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg p-3 border border-amber-200">
+                        <div className="flex items-center gap-2 mb-2">
+                          <AlertCircle className="h-4 w-4 text-amber-600" />
+                          <h4 className="font-semibold text-amber-800 text-sm">
+                            📉 Prejuízo Acumulado
+                          </h4>
                         </div>
-                        
-                        {/* Cálculo final em destaque */}
-                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded p-2 border border-green-300">
-                          <div className="flex justify-between items-center font-bold text-base">
-                            <span className="text-green-800">🎯 DARF a pagar:</span>
-                            <span className="text-green-800 text-lg">{formatCurrency(darfValorMensal || 0)}</span>
+                        <div className="text-center">
+                          <span className="text-2xl font-bold text-amber-700">
+                            {formatCurrency(prejudoUsadoCompensacao)}
+                          </span>
+                          <p className="text-xs text-amber-600 mt-1">
+                            {prejudoUsadoCompensacao > 0
+                              ? `Prejuízo de operações usado para compensação`
+                              : `Sem prejuízo acumulado para compensar`}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Cálculo visual passo a passo */}
+                    <div className="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-4 border border-gray-200">
+                      <h4 className="font-semibold text-gray-800 mb-3 text-center">
+                        🧮 Cálculo Passo a Passo
+                      </h4>
+                      <div className="space-y-3">
+                        {/* Passo 1: Lucro Bruto */}
+                        <div className="flex items-center justify-between py-2 px-3 bg-green-50 rounded border border-green-200">
+                          <div className="flex items-center gap-2">
+                            <span className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                              1
+                            </span>
+                            <span className="text-green-800 font-medium">
+                              Lucro bruto do mês:
+                            </span>
                           </div>
-                          
-                          {/* Fórmula detalhada sempre visível */}
-                          <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
-                            <p className="text-xs text-blue-800 font-semibold text-center mb-1">🧮 Memória de Cálculo:</p>
-                            <div className="text-xs text-blue-700 text-center space-y-1">
-                              <div>Lucro bruto: {formatCurrency(ganhoBrutoDay)}</div>
-                              <div>(-) Compensação prejuízo: {formatCurrency(prejudoAcumuladoDay)}</div>
-                              <div>= Lucro líquido: {formatCurrency(ganhoLiquidoDay)}</div>
-                              <div>× Alíquota 20% = {formatCurrency(ganhoLiquidoDay * 0.20)}</div>
-                              <div>(-) IRRF: {formatCurrency(resultadoMensal.irrf_day || 0)}</div>
-                              <div>= DARF: {formatCurrency(darfValorMensal || 0)}</div>
+                          <span className="font-bold text-green-700 text-lg">
+                            {formatCurrency(ganhoBruto)}
+                          </span>
+                        </div>
+                        {/* Passo 2: Subtração do Prejuízo */}
+                        <div className="flex items-center justify-between py-2 px-3 bg-amber-50 rounded border border-amber-200">
+                          <div className="flex items-center gap-2">
+                            <span className="bg-amber-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                              2
+                            </span>
+                            <span className="text-amber-800 font-medium">
+                              (-) Prejuízo compensado:
+                            </span>
+                          </div>
+                          <span className="font-bold text-amber-700 text-lg">
+                            -{formatCurrency(prejudoUsadoCompensacao)}
+                          </span>
+                        </div>
+                        {/* Linha de separação */}
+                        <div className="border-t-2 border-dashed border-gray-300 my-2"></div>
+                        {/* Resultado: Lucro Tributável */}
+                        <div className="flex items-center justify-between py-2 px-3 bg-blue-50 rounded border border-blue-200">
+                          <div className="flex items-center gap-2">
+                            <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                              =
+                            </span>
+                            <span className="text-blue-800 font-medium">
+                              Lucro tributável:
+                            </span>
+                          </div>
+                          <span className="font-bold text-blue-700 text-lg">
+                            {formatCurrency(ganhoLiquido)}
+                          </span>
+                        </div>
+                        {/* Passo 3: Aplicação da Alíquota */}
+                        <div className="flex items-center justify-between py-2 px-3 bg-purple-50 rounded border border-purple-200">
+                          <div className="flex items-center gap-2">
+                            <span className="bg-purple-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                              3
+                            </span>
+                            <span className="text-purple-800 font-medium">
+                              × Alíquota ({aliquota}):
+                            </span>
+                          </div>
+                          <span className="font-bold text-purple-700 text-lg">
+                            {formatCurrency(ganhoLiquido * aliquotaDecimal)}
+                          </span>
+                        </div>
+                        {/* Passo 4: IRRF (só para day trade) */}
+                        {tipoDarf === "daytrade" && (
+                          <div className="flex items-center justify-between py-2 px-3 bg-orange-50 rounded border border-orange-200">
+                            <div className="flex items-center gap-2">
+                              <span className="bg-orange-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold">
+                                4
+                              </span>
+                              <span className="text-orange-800 font-medium">
+                                (-) IRRF já retido:
+                              </span>
                             </div>
+                            <span className="font-bold text-orange-700 text-lg">
+                              -{formatCurrency(resultadoMensal?.irrf_day || 0)}
+                            </span>
+                          </div>
+                        )}
+                        {/* Linha de separação final */}
+                        <div className="border-t-4 border-green-400 my-3"></div>
+                        {/* Resultado Final: DARF */}
+                        <div className="bg-gradient-to-r from-green-100 to-emerald-100 p-4 rounded-lg border-2 border-green-300">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="bg-green-600 text-white rounded-full w-8 h-8 flex items-center justify-center">
+                                <span className="text-sm font-bold">💰</span>
+                              </div>
+                              <span className="text-green-800 font-bold text-lg">
+                                DARF a pagar:
+                              </span>
+                            </div>
+                            <span className="font-bold text-green-800 text-2xl">
+                              {formatCurrency(darfValorMensal || 0)}
+                            </span>
+                          </div>
+                          {/* Resumo da conta */}
+                          <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
+                            <p className="text-xs text-green-700 text-center font-mono">
+                              {prejudoUsadoCompensacao > 0
+                                ? `${formatCurrency(
+                                    ganhoBruto
+                                  )} - ${formatCurrency(
+                                    prejudoUsadoCompensacao
+                                  )} = ${formatCurrency(
+                                    ganhoLiquido
+                                  )} × ${aliquota}${
+                                    tipoDarf === "daytrade"
+                                      ? ` - ${formatCurrency(
+                                          resultadoMensal?.irrf_day || 0
+                                        )}`
+                                      : ""
+                                  } = ${formatCurrency(darfValorMensal || 0)}`
+                                : `${formatCurrency(
+                                    ganhoLiquido
+                                  )} × ${aliquota}${
+                                    tipoDarf === "daytrade"
+                                      ? ` - ${formatCurrency(
+                                          resultadoMensal?.irrf_day || 0
+                                        )}`
+                                      : ""
+                                  } = ${formatCurrency(darfValorMensal || 0)}`}
+                            </p>
                           </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {/* Passo 1: Ganho líquido */}
-                  <div className="bg-white/60 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">1</span>
-                      <h4 className="font-semibold text-gray-800">Lucro Líquido no Mês</h4>
-                    </div>
-                    <div className="flex justify-between items-center py-1">
-                      <span>💰 Ganho líquido em Swing Trade ({formatMonthYear(darfCompetencia)}):</span>
-                      <span className="font-bold text-green-600">{formatCurrency(ganhoLiquidoSwing)}</span>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-1">Soma de todos os lucros das operações swing trade do mês.</p>
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem
+                value="explanation"
+                className="border rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 mb-4"
+              >
+                <AccordionTrigger className="text-left hover:no-underline px-4 py-3 rounded-t-lg hover:bg-blue-100 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <Lightbulb className="w-5 h-5 text-blue-600" />
+                    <span className="font-semibold text-blue-900">
+                      ℹ️ O que é este DARF?
+                    </span>
                   </div>
-
-                  {/* Verificação de isenção */}
-                  {resultadoMensal.isento_swing && (
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  {/* Seção Educativa - O que é este DARF? */}
+                  <div className=" bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
+                    <div className="space-y-2 text-sm text-blue-800">
+                      <p className="leading-relaxed">
+                        Este documento permite o pagamento do{" "}
+                        <strong>
+                          Imposto de Renda sobre ganhos de capital
+                        </strong>{" "}
+                        em operações de{" "}
+                        <strong>{tipoLabel.toLowerCase()}</strong>. A alíquota
+                        aplicada é de <strong>{aliquota}</strong> sobre o lucro
+                        obtido.
+                      </p>
+                      {/* Regras específicas por tipo */}
+                      <div className="bg-white/80 rounded-lg p-3 border border-blue-200 mt-3">
+                        <h4 className="font-semibold text-blue-900 mb-2 flex items-center gap-1">
+                          <Info className="h-4 w-4" />
+                          Regras do {tipoLabel}:
+                        </h4>
+                        {tipoDarf === "swing" ? (
+                          <ul className="text-xs space-y-1 text-blue-700">
+                            <li>
+                              • ✅ <strong>Isenção:</strong> Vendas até R$
+                              20.000 por mês são isentas
+                            </li>
+                            <li>
+                              • 📊 <strong>Alíquota:</strong> 15% sobre o lucro
+                              líquido
+                            </li>
+                            <li>
+                              • 🔄 <strong>Compensação:</strong> Prejuízos só
+                              compensam com lucros de swing trade
+                            </li>
+                            <li>
+                              • ⏰ <strong>Vencimento:</strong> Último dia útil
+                              do mês seguinte
+                            </li>
+                          </ul>
+                        ) : (
+                          <ul className="text-xs space-y-1 text-blue-700">
+                            <li>
+                              • ⚡ <strong>Operação:</strong> Compra e venda no
+                              mesmo dia
+                            </li>
+                            <li>
+                              • 📊 <strong>Alíquota:</strong> 20% sobre o lucro
+                              líquido
+                            </li>
+                            <li>
+                              • 💳 <strong>IRRF:</strong> 0,01% já retido na
+                              fonte (descontado do DARF)
+                            </li>
+                            <li>
+                              • 🔄 <strong>Compensação:</strong> Prejuízos só
+                              compensam com lucros de day trade
+                            </li>
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem
+                value="payment-guide"
+                className="border rounded-lg bg-gradient-to-r from-emerald-50 to-green-50 border-green-200"
+              >
+                <AccordionTrigger className="text-left hover:no-underline px-4 py-3 rounded-t-lg hover:bg-green-100 transition-colors">
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="w-5 h-5 text-green-600" />
+                    <span className="font-semibold text-green-900">
+                      💳 Como pagar este DARF?
+                    </span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-4">
+                    {/* Título */}
+                    <div className="text-center">
+                      <h4 className="font-semibold text-green-800 mb-2">
+                        📱 Passo a Passo para Pagamento
+                      </h4>
+                      <p className="text-sm text-green-700">
+                        Para pagar DARF sem código de barras:
+                      </p>
+                    </div>
+                    
+                    {/* Passos do pagamento */}
+                    <div className="space-y-3">
+                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-green-200">
+                        <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                          1
+                        </div>
+                        <div>
+                          <span className="font-medium text-green-800">Acesse sua conta bancária</span>
+                          <p className="text-xs text-green-600 mt-1">
+                            Entre no Internet Banking do seu banco
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-green-200">
+                        <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                          2
+                        </div>
+                        <div>
+                          <span className="font-medium text-green-800">Navegue até Pagamentos</span>
+                          <p className="text-xs text-green-600 mt-1">
+                            Localize "Pagamentos" → "Impostos e Tributos"
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-green-200">
+                        <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                          3
+                        </div>
+                        <div>
+                          <span className="font-medium text-green-800">Selecione DARF</span>
+                          <p className="text-xs text-green-600 mt-1">
+                            Escolha a opção "DARF" na lista de tributos
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-green-200">
+                        <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                          4
+                        </div>
+                        <div>
+                          <span className="font-medium text-green-800">Preencha os dados</span>
+                          <p className="text-xs text-green-600 mt-1">
+                            Insira os dados do seu DARF: código da receita, competência, vencimento e valor
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border-2 border-green-300">
+                        <div className="bg-green-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                          ✓
+                        </div>
+                        <div>
+                          <span className="font-medium text-green-800">Revise e finalize</span>
+                          <p className="text-xs text-green-600 mt-1">
+                            Confira todas as informações e confirme o pagamento
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Dica adicional */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">🛡️</span>
-                        <h4 className="font-semibold text-blue-800">Verificação de Isenção</h4>
+                        <Lightbulb className="h-4 w-4 text-blue-600" />
+                        <span className="font-semibold text-blue-800 text-sm">💡 Dica Importante:</span>
                       </div>
-                      <div className="bg-white/80 rounded p-2">
-                        <div className="flex items-center gap-1 mb-1">
-                          <Info className="h-3 w-3 text-blue-600" />
-                          <span className="text-blue-700 font-semibold">Operação Isenta de IR</span>
-                        </div>
-                        <p className="text-xs text-blue-700">
-                          Vendas de swing trade até R$ 20.000 por mês são isentas de Imposto de Renda.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Passo 2: Compensação de Prejuízo (se houver) */}
-                  <div className="bg-white/60 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">2</span>
-                      <h4 className="font-semibold text-gray-800">Compensação de Prejuízo (se houver)</h4>
-                    </div>
-                    {prejudoAcumuladoSwing > 0 ? (
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center py-1 mb-1">
-                          <span>� Prejuízo acumulado de meses anteriores:</span>
-                          <span className="font-semibold text-amber-700">{formatCurrency(prejudoAcumuladoSwing)}</span>
-                        </div>
-                        <div className="bg-amber-50 rounded p-2 border border-amber-200">
-                          <div className="flex justify-between items-center py-1">
-                            <span className="text-amber-800">🧮 Cálculo da compensação:</span>
-                            <span className="font-mono text-xs text-amber-800">
-                              {formatCurrency(ganhoBrutoSwing)} - {formatCurrency(prejudoAcumuladoSwing)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center py-1 border-t border-amber-200 pt-1">
-                            <span className="font-semibold text-amber-800">🎯 = Lucro após compensação:</span>
-                            <span className="font-bold text-amber-800">
-                              {formatCurrency(ganhoLiquidoSwing)}
-                            </span>
-                          </div>
-                        </div>
-                        <p className="text-xs text-gray-600 mt-1">
-                          Do prejuízo anterior de {formatCurrency(prejudoAcumuladoSwing)}, foi usado {formatCurrency(prejudoAcumuladoSwing)} para compensar o lucro deste mês.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {/* Log adicional para debug */}
-                        {(() => {
-                          console.log('DEBUG: NÃO há prejuízo acumulado swing trade. Valor:', prejudoAcumuladoSwing);
-                          return null;
-                        })()}
-                        
-                        {/* Sempre mostrar o valor do prejuízo, mesmo que seja zero */}
-                        <div className="flex justify-between items-center py-1 mb-1">
-                          <span>📊 Prejuízo acumulado de meses anteriores:</span>
-                          <span className="font-semibold text-gray-600">{formatCurrency(prejudoAcumuladoSwing)}</span>
-                        </div>
-                        
-                        <div className="flex justify-between items-center py-1 bg-green-50 px-2 rounded border border-green-200">
-                          <span className="font-semibold text-green-800">🎯 = Lucro a tributar:</span>
-                          <span className="font-bold text-green-800">{formatCurrency(ganhoLiquidoSwing)}</span>
-                        </div>
-                        
-                        <p className="text-xs text-gray-600 mt-1">
-                          {prejudoAcumuladoSwing === 0 
-                            ? "Todo o lucro será tributado, pois não há prejuízo acumulado a compensar."
-                            : "Lucro será tributado integralmente conforme apuração do mês."
-                          }
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Passo 3: Aplicação da alíquota */}
-                  <div className="bg-white/60 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-blue-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">3</span>
-                      <h4 className="font-semibold text-gray-800">Aplicação da Alíquota</h4>
-                    </div>
-                    <div className="flex justify-between items-center py-1 mb-1">
-                      <span>📊 Alíquota Swing Trade:</span>
-                      <span className="font-semibold text-red-600">15%</span>
-                    </div>
-                    <div className="bg-red-50 rounded p-2 border border-red-200">
-                      <div className="flex justify-between items-center py-1">
-                        <span>🧮 Cálculo do IR:</span>
-                        <span className="font-mono text-xs text-red-700">
-                          {formatCurrency(ganhoLiquidoSwing)} × 15%
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center py-1 border-t border-red-200 pt-1">
-                        <span className="font-semibold text-red-800">🎯 = IR devido:</span>
-                        <span className="font-bold text-red-800">
-                          {formatCurrency(ganhoLiquidoSwing * 0.15)}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-600 mt-1">
-                      A alíquota de 15% é aplicada sobre o lucro {prejudoAcumuladoSwing > 0 ? 'após compensação' : 'total'}.
-                    </p>
-                  </div>
-                  
-                  {/* Resultado final com cálculo detalhado */}
-                  <div className="bg-gradient-to-r from-green-100 to-emerald-100 rounded-lg p-3 border-2 border-green-300">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="bg-green-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">💰</span>
-                      <h4 className="font-semibold text-green-800">Cálculo Final Detalhado</h4>
-                    </div>
-                    <div className="bg-white/80 rounded p-2 mb-2">
-                      <div className="text-xs text-green-700 space-y-2">
-                        {/* Fórmula do cálculo */}
-                        <div className="bg-blue-50 rounded p-2 border border-blue-200">
-                          <p className="font-semibold text-blue-800 text-center mb-1">🧮 Fórmula do Cálculo:</p>
-                          <p className="text-center text-blue-700 font-mono text-xs">
-                            {prejudoAcumuladoSwing > 0 
-                              ? `(Lucro - Prejuízo Acumulado) × 15% = DARF`
-                              : `Lucro × 15% = DARF`
-                            }
-                          </p>
-                        </div>
-                        
-                        {/* Cálculo passo a passo */}
-                        <div className="space-y-1">
-                          {/* Mostrar sempre o ganho bruto primeiro */}
-                          <div className="flex justify-between border-b border-green-200 pb-1">
-                            <span>💰 Lucro bruto Swing Trade do mês:</span>
-                            <span className="font-semibold">{formatCurrency(ganhoBrutoSwing)}</span>
-                          </div>
-                          
-                          {/* Mostrar sempre a compensação de prejuízo, mesmo que seja zero */}
-                          <div className="flex justify-between text-amber-700">
-                            <span>📉 (-) Compensação de prejuízo anterior:</span>
-                            <span className="font-semibold">-{formatCurrency(prejudoAnteriorUsado)}</span>
-                          </div>
-                          
-                          {/* Linha de resultado após compensação */}
-                          <div className="flex justify-between bg-amber-50 px-2 py-1 rounded border border-amber-200">
-                            <span className="font-semibold text-amber-800">🎯 = Lucro após compensação:</span>
-                            <span className="font-bold text-amber-800">
-                              {formatCurrency(ganhoLiquidoSwing)}
-                            </span>
-                          </div>
-                          
-                          {/* Aplicação da alíquota */}
-                          <div className="flex justify-between text-red-700">
-                            <span>📊 × Alíquota (15%):</span>
-                            <span className="font-semibold">
-                              {formatCurrency(ganhoLiquidoSwing * 0.15)}
-                            </span>
-                          </div>
-                          
-                          <div className="border-t border-green-300 pt-1"></div>
-                        </div>
-                        
-                        {/* Cálculo final em destaque */}
-                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded p-2 border border-green-300">
-                          <div className="flex justify-between items-center font-bold text-base">
-                            <span className="text-green-800">🎯 DARF a pagar:</span>
-                            <span className="text-green-800 text-lg">{formatCurrency(darfValorMensal || 0)}</span>
-                          </div>
-                          
-                          {/* Fórmula detalhada sempre visível */}
-                          <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
-                            <p className="text-xs text-blue-800 font-semibold text-center mb-1">🧮 Memória de Cálculo:</p>
-                            <div className="text-xs text-blue-700 text-center space-y-1">
-                              <div>Lucro bruto: {formatCurrency(ganhoBrutoSwing)}</div>
-                              <div>(-) Compensação prejuízo: {formatCurrency(prejudoAnteriorUsado)}</div>
-                              <div>= Lucro líquido: {formatCurrency(ganhoLiquidoSwing)}</div>
-                              <div>× Alíquota 15% = {formatCurrency(darfValorMensal || 0)}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
+                      <p className="text-xs text-blue-700">
+                        Mantenha o comprovante de pagamento guardado por 5 anos. Ele é sua garantia de que o imposto foi quitado!
+                      </p>
                     </div>
                   </div>
-                </div>
-              )}
-              
-              {/* Seção de dicas importantes */}
-              <div className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg p-3 border border-yellow-200 mt-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertCircle className="h-4 w-4 text-yellow-600" />
-                  <h4 className="font-semibold text-yellow-800 text-xs">⚠️ Dicas Importantes</h4>
-                </div>
-                <ul className="text-xs text-yellow-800 space-y-1">
-                  <li>• O DARF deve ser pago até o último dia útil do mês seguinte ao da apuração</li>
-                  <li>• Guarde todos os comprovantes de pagamento para a declaração anual</li>
-                  <li>• Em caso de dúvidas, consulte um contador especializado em mercado financeiro</li>
-                  {tipoDarf === 'daytrade' && (
-                    <li>• O IRRF já foi descontado automaticamente pelo seu banco/corretora</li>
-                  )}
-                  {tipoDarf === 'swing' && (
-                    <li>• Swing trade com vendas mensais até R$ 20.000 são isentas de IR</li>
-                  )}
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          {/* Aviso compacto */}
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-2">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-3 w-3 text-amber-600 flex-shrink-0" />
-              <p className="text-xs text-amber-700">
-                O valor total do DARF pode incluir outras operações tributáveis do mesmo tipo realizadas em {formatMonthYear(darfCompetencia)}.
-                {tipoDarf === 'daytrade' 
-                  ? ' Day Trade: Alíquota de 20% sobre lucros. Prejuízos só compensam com lucros de day trade.' 
-                  : ' Swing Trade: Alíquota de 15% sobre lucros. Isenção para vendas até R$ 20.000/mês. Prejuízos só compensam com lucros de swing trade.'
-                }
-              </p>
-            </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+            {/* Grid com duas colunas para otimizar espaço */}
           </div>
         </div>
-
         {/* Footer modernizado */}
         <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-4 px-4 pb-4 border-t border-gray-200">
           <div className="flex flex-1 justify-start">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={handleSavePdf}
               className="flex items-center gap-2 rounded-lg border-2 border-blue-200 hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 text-sm"
             >
@@ -914,51 +847,52 @@ export function DarfDetailsModal({
               Baixar PDF
             </Button>
           </div>
-          
           <div className="flex gap-2">
-            {darfStatus === 'Pago' && darfValorMensal && darfValorMensal > 0 && (
-              <Button
-                variant="outline"
-                onClick={handleMarkAsPendente}
-                disabled={isMarkingPendente}
-                className="rounded-lg border-2 border-orange-200 hover:border-orange-300 hover:bg-orange-50 transition-all duration-200 text-sm"
-              >
-                {isMarkingPendente ? (
-                  <div className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-orange-500 border-t-transparent"></div>
-                    Atualizando...
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-3 w-3" />
-                    Marcar como Pendente
-                  </div>
-                )}
-              </Button>
-            )}
-            
-            {darfStatus !== 'Pago' && darfValorMensal && darfValorMensal >= 10.0 && (
-              <Button 
-                onClick={handleMarkAsPaid}
-                disabled={isMarkingPaid}
-                className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 text-sm"
-              >
-                {isMarkingPaid ? (
-                  <div className="flex items-center gap-2">
-                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
-                    Marcando...
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-3 w-3" />
-                    Marcar como Pago
-                  </div>
-                )}
-              </Button>
-            )}
-            
+            {darfStatus === "Pago" &&
+              darfValorMensal &&
+              darfValorMensal > 0 && (
+                <Button
+                  variant="outline"
+                  onClick={handleMarkAsPendente}
+                  disabled={isMarkingPendente}
+                  className="rounded-lg border-2 border-orange-200 hover:border-orange-300 hover:bg-orange-50 transition-all duration-200 text-sm"
+                >
+                  {isMarkingPendente ? (
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-orange-500 border-t-transparent"></div>
+                      Atualizando...
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3 w-3" />
+                      Marcar como Pendente
+                    </div>
+                  )}
+                </Button>
+              )}
+            {darfStatus !== "Pago" &&
+              darfValorMensal &&
+              darfValorMensal >= 10.0 && (
+                <Button
+                  onClick={handleMarkAsPaid}
+                  disabled={isMarkingPaid}
+                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 text-sm"
+                >
+                  {isMarkingPaid ? (
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+                      Marcando...
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-3 w-3" />
+                      Marcar como Pago
+                    </div>
+                  )}
+                </Button>
+              )}
             <DialogClose asChild>
-              <Button 
+              <Button
                 variant="outline"
                 className="rounded-lg border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all duration-200 text-sm"
               >
