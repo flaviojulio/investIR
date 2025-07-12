@@ -784,9 +784,15 @@ export default function OperacoesEncerradasTable({
                           <p className="text-sm font-medium text-gray-800 truncate">
                             {op.ticker}
                           </p>
-                          <p className="text-xs text-gray-500 truncate">
-                            {op.tipo} - {formatDateShort(op.data_abertura)}
-                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold border ${
+                              op.day_trade 
+                                ? 'bg-orange-50 text-orange-700 border-orange-200' 
+                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                            }`}>
+                              {op.day_trade ? "Day Trade" : "Swing Trade"}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -798,11 +804,15 @@ export default function OperacoesEncerradasTable({
                     </div>
 
                     <div className="col-span-3 flex items-center justify-end">
-                      <span className={`text-xs font-semibold rounded-full px-3 py-1.5 min-h-[32px] flex items-center ${isProfit ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
-                        style={{lineHeight: '20px'}}>
-                        {isProfit ? '+' : '-'}
-                        {formatCurrency(Math.abs(op.resultado))}
-                      </span>
+                      <div className="text-right">
+                        <p className={`text-sm font-bold ${isProfit ? 'text-green-600' : 'text-red-600'}`}>
+                          {isProfit ? '+' : ''}
+                          {formatCurrency(op.resultado)}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {isProfit ? 'Lucro' : 'Prejuízo'}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="col-span-3 flex items-center justify-start">

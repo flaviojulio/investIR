@@ -2347,4 +2347,11 @@ def obter_prejuizo_acumulado_anterior(usuario_id: int, tipo: str, mes_atual: str
                 ''', (usuario_id,))
         
         result = cursor.fetchone()
+        
+        # DEBUG: Log para verificar o que está sendo retornado
+        import logging
+        logging.info(f"[DEBUG] obter_prejuizo_acumulado_anterior: usuario_id={usuario_id}, tipo={tipo}, mes_atual={mes_atual}")
+        logging.info(f"[DEBUG] Query result: {result}")
+        logging.info(f"[DEBUG] Prejuízo retornado: {result['prejuizo'] if result else 0.0}")
+        
         return result['prejuizo'] if result else 0.0

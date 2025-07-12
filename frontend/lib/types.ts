@@ -56,6 +56,12 @@ export interface ResultadoMensal {
   // Accumulated Losses
   prejuizo_acumulado_swing: number; // Adicionado
   prejuizo_acumulado_day: number;   // Adicionado
+  
+  // Prejuízo anterior e compensação aplicada (para cálculo DARF)
+  prejuizo_anterior_swing?: number; // Prejuízo dos meses anteriores
+  compensacao_swing_aplicada?: number; // Compensação aplicada este mês
+  prejuizo_anterior_day?: number; // Prejuízo dos meses anteriores
+  compensacao_day_aplicada?: number; // Compensação aplicada este mês
 }
 
 export interface ResultadoTicker {
