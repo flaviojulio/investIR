@@ -101,6 +101,7 @@ export interface OperacaoFechada {
   operacoes_relacionadas: OperacaoDetalhe[]; 
   day_trade: boolean;
   status_ir?: string; 
+  prejuizo_anterior_acumulado?: number; // Prejuízo acumulado disponível para compensação
 }
 
 // Types for Portfolio Equity History

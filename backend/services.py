@@ -795,6 +795,17 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
     # (não os preços originais das operações)
     # Isso garante que o frontend exiba corretamente o que foi usado no cálculo do resultado
     
+    # Calcular prejuízo anterior acumulado para esta operação
+    is_day_trade = op_abertura["date"] == op_fechamento["date"]
+    tipo_operacao = "day" if is_day_trade else "swing"
+    mes_operacao = data_fec.strftime("%Y-%m")
+    
+    prejuizo_anterior_acumulado = obter_prejuizo_acumulado_anterior(
+        usuario_id=usuario_id,
+        tipo=tipo_operacao,
+        mes_atual=mes_operacao
+    )
+    
     return {
         "ticker": op_abertura["ticker"],
         "data_abertura": data_ab,
@@ -807,9 +818,10 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
         "resultado": resultado_liquido,
         "percentual_lucro": percentual_lucro,
         "operacoes_relacionadas": operacoes_relacionadas,
-        "day_trade": op_abertura["date"] == op_fechamento["date"],
+        "day_trade": is_day_trade,
         "preco_fonte_abertura": preco_fonte_abertura,
-        "preco_fonte_fechamento": preco_fonte_fechamento
+        "preco_fonte_fechamento": preco_fonte_fechamento,
+        "prejuizo_anterior_acumulado": prejuizo_anterior_acumulado
     }
 
 

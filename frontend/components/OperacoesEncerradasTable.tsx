@@ -39,7 +39,8 @@ import {
   Clock,
   Calculator,
   Shield,
-  Link
+  Link,
+  Crown
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
@@ -47,13 +48,10 @@ import { DarfDetailsModal } from "@/components/DarfDetailsModal";
 
 // Mock formatting functions
 const formatCurrency = (value: number) => {
-  console.log(`💰 formatCurrency chamado com valor: ${value} (tipo: ${typeof value})`);
-  const result = new Intl.NumberFormat('pt-BR', {
+  return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL'
   }).format(value);
-  console.log(`💰 formatCurrency resultado: ${result}`);
-  return result;
 };
 
 const formatNumber = (value: number) => {
@@ -187,14 +185,6 @@ export default function OperacoesEncerradasTable({
   onUpdateDashboard = () => {}
 }: OperacoesEncerradasTableProps) {
   
-  // Log inicial para verificar se as props estão sendo passadas corretamente
-  console.log('🚀 COMPONENTE OPERAÇÕES ENCERRADAS INICIADO');
-  console.log('Props recebidas:');
-  console.log('- operacoesFechadas:', operacoesFechadas);
-  console.log('- É array?', Array.isArray(operacoesFechadas));
-  console.log('- Length:', operacoesFechadas?.length);
-  console.log('- Usando mock?', operacoesFechadas === mockOperacoes);
-  
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortConfig, setSortConfig] = useState<{
     key: string;
@@ -209,76 +199,6 @@ export default function OperacoesEncerradasTable({
   // Estado para controlar mudanças no status do DARF
   const [darfStatusMap, setDarfStatusMap] = useState<Map<string, string>>(new Map());
 
-  // Console.log para debug das operações encerradas
-  useEffect(() => {
-    console.log('=== OPERAÇÕES ENCERRADAS DEBUG ===');
-    console.log('Total de operações:', operacoesFechadas.length);
-    console.log('Operações recebidas:', operacoesFechadas);
-    
-    // Analisa cada operação
-    operacoesFechadas.forEach((op, index) => {
-      console.log(`\n--- Operação ${index + 1} ---`);
-      console.log('Ticker:', op.ticker);
-      console.log('Data Abertura:', op.data_abertura);
-      console.log('Data Fechamento:', op.data_fechamento);
-      console.log('Tipo:', op.tipo);
-      console.log('Quantidade:', op.quantidade);
-      console.log('Valor Compra (será exibido como Preço Médio):', op.valor_compra);
-      console.log('Valor Venda:', op.valor_venda);
-      console.log('Taxas Total:', op.taxas_total);
-      console.log('Resultado:', op.resultado);
-      console.log('Day Trade:', op.day_trade);
-      console.log('Status IR:', op.status_ir);
-      console.log('Operações Relacionadas:', op.operacoes_relacionadas);
-      
-      // Debug específico do problema do preço médio
-      console.log('\n🔍 DEBUG PREÇO MÉDIO:');
-      console.log('Campo op.valor_compra que será exibido como "Preço Médio":', op.valor_compra);
-      console.log('Tipo do valor_compra:', typeof op.valor_compra);
-      console.log('formatCurrency(op.valor_compra):', formatCurrency(op.valor_compra));
-      
-      if (op.operacoes_relacionadas && op.operacoes_relacionadas.length > 0) {
-        console.log('\n📊 OPERAÇÕES RELACIONADAS DETALHADAS:');
-        op.operacoes_relacionadas.forEach((opRel, relIndex) => {
-          console.log(`  ${relIndex + 1}. ${opRel.operation?.toUpperCase()} - Preço: ${opRel.price} - Fonte: ${opRel.price_fonte}`);
-        });
-        
-        // Comparar com o primeiro preço relacionado
-        const primeiraOpRelacionada = op.operacoes_relacionadas[0];
-        if (primeiraOpRelacionada) {
-          console.log(`\n⚖️  COMPARAÇÃO:`);
-          console.log(`Campo valor_compra: ${op.valor_compra}`);
-          console.log(`Primeira op relacionada preço: ${primeiraOpRelacionada.price}`);
-          console.log(`São iguais? ${op.valor_compra === primeiraOpRelacionada.price}`);
-        }
-      }
-      
-      console.log('---');
-    });
-
-    // Estatísticas resumidas
-    const totalLucro = operacoesFechadas
-      .filter(op => op.resultado > 0)
-      .reduce((acc, op) => acc + op.resultado, 0);
-    
-    const totalPrejuizo = operacoesFechadas
-      .filter(op => op.resultado < 0)
-      .reduce((acc, op) => acc + Math.abs(op.resultado), 0);
-    
-    const dayTrades = operacoesFechadas.filter(op => op.day_trade);
-    const swingTrades = operacoesFechadas.filter(op => !op.day_trade);
-    const tributaveis = operacoesFechadas.filter(op => op.status_ir?.includes('Tributável'));
-    
-    console.log('\n=== ESTATÍSTICAS ===');
-    console.log('Total de lucros:', totalLucro);
-    console.log('Total de prejuízos:', totalPrejuizo);
-    console.log('Resultado líquido:', totalLucro - totalPrejuizo);
-    console.log('Day trades:', dayTrades.length);
-    console.log('Swing trades:', swingTrades.length);
-    console.log('Operações tributáveis:', tributaveis.length);
-    console.log('==============================\n');
-  }, [operacoesFechadas]);
-
   // Inicializa o mapa de status DARF com os valores padrão
   useEffect(() => {
     const initialMap = new Map<string, string>();
@@ -290,25 +210,20 @@ export default function OperacoesEncerradasTable({
         const operationMonthYear = op.data_fechamento.substring(0, 7);
         const relevantResultadoMensal = resultadosMensais.find(rm => rm.mes === operationMonthYear);
         
-        let statusFromBackend = null;
         if (relevantResultadoMensal) {
-          const tipoDarf = op.day_trade ? 'daytrade' : 'swing';
-          if (tipoDarf === 'daytrade') {
-            statusFromBackend = relevantResultadoMensal.status_darf_day_trade?.toLowerCase();
-          } else {
-            statusFromBackend = relevantResultadoMensal.status_darf_swing_trade?.toLowerCase();
+          const statusFromResultado = op.day_trade 
+            ? relevantResultadoMensal.status_darf_day_trade 
+            : relevantResultadoMensal.status_darf_swing_trade;
+          
+          if (statusFromResultado) {
+            initialMap.set(operationKey, statusFromResultado);
           }
-        }
-        
-        // Se tiver status do backend, usa ele; senão usa o padrão
-        const finalStatus = statusFromBackend || getDarfStatusForOperation(op);
-        if (finalStatus) {
-          initialMap.set(operationKey, finalStatus);
         }
       }
     });
+    
     setDarfStatusMap(initialMap);
-  }, [operacoesFechadas, resultadosMensais]); // Agora também escuta mudanças em resultadosMensais
+  }, [operacoesFechadas, resultadosMensais]);
 
   // Função para atualizar o status do DARF de uma operação
   const updateDarfStatus = (op: OperacaoFechada, newStatus: string) => {
@@ -430,7 +345,7 @@ export default function OperacoesEncerradasTable({
             <Tooltip>
               <TooltipTrigger>
                 <span className={`${baseClasses} bg-red-50 text-red-700 border-red-200 hover:bg-red-100`}>
-                  <AlertCircle className="h-3 w-3 inline mr-1" />
+                  <Crown className="h-3 w-3 inline mr-1" />
                   Tributável
                 </span>
               </TooltipTrigger>
@@ -878,30 +793,25 @@ export default function OperacoesEncerradasTable({
                               <h4 className="font-semibold text-indigo-800 text-sm flex items-center gap-2">
                                 <Hash className="h-4 w-4" />
                                 Informações da Negociação
+                                <span className={`px-2 py-1 rounded-full text-xs font-medium border ${
+                                  op.day_trade 
+                                    ? 'bg-orange-100 text-orange-800 border-orange-300' 
+                                    : 'bg-blue-100 text-blue-800 border-blue-300'
+                                }`}>
+                                  {op.day_trade ? "Day Trade" : "Swing Trade"}
+                                </span>
+
                               </h4>
+
                             </div>
                             <div className="p-4">
                               <div className="grid grid-cols-2 gap-4">
-                                <div className="flex flex-col p-3 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                                  <div className="flex items-center gap-1 mb-1">
-                                    <Calendar className="h-3 w-3 text-blue-600" />
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Data de Abertura</span>
-                                  </div>
-                                  <span className="text-sm font-bold text-blue-900">{formatDate(op.data_abertura)}</span>
-                                </div>
                                 <div className="flex flex-col p-3 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
                                   <div className="flex items-center gap-1 mb-1">
                                     <Calendar className="h-3 w-3 text-purple-600" />
                                     <span className="text-xs font-semibold uppercase tracking-wide text-purple-600">Data de Fechamento</span>
                                   </div>
                                   <span className="text-sm font-bold text-purple-900">{formatDate(op.data_fechamento)}</span>
-                                </div>
-                                <div className="flex flex-col p-3 bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg border border-emerald-200">
-                                  <div className="flex items-center gap-1 mb-1">
-                                    <Building2 className="h-3 w-3 text-emerald-600" />
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Tipo de Operação</span>
-                                  </div>
-                                  <span className="text-sm font-bold text-emerald-800 capitalize">{op.tipo}</span>
                                 </div>
                                 <div className="flex flex-col p-3 bg-gradient-to-br from-orange-50 to-amber-50 rounded-lg border border-orange-200">
                                   <div className="flex items-center gap-1 mb-1">
@@ -916,13 +826,7 @@ export default function OperacoesEncerradasTable({
                                     <span className="text-xs font-semibold uppercase tracking-wide text-green-600">Preço Médio</span>
                                   </div>
                                   <span className="text-sm font-bold text-green-800">
-                                    {(() => {
-                                      console.log(`🎯 RENDERIZANDO PREÇO MÉDIO para ${op.ticker}:`);
-                                      console.log(`- op.valor_compra: ${op.valor_compra}`);
-                                      console.log(`- typeof: ${typeof op.valor_compra}`);
-                                      console.log(`- formatCurrency resultado: ${formatCurrency(op.valor_compra)}`);
-                                      return formatCurrency(op.valor_compra);
-                                    })()}
+                                    {formatCurrency(op.valor_compra)}
                                   </span>
                                 </div>
                                 <div className="flex flex-col p-3 bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg border border-cyan-200">
@@ -932,31 +836,38 @@ export default function OperacoesEncerradasTable({
                                   </div>
                                   <span className="text-sm font-bold text-cyan-800">{formatCurrency(op.valor_venda)}</span>
                                 </div>
-                                <div className="flex flex-col p-3 bg-gradient-to-br from-amber-50 to-orange-50 rounded-lg border border-amber-200">
-                                  <div className="flex items-center gap-1 mb-1">
-                                    <Calculator className="h-3 w-3 text-amber-600" />
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">Taxas Totais</span>
-                                  </div>
-                                  <span className="text-sm font-bold text-amber-800">{formatCurrency(op.taxas_total)}</span>
-                                </div>
-                                <div className={`flex flex-col p-3 rounded-lg border-2 ${isProfit 
-                                  ? 'bg-gradient-to-br from-green-100 to-emerald-100 border-green-300' 
-                                  : 'bg-gradient-to-br from-red-100 to-rose-100 border-red-300'
+                              </div>
+                              
+                              {/* Card Resultado Final - Ocupa toda a largura */}
+                              <div className="mt-4">
+                                <div className={`flex flex-col rounded-xl border-2 shadow-lg ${isProfit 
+                                  ? 'p-3 bg-gradient-to-br from-green-100 to-emerald-100 border-green-300' 
+                                  : 'p-2 bg-gradient-to-br from-red-100 to-rose-100 border-red-300'
                                 }`}>
-                                  <div className="flex items-center gap-1 mb-1">
+                                  <div className={`flex items-center justify-center gap-2 ${isProfit ? 'mb-3' : 'mb-2'}`}>
                                     {isProfit ? (
-                                      <TrendingUp className="h-4 w-4 text-green-700" />
+                                      <TrendingUp className="h-5 w-5 text-green-700" />
                                     ) : (
                                       <TrendingDown className="h-4 w-4 text-red-700" />
                                     )}
-                                    <span className={`text-xs font-semibold uppercase tracking-wide ${isProfit ? 'text-green-700' : 'text-red-700'}`}>
-                                      Resultado Final
+                                    <span className={`font-semibold uppercase tracking-wide ${
+                                      isProfit 
+                                        ? 'text-sm text-green-700' 
+                                        : 'text-xs text-red-700'
+                                    }`}>
+                                      Resultado Final da Operação
                                     </span>
                                   </div>
-                                  <span className={`text-lg font-black ${isProfit ? 'text-green-800' : 'text-red-800'}`}>
-                                    {isProfit ? '+' : '-'}
-                                    {formatCurrency(Math.abs(op.resultado))}
-                                  </span>
+                                  <div className="text-center">
+                                    <span className={`font-black ${
+                                      isProfit 
+                                        ? 'text-2xl text-green-800' 
+                                        : 'text-lg text-red-800'
+                                    }`}>
+                                      {isProfit ? '+' : '-'}
+                                      {formatCurrency(Math.abs(op.resultado))}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
@@ -980,50 +891,164 @@ export default function OperacoesEncerradasTable({
                                 Situação tributária
                               </h4>
                             </div>
-                            <div className="p-4">
-                              <div className="space-y-4">
+                            <div className="p-4">                                <div className="space-y-4">
                                 <div className="flex flex-col gap-4">
 
-                                  <div className="flex flex-col p-4 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-xl border border-blue-200 shadow-sm">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <Clock className="h-4 w-4 text-blue-600" />
-                                      <span className="text-xs font-semibold uppercase tracking-wide text-blue-600">Modalidade de Negociação</span>
-                                    </div>
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <span className={`px-3 py-2 rounded-full text-sm font-bold border-2 ${
-                                        op.day_trade 
-                                          ? 'bg-orange-100 text-orange-800 border-orange-300' 
-                                          : 'bg-blue-100 text-blue-800 border-blue-300'
-                                      }`}>
-                                        {op.day_trade ? "Day Trade" : "Swing Trade"}
-                                      </span>
-                                    </div>
-                                    <span className="text-xs text-blue-700 leading-relaxed">
-                                      {op.day_trade 
-                                        ? "Operação de compra e venda no mesmo dia" 
-                                        : "Operação de posição (mantida por mais de um dia)"
-                                      }
-                                    </span>
-                                  </div>
                                   <div className="flex flex-col p-4 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 shadow-sm">
-                                    <div className="flex items-center gap-2 mb-2">
+                                    <div className="flex items-center gap-2 mb-3">
                                       <Shield className="h-4 w-4 text-indigo-600" />
-                                      <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Status do IR</span>
+                                      <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">Status Fiscal</span>
                                     </div>
-                                    <div className="flex items-center gap-2 mb-2">
+                                    
+                                    {/* Linha com badges */}
+                                    <div className="flex items-center gap-3 mb-3 flex-wrap">
+
                                       {getStatusBadge(op.status_ir || "", isProfit)}
-                                      {/* Exibe o badge do DARF ao lado do badge Tributável, se aplicável */}
                                       {(op.status_ir === "Tributável Day Trade" || op.status_ir === "Tributável Swing") && getDarfBadge(getDarfStatusForOperation(op, darfStatusMap), op)}
                                     </div>
-                                    <span className="text-xs text-indigo-700 leading-relaxed">
-                                      {op.status_ir === "Isento" && "Operação isenta de imposto de renda"}
-                                      {op.status_ir === "Tributável Day Trade" && "Sujeita a IR de 20% sobre o lucro"}
-                                      {op.status_ir === "Tributável Swing" && "Sujeita a IR de 15% sobre o lucro"}
-                                      {op.status_ir === "Prejuízo Acumulado" && "Prejuízo para compensação futura"}
-                                      {op.status_ir === "Lucro Compensado" && "Lucro compensado por prejuízos anteriores"}
-                                      {!op.status_ir && "Status não definido"}
-                                    </span>
+                                    
+                                    {/* Descrições */}
+                                    <div className="text-xs text-indigo-700 leading-relaxed space-y-1">
+
+                                      <div>
+                                        <span className="font-semibold">Tributação:</span>{' '}
+                                        {op.status_ir === "Isento" && "Operação isenta de imposto de renda"}
+                                        {op.status_ir === "Tributável Day Trade" && "Sujeita a IR de 20% sobre o lucro"}
+                                        {op.status_ir === "Tributável Swing" && "Sujeita a IR de 15% sobre o lucro"}
+                                        {op.status_ir === "Prejuízo Acumulado" && "Prejuízo para compensação futura"}
+                                        {op.status_ir === "Lucro Compensado" && "Lucro compensado por prejuízos em outras operações de mesmo tipo"}
+                                        {!op.status_ir && "Status não definido"}
+                                      </div>
+                                    </div>
                                   </div>
+                                  {/* Card de Acúmulo de Prejuízo - apenas para operações com resultado negativo */}
+                                  {!isProfit && (
+                                    <div className="flex flex-col p-4 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl border border-orange-200 shadow-sm">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <Info className="h-4 w-4 text-orange-600" />
+                                        <span className="text-xs font-semibold uppercase tracking-wide text-orange-600">Acúmulo de Prejuízo</span>
+                                      </div>
+                                      <div className="text-xs text-orange-700 leading-relaxed">
+                                        {(() => {
+                                          // Usar diretamente o prejuízo anterior acumulado vindo do backend
+                                          const prejuizoAnterior = op.prejuizo_anterior_acumulado || 0;
+                                          
+                                          const tipoOperacao = op.day_trade ? 'day trade' : 'swing trade';
+                                          const valorPrejuizo = formatCurrency(Math.abs(op.resultado));
+                                          
+                                          if (prejuizoAnterior > 0) {
+                                            return (
+                                              <>
+                                                Este prejuízo de <span className="font-bold">{valorPrejuizo}</span> em 
+                                                operações de <span className="font-bold">{tipoOperacao}</span> será 
+                                                somado com o prejuízo de operações de meses anteriores de{' '}
+                                                <span className="font-bold">{formatCurrency(prejuizoAnterior)}</span> e poderá ser 
+                                                compensado em lucros futuros de <span className="font-bold">{tipoOperacao}</span>.
+                                              </>
+                                            );
+                                          } else {
+                                            return (
+                                              <>
+                                                Este prejuízo de <span className="font-bold">{valorPrejuizo}</span> em 
+                                                operações de <span className="font-bold">{tipoOperacao}</span> será 
+                                                acumulado e poderá ser compensado em lucros futuros de{' '}
+                                                <span className="font-bold">{tipoOperacao}</span>.
+                                              </>
+                                            );
+                                          }
+                                        })()}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Card de Compensação de Lucro - para TODAS as operações com lucro que têm prejuízo anterior */}
+                                  {isProfit && (op.prejuizo_anterior_acumulado || 0) > 0 && (
+                                    <div className="flex flex-col p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <Info className="h-4 w-4 text-green-600" />
+                                        <span className="text-xs font-semibold uppercase tracking-wide text-green-600">Compensação de Prejuízo</span>
+                                      </div>
+                                      <div className="text-xs text-green-700 leading-relaxed">
+                                        {(() => {
+                                          // Usar diretamente o prejuízo anterior acumulado vindo do backend
+                                          const prejuizoAnterior = op.prejuizo_anterior_acumulado || 0;
+                                          const lucroOperacao = op.resultado;
+                                          const tipoOperacao = op.day_trade ? 'day trade' : 'swing trade';
+                                          
+                                          if (prejuizoAnterior > 0) {
+                                            // Calcular quanto do prejuízo foi compensado
+                                            const prejuizoCompensado = Math.min(lucroOperacao, prejuizoAnterior);
+                                            const prejuizoRestante = prejuizoAnterior - prejuizoCompensado;
+                                            const lucroTributavel = Math.max(0, lucroOperacao - prejuizoAnterior);
+                                            
+                                            return (
+                                              <>
+                                                <div className="mb-2">
+                                                  <span className="font-bold">Cálculo da Compensação:</span>
+                                                </div>
+                                                <div className="space-y-1 mb-3 text-xs">
+                                                  <div>• Lucro da operação: <span className="font-bold text-green-800">{formatCurrency(lucroOperacao)}</span></div>
+                                                  <div>• Prejuízo anterior acumulado: <span className="font-bold text-red-600">{formatCurrency(prejuizoAnterior)}</span></div>
+                                                  <div className="border-t pt-1 mt-1">
+                                                    <div>• Prejuízo compensado: <span className="font-bold text-orange-600">{formatCurrency(prejuizoCompensado)}</span></div>
+                                                    {prejuizoRestante > 0 && (
+                                                      <div>• Prejuízo restante: <span className="font-bold text-red-600">{formatCurrency(prejuizoRestante)}</span></div>
+                                                    )}
+                                                    {lucroTributavel > 0 && (
+                                                      <div>• Lucro tributável: <span className="font-bold text-green-800">{formatCurrency(lucroTributavel)}</span></div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                                <div className="text-xs">
+                                                  {(() => {
+                                                    // Adaptar o texto baseado no status da operação
+                                                    const statusBased = {
+                                                      'Lucro Compensado': {
+                                                        totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(lucroOperacao)}</span> foi descontado de prejuízo anterior de <span class="font-semibold text-green-700">${tipoOperacao}</span>, resultando em <span class="font-bold">operação isenta de IR</span>.`,
+                                                        parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(prejuizoCompensado)} do lucro foi usado para compensar o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(lucroTributavel)}) está sujeito a tributação de ${op.day_trade ? '20%' : '15%'}.`
+                                                      },
+                                                      'Tributável Swing': {
+                                                        totalText: `<span class="font-semibold text-green-700">Operação Compensada:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(lucroOperacao)}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>. <span class="font-bold">IR = R$ 0,00</span> (isenta por compensação).`,
+                                                        parcialText: `<span class="font-semibold text-blue-700">Compensação + Tributação:</span> ${formatCurrency(prejuizoCompensado)} do lucro compensou o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(lucroTributavel)}) está sujeito a <span class="font-bold">IR de 15%</span> = ${formatCurrency(lucroTributavel * 0.15)}.`
+                                                      },
+                                                      'Tributável Day Trade': {
+                                                        totalText: `<span class="font-semibold text-green-700">Day Trade Compensado:</span> Todo o lucro de <span className="font-bold">${formatCurrency(lucroOperacao)}</span> foi descontado de prejuízo anteriore de <span class="font-bold">${tipoOperacao}</span>. <span class="font-bold">IR = R$ 0,00</span> (isenta por compensação).`,
+                                                        parcialText: `<span class="font-semibold text-blue-700">Compensação + Tributação:</span> ${formatCurrency(prejuizoCompensado)} do lucro compensou o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(lucroTributavel)}) está sujeito a <span class="font-bold">IR de 20%</span> = ${formatCurrency(lucroTributavel * 0.20)}.`
+                                                      },
+                                                      'Isento': {
+                                                        totalText: `<span class="font-semibold text-green-700">Isenta com Compensação:</span> Esta operação é isenta de IR e ainda compensou ${formatCurrency(prejuizoCompensado)} do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
+                                                        parcialText: `<span class="font-semibold text-green-700">Isenta com Compensação:</span> Esta operação é isenta de IR e ainda compensou ${formatCurrency(prejuizoCompensado)} do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`
+                                                      }
+                                                    };
+                                                    
+                                                    const currentStatus = op.status_ir || 'Outros';
+                                                    const statusConfig = (statusBased as any)[currentStatus] || {
+                                                      totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro foi descontado de  prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
+                                                      parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(prejuizoCompensado)} do lucro foi usado para abater do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`
+                                                    };
+                                                    
+                                                    const textToShow = lucroTributavel > 0 ? statusConfig.parcialText : statusConfig.totalText;
+                                                    
+                                                    return (
+                                                      <div dangerouslySetInnerHTML={{ __html: textToShow }} />
+                                                    );
+                                                  })()}
+                                                </div>
+                                              </>
+                                            );
+                                          } else {
+                                            return (
+                                              <div className="text-xs">
+                                                Este lucro foi compensado por prejuízos acumulados de operações de{' '}
+                                                <span className="font-bold">{tipoOperacao}</span>.
+                                              </div>
+                                            );
+                                          }
+                                        })()}
+                                      </div>
+                                    </div>
+                                  )}
+
                                   {/* Botão de detalhes do DARF no lugar do card de operações relacionadas */}
                                   {(op.status_ir === "Tributável Day Trade" || op.status_ir === "Tributável Swing") && (
                                     <div className="flex items-center justify-center mt-2">

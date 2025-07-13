@@ -303,6 +303,7 @@ class OperacaoFechada(BaseModel):
     operacoes_relacionadas: List[OperacaoDetalhe]
     day_trade: bool  # Indica se é day trade
     status_ir: Optional[str] = None # e.g., "Isenta Swing", "Tributável Swing", "Tributável Day Trade"
+    prejuizo_anterior_acumulado: Optional[float] = 0.0  # Prejuízo acumulado disponível para compensação
 
     model_config = ConfigDict(from_attributes=True)
 
