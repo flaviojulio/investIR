@@ -663,7 +663,7 @@ export function DarfDetailsModal({
                   <div className="flex items-center gap-2">
                     <Lightbulb className="w-5 h-5 text-blue-600" />
                     <span className="font-semibold text-blue-900">
-                      ℹ️ O que é este DARF?
+                      O que é este DARF?
                     </span>
                   </div>
                 </AccordionTrigger>
@@ -739,7 +739,7 @@ export function DarfDetailsModal({
                   <div className="flex items-center gap-2">
                     <HelpCircle className="w-5 h-5 text-green-600" />
                     <span className="font-semibold text-green-900">
-                      💳 Como pagar este DARF?
+                      Como pagar este DARF?
                     </span>
                   </div>
                 </AccordionTrigger>

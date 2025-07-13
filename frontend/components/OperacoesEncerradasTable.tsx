@@ -47,10 +47,13 @@ import { DarfDetailsModal } from "@/components/DarfDetailsModal";
 
 // Mock formatting functions
 const formatCurrency = (value: number) => {
-  return new Intl.NumberFormat('pt-BR', {
+  console.log(`💰 formatCurrency chamado com valor: ${value} (tipo: ${typeof value})`);
+  const result = new Intl.NumberFormat('pt-BR', {
     style: 'currency',
     currency: 'BRL'
   }).format(value);
+  console.log(`💰 formatCurrency resultado: ${result}`);
+  return result;
 };
 
 const formatNumber = (value: number) => {
@@ -183,6 +186,15 @@ export default function OperacoesEncerradasTable({
   resultadosMensais = [],
   onUpdateDashboard = () => {}
 }: OperacoesEncerradasTableProps) {
+  
+  // Log inicial para verificar se as props estão sendo passadas corretamente
+  console.log('🚀 COMPONENTE OPERAÇÕES ENCERRADAS INICIADO');
+  console.log('Props recebidas:');
+  console.log('- operacoesFechadas:', operacoesFechadas);
+  console.log('- É array?', Array.isArray(operacoesFechadas));
+  console.log('- Length:', operacoesFechadas?.length);
+  console.log('- Usando mock?', operacoesFechadas === mockOperacoes);
+  
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const [sortConfig, setSortConfig] = useState<{
     key: string;
@@ -211,13 +223,37 @@ export default function OperacoesEncerradasTable({
       console.log('Data Fechamento:', op.data_fechamento);
       console.log('Tipo:', op.tipo);
       console.log('Quantidade:', op.quantidade);
-      console.log('Valor Compra:', op.valor_compra);
+      console.log('Valor Compra (será exibido como Preço Médio):', op.valor_compra);
       console.log('Valor Venda:', op.valor_venda);
       console.log('Taxas Total:', op.taxas_total);
       console.log('Resultado:', op.resultado);
       console.log('Day Trade:', op.day_trade);
       console.log('Status IR:', op.status_ir);
       console.log('Operações Relacionadas:', op.operacoes_relacionadas);
+      
+      // Debug específico do problema do preço médio
+      console.log('\n🔍 DEBUG PREÇO MÉDIO:');
+      console.log('Campo op.valor_compra que será exibido como "Preço Médio":', op.valor_compra);
+      console.log('Tipo do valor_compra:', typeof op.valor_compra);
+      console.log('formatCurrency(op.valor_compra):', formatCurrency(op.valor_compra));
+      
+      if (op.operacoes_relacionadas && op.operacoes_relacionadas.length > 0) {
+        console.log('\n📊 OPERAÇÕES RELACIONADAS DETALHADAS:');
+        op.operacoes_relacionadas.forEach((opRel, relIndex) => {
+          console.log(`  ${relIndex + 1}. ${opRel.operation?.toUpperCase()} - Preço: ${opRel.price} - Fonte: ${opRel.price_fonte}`);
+        });
+        
+        // Comparar com o primeiro preço relacionado
+        const primeiraOpRelacionada = op.operacoes_relacionadas[0];
+        if (primeiraOpRelacionada) {
+          console.log(`\n⚖️  COMPARAÇÃO:`);
+          console.log(`Campo valor_compra: ${op.valor_compra}`);
+          console.log(`Primeira op relacionada preço: ${primeiraOpRelacionada.price}`);
+          console.log(`São iguais? ${op.valor_compra === primeiraOpRelacionada.price}`);
+        }
+      }
+      
+      console.log('---');
     });
 
     // Estatísticas resumidas
@@ -415,7 +451,7 @@ export default function OperacoesEncerradasTable({
                 </span>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Lucro compensado por prejuízos acumulados anteriormente ou no mesmo mês</p>
+                <p>Lucro compensado por prejuízos acumulados em operações anteriores</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -877,9 +913,17 @@ export default function OperacoesEncerradasTable({
                                 <div className="flex flex-col p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
                                   <div className="flex items-center gap-1 mb-1">
                                     <TrendingUp className="h-3 w-3 text-green-600" />
-                                    <span className="text-xs font-semibold uppercase tracking-wide text-green-600">Valor de Compra</span>
+                                    <span className="text-xs font-semibold uppercase tracking-wide text-green-600">Preço Médio</span>
                                   </div>
-                                  <span className="text-sm font-bold text-green-800">{formatCurrency(op.valor_compra)}</span>
+                                  <span className="text-sm font-bold text-green-800">
+                                    {(() => {
+                                      console.log(`🎯 RENDERIZANDO PREÇO MÉDIO para ${op.ticker}:`);
+                                      console.log(`- op.valor_compra: ${op.valor_compra}`);
+                                      console.log(`- typeof: ${typeof op.valor_compra}`);
+                                      console.log(`- formatCurrency resultado: ${formatCurrency(op.valor_compra)}`);
+                                      return formatCurrency(op.valor_compra);
+                                    })()}
+                                  </span>
                                 </div>
                                 <div className="flex flex-col p-3 bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg border border-cyan-200">
                                   <div className="flex items-center gap-1 mb-1">

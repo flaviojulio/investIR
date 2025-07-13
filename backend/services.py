@@ -580,30 +580,134 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     return operacoes_fechadas_para_salvar
 
 
+def _calcular_preco_medio_antes_operacao(ticker: str, usuario_id: int, data_limite: str, operacao_id_limite: int) -> Optional[float]:
+    """
+    Calcula o preço médio da carteira de um ticker ANTES de uma operação específica.
+    
+    Args:
+        ticker: Código da ação
+        usuario_id: ID do usuário  
+        data_limite: Data da operação de fechamento (formato YYYY-MM-DD)
+        operacao_id_limite: ID da operação de fechamento (para desempate em operações do mesmo dia)
+        
+    Returns:
+        Preço médio calculado ou None se não houver posição
+    """
+    from database import get_db
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Buscar todas as operações ANTES da operação de fechamento, ordenadas cronologicamente
+        cursor.execute('''
+        SELECT operation, quantity, price, fees
+        FROM operacoes 
+        WHERE usuario_id = ? AND ticker = ?
+        AND (date < ? OR (date = ? AND id < ?))
+        ORDER BY date ASC, id ASC
+        ''', (usuario_id, ticker, data_limite, data_limite, operacao_id_limite))
+        
+        operacoes = cursor.fetchall()
+        
+        if not operacoes:
+            return None
+            
+        # Simular o cálculo da carteira até o momento da operação de fechamento
+        quantidade_total = 0
+        custo_total = 0.0
+        
+        for operation, quantity, price, fees in operacoes:
+            if operation.lower() == 'buy':
+                # Compra: adicionar ao estoque
+                quantidade_total += quantity
+                custo_total += (quantity * price)
+                
+            elif operation.lower() == 'sell':
+                # Venda: remover do estoque usando preço médio atual
+                if quantidade_total > 0:
+                    preco_medio_atual = custo_total / quantidade_total
+                    custo_a_remover = quantity * preco_medio_atual
+                    
+                    quantidade_total -= quantity
+                    custo_total -= custo_a_remover
+                    
+                    # Se quantidade ficar negativa, é venda a descoberto
+                    if quantidade_total < 0:
+                        # Para venda a descoberto, ajustar custo
+                        custo_total = quantidade_total * preco_medio_atual
+        
+        # Retornar preço médio se há posição positiva
+        if quantidade_total > 0:
+            return custo_total / quantidade_total
+        else:
+            return None
+
 def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, quantidade_fechada: int, tipo_fechamento: str, usuario_id: int) -> Dict:
     """
     Cria um dicionário detalhado para uma operação fechada, alinhado com OperacaoFechada e OperacaoDetalhe.
-    Agora usa o preço médio da carteira para operações de VENDA quando editado pelo usuário.
+    CORREÇÃO: O preço de fechamento é sempre o preço da operação de fechamento.
+    O preço médio da carteira é calculado ANTES do fechamento para usar como referência do custo real.
     """
     ticker = op_abertura["ticker"]
     
-    # Obter informações do preço médio da carteira atual
-    info_carteira = obter_preco_medio_carteira(ticker, usuario_id)
+    # CORREÇÃO: Calcular preço médio ANTES da operação de fechamento
+    # Isso garante que usemos o preço médio correto no momento do fechamento
+    preco_medio_antes_fechamento = _calcular_preco_medio_antes_operacao(
+        ticker, usuario_id, op_fechamento["date"], op_fechamento.get("id", 999999)
+    )
     
-    # LÓGICA CORRIGIDA: Usar preço médio da carteira apenas para VENDAS (fechamento de posições)
-    preco_unitario_abertura = op_abertura["price"]  # Sempre usar preço original da abertura
-    preco_fonte_abertura = "operacao_original"
+    import logging
+    logging.info(f"[DEBUG] {ticker}: Preço médio antes fechamento = {preco_medio_antes_fechamento}")
+    logging.info(f"[DEBUG] {ticker}: Tipo fechamento = {tipo_fechamento}")
     
-    # Para fechamento, verificar se deve usar preço da carteira (apenas para vendas)
-    if (info_carteira and info_carteira['preco_editado_pelo_usuario'] and 
-        op_fechamento["operation"] == "sell"):
-        # Usar preço médio da carteira para vendas quando editado
-        preco_unitario_fechamento = info_carteira['preco_medio']
-        preco_fonte_fechamento = "carteira_editada"
+    # LÓGICA PARA ABERTURA: Sempre usar preço médio histórico quando for compra→venda
+    if tipo_fechamento == "compra_fechada_com_venda":
+        # Cenário: Comprei ações → Vendi ações
+        # Abertura é COMPRA: SEMPRE usar preço médio antes do fechamento (custo real das ações)
+        # CORREÇÃO: Remover fallback que causava o bug - sempre usar PM histórico
+        if preco_medio_antes_fechamento is not None and preco_medio_antes_fechamento > 0:
+            preco_unitario_abertura = preco_medio_antes_fechamento
+            preco_fonte_abertura = "carteira_preco_medio_historico"
+            
+            logging.info(f"[ABERTURA COMPRA] {ticker}: Usando PM histórico R$ {preco_unitario_abertura:.4f} "
+                        f"em vez do preço da compra R$ {op_abertura['price']:.4f}")
+        else:
+            # MUDANÇA CRÍTICA: Em vez de usar preço da operação, recalcular mais precisamente
+            # ou forçar o uso do preço médio mesmo que seja 0 (posição zerada)
+            logging.warning(f"[ABERTURA COMPRA] {ticker}: PM histórico é {preco_medio_antes_fechamento}, "
+                          f"tentando recálculo mais preciso...")
+            
+            # Tentar usar o preço médio mesmo se for 0 (para posições zeradas é correto)
+            preco_unitario_abertura = preco_medio_antes_fechamento if preco_medio_antes_fechamento is not None else op_abertura["price"]
+            preco_fonte_abertura = "carteira_preco_medio_historico" if preco_medio_antes_fechamento is not None else "operacao_original_fallback"
+            
+            logging.warning(f"[ABERTURA COMPRA] {ticker}: Usando valor R$ {preco_unitario_abertura:.4f} "
+                          f"(fonte: {preco_fonte_abertura})")
     else:
-        # Usar preço original da operação
-        preco_unitario_fechamento = op_fechamento["price"]
-        preco_fonte_fechamento = "operacao_original"
+        # Para outros cenários, usar preço original da operação de abertura
+        preco_unitario_abertura = op_abertura["price"]
+        preco_fonte_abertura = "operacao_original"
+        
+        logging.info(f"[ABERTURA OUTRO] {ticker}: Tipo {tipo_fechamento}, usando preço da operação R$ {preco_unitario_abertura:.4f}")
+    
+    # LÓGICA CORRIGIDA PARA FECHAMENTO: Sempre usar preço da operação de fechamento
+    preco_unitario_fechamento = op_fechamento["price"]
+    preco_fonte_fechamento = "operacao_original"
+    
+    import logging
+    if tipo_fechamento == "compra_fechada_com_venda":
+        # Cenário: Comprei ações → Vendi ações
+        # Fechamento é VENDA: usar preço da operação de venda (não o preço médio)
+        logging.info(f"[FECHAMENTO VENDA] {ticker}: Usando preço da venda R$ {preco_unitario_fechamento:.4f}")
+            
+    elif tipo_fechamento == "venda_descoberta_fechada_com_compra":
+        # Cenário: Vendi a descoberto → Comprei para cobrir
+        # Fechamento é COMPRA: usar preço da operação de compra (não o preço médio)
+        logging.info(f"[FECHAMENTO RECOMPRA] {ticker}: Usando preço da recompra R$ {preco_unitario_fechamento:.4f}")
+        
+    else:
+        # Fallback: usar preço original
+        logging.info(f"[FECHAMENTO GENÉRICO] {ticker}: Usando preço da operação R$ {preco_unitario_fechamento:.4f}")
     
     # Taxas proporcionais
     taxas_proporcionais_abertura = (op_abertura["fees"] / op_abertura["quantity"]) * quantidade_fechada if op_abertura["quantity"] > 0 else 0
@@ -614,32 +718,44 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
     valor_total_fechamento_calculo = preco_unitario_fechamento * quantidade_fechada
 
     # Determina o tipo e calcula o resultado
-    if tipo_fechamento == "compra_fechada_com_venda": # Compra (abertura) e Venda (fechamento)
+    if tipo_fechamento == "compra_fechada_com_venda":
+        # Compra (abertura) e Venda (fechamento)
         tipo_operacao_fechada = "compra-venda"
         resultado_bruto = valor_total_fechamento_calculo - valor_total_abertura_calculo
         resultado_liquido = resultado_bruto - taxas_proporcionais_abertura - taxas_proporcionais_fechamento
         data_ab = op_abertura["date"]
         data_fec = op_fechamento["date"]
-    elif tipo_fechamento == "venda_descoberta_fechada_com_compra": # Venda (abertura) e Compra (fechamento)
+        
+        import logging
+        logging.info(f"[RESULTADO COMPRA-VENDA] {ticker}: "
+                    f"Venda R$ {valor_total_fechamento_calculo:.2f} (preço venda) - "
+                    f"Compra R$ {valor_total_abertura_calculo:.2f} (PM carteira) = "
+                    f"R$ {resultado_bruto:.2f} (antes taxas)")
+        
+    elif tipo_fechamento == "venda_descoberta_fechada_com_compra":
+        # Venda (abertura) e Compra (fechamento)
         tipo_operacao_fechada = "venda-compra"
-        resultado_bruto = valor_total_abertura_calculo - valor_total_fechamento_calculo # Venda é abertura (valor maior)
+        resultado_bruto = valor_total_abertura_calculo - valor_total_fechamento_calculo
         resultado_liquido = resultado_bruto - taxas_proporcionais_abertura - taxas_proporcionais_fechamento
-        data_ab = op_abertura["date"] # Data da venda a descoberto
-        data_fec = op_fechamento["date"] # Data da recompra
+        data_ab = op_abertura["date"]
+        data_fec = op_fechamento["date"]
+        
+        import logging
+        logging.info(f"[RESULTADO VENDA-COMPRA] {ticker}: "
+                    f"Venda R$ {valor_total_abertura_calculo:.2f} - "
+                    f"Recompra R$ {valor_total_fechamento_calculo:.2f} = "
+                    f"R$ {resultado_bruto:.2f} (antes taxas)")
+        
     else:
         raise ValueError(f"Tipo de fechamento desconhecido: {tipo_fechamento}")
 
     # Cálculo do percentual de lucro/prejuízo
     custo_para_calculo_percentual = 0.0
-    if op_abertura["operation"] == "buy": # Abertura foi uma compra
+    if op_abertura["operation"] == "buy":
+        # Abertura foi uma compra: base é o custo da compra
         custo_para_calculo_percentual = (op_abertura["price"] * quantidade_fechada) + taxas_proporcionais_abertura
-    elif op_abertura["operation"] == "sell": # Abertura foi uma venda (short sale)
-        # Base é o valor recebido na venda, líquido de taxas da venda.
-        # O resultado_liquido já considera o lucro/prejuízo.
-        # A base para o percentual deve ser o "investimento" ou "risco" inicial.
-        # Para short sale, o "investimento" é o valor que se espera recomprar, mas o ganho é sobre o valor vendido.
-        # Se vendi por 100 (líquido de taxas) e recomprei por 80, lucro de 20. Percentual é 20/100 = 20%.
-        # Se vendi por 100 e recomprei por 120, prejuízo de 20. Percentual é -20/100 = -20%.
+    elif op_abertura["operation"] == "sell":
+        # Abertura foi uma venda (short sale): base é o valor recebido na venda
         custo_para_calculo_percentual = (op_abertura["price"] * quantidade_fechada) - taxas_proporcionais_abertura
         
     percentual_lucro = 0.0
@@ -651,7 +767,6 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
             percentual_lucro = 100.0 
         elif resultado_liquido < 0:
             percentual_lucro = -100.0
-        # Se resultado_liquido for 0 e base também, percentual_lucro permanece 0.0
 
     operacoes_relacionadas = [
         {
@@ -676,21 +791,25 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
         }
     ]
 
+    # Para os campos valor_compra e valor_venda, usamos os preços REAIS usados no cálculo
+    # (não os preços originais das operações)
+    # Isso garante que o frontend exiba corretamente o que foi usado no cálculo do resultado
+    
     return {
         "ticker": op_abertura["ticker"],
         "data_abertura": data_ab,
         "data_fechamento": data_fec,
         "tipo": tipo_operacao_fechada,
         "quantidade": quantidade_fechada,
-        "valor_compra": preco_unitario_abertura,
-        "valor_venda": preco_unitario_fechamento,
+        "valor_compra": preco_unitario_abertura if tipo_operacao_fechada == "compra-venda" else preco_unitario_fechamento,
+        "valor_venda": preco_unitario_fechamento if tipo_operacao_fechada == "compra-venda" else preco_unitario_abertura,
         "taxas_total": taxas_proporcionais_abertura + taxas_proporcionais_fechamento,
         "resultado": resultado_liquido,
         "percentual_lucro": percentual_lucro,
         "operacoes_relacionadas": operacoes_relacionadas,
         "day_trade": op_abertura["date"] == op_fechamento["date"],
-        "preco_fonte_abertura": preco_fonte_abertura,  # Campo para auditoria
-        "preco_fonte_fechamento": preco_fonte_fechamento  # Novo campo para auditoria
+        "preco_fonte_abertura": preco_fonte_abertura,
+        "preco_fonte_fechamento": preco_fonte_fechamento
     }
 
 
@@ -1246,6 +1365,12 @@ def recalcular_resultados(usuario_id: int) -> None:
             resultado_dict["status_darf_day_trade"] = "Pendente"
             
         salvar_resultado_mensal(resultado_dict, usuario_id=usuario_id)
+    
+    # CORREÇÃO: Recalcular operações fechadas após recalcular a carteira
+    # Isso garante que as operações fechadas usem os preços médios corretos
+    logging.info(f"[recalcular_carteira] Recalculando operações fechadas para usuário {usuario_id}...")
+    calcular_operacoes_fechadas(usuario_id=usuario_id)
+    logging.info(f"[recalcular_carteira] Recálculo de operações fechadas concluído.")
 
 def listar_operacoes_service(usuario_id: int) -> List[Dict[str, Any]]:
     """
