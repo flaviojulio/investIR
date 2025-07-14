@@ -43,6 +43,7 @@ import {
   Crown,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { DarfDetailsModal } from "@/components/DarfDetailsModal";
 
@@ -87,80 +88,6 @@ const formatDateShort = (dateString: string) => {
   });
 };
 
-// Mock data
-const mockOperacoes: OperacaoFechada[] = [
-  {
-    ticker: "BBDC4",
-    data_abertura: "2025-06-18T00:00:00",
-    data_fechamento: "2025-06-19T00:00:00",
-    tipo: "compra",
-    quantidade: 50,
-    valor_compra: 25.0,
-    valor_venda: 24.0,
-    taxas_total: 2.0,
-    resultado: 48.0,
-    day_trade: false,
-    status_ir: "Isento",
-    operacoes_relacionadas: [],
-  },
-  {
-    ticker: "ITSA4",
-    data_abertura: "2025-05-08T00:00:00",
-    data_fechamento: "2025-05-09T00:00:00",
-    tipo: "compra",
-    quantidade: 100,
-    valor_compra: 11.0,
-    valor_venda: 10.0,
-    taxas_total: 4.0,
-    resultado: -104.0,
-    day_trade: true,
-    status_ir: "Prejuízo Acumulado",
-    operacoes_relacionadas: [],
-  },
-  {
-    ticker: "BBAS3",
-    data_abertura: "2025-04-23T00:00:00",
-    data_fechamento: "2025-04-24T00:00:00",
-    tipo: "compra",
-    quantidade: 100,
-    valor_compra: 25.0,
-    valor_venda: 28.0,
-    taxas_total: 3.0,
-    resultado: 297.0,
-    day_trade: false,
-    status_ir: "Isento",
-    operacoes_relacionadas: [],
-  },
-  {
-    ticker: "VALE3",
-    data_abertura: "2025-03-03T00:00:00",
-    data_fechamento: "2025-03-04T00:00:00",
-    tipo: "compra",
-    quantidade: 100,
-    valor_compra: 65.0,
-    valor_venda: 70.0,
-    taxas_total: 10.0,
-    resultado: 490.0,
-    day_trade: true,
-    status_ir: "Tributável Day Trade",
-    operacoes_relacionadas: [],
-  },
-  {
-    ticker: "PETR4",
-    data_abertura: "2025-02-18T00:00:00",
-    data_fechamento: "2025-02-19T00:00:00",
-    tipo: "compra",
-    quantidade: 5000,
-    valor_compra: 25.0,
-    valor_venda: 40.0,
-    taxas_total: 18.33,
-    resultado: 74981.67,
-    day_trade: false,
-    status_ir: "Tributável Swing",
-    operacoes_relacionadas: [],
-  },
-];
-
 // Função para simular o status do DARF baseado na operação (movida para fora do componente)
 const getDarfStatusForOperation = (
   op: OperacaoFechada,
@@ -200,7 +127,7 @@ interface OperacoesEncerradasTableProps {
 }
 
 export default function OperacoesEncerradasTable({
-  operacoesFechadas = mockOperacoes,
+  operacoesFechadas = [],
   resultadosMensais = [],
   onUpdateDashboard = () => {},
 }: OperacoesEncerradasTableProps) {
@@ -232,6 +159,30 @@ export default function OperacoesEncerradasTable({
   const [darfStatusMap, setDarfStatusMap] = useState<Map<string, string>>(
     new Map()
   );
+
+  // Filtros avançados
+  const [filterType, setFilterType] = useState<string>("all");
+  const [filterMonth, setFilterMonth] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+
+  // Computar meses únicos
+  const uniqueMonths = useMemo(() => {
+    const months = new Set<string>();
+    operacoesFechadas.forEach((op) => {
+      const month = op.data_fechamento.substring(0, 7); // YYYY-MM
+      months.add(month);
+    });
+    return Array.from(months).sort((a, b) => b.localeCompare(a)); // Mais recentes primeiro
+  }, [operacoesFechadas]);
+
+  // Computar status únicos
+  const uniqueStatuses = useMemo(() => {
+    const statuses = new Set<string>();
+    operacoesFechadas.forEach((op) => {
+      statuses.add(op.status_ir || "N/A");
+    });
+    return Array.from(statuses).sort();
+  }, [operacoesFechadas]);
 
   // Inicializa o mapa de status DARF com os valores padrão
   useEffect(() => {
@@ -301,7 +252,7 @@ export default function OperacoesEncerradasTable({
   useEffect(() => {
     let newProcessedData = [...operacoesFechadas];
 
-    // Filtering
+    // Filtering by search
     if (searchTerm) {
       const lowercasedSearchTerm = searchTerm.toLowerCase();
       newProcessedData = newProcessedData.filter((op) => {
@@ -320,6 +271,27 @@ export default function OperacoesEncerradasTable({
             op.status_ir.toLowerCase().includes(lowercasedSearchTerm))
         );
       });
+    }
+
+    // Filtering by type
+    if (filterType !== "all") {
+      newProcessedData = newProcessedData.filter((op) =>
+        filterType === "day_trade" ? op.day_trade : !op.day_trade
+      );
+    }
+
+    // Filtering by month
+    if (filterMonth !== "all") {
+      newProcessedData = newProcessedData.filter((op) =>
+        op.data_fechamento.substring(0, 7) === filterMonth
+      );
+    }
+
+    // Filtering by status
+    if (filterStatus !== "all") {
+      newProcessedData = newProcessedData.filter((op) =>
+        (op.status_ir || "N/A") === filterStatus
+      );
     }
 
     // Sorting
@@ -369,7 +341,7 @@ export default function OperacoesEncerradasTable({
         )?.length || 0
       }
     });
-  }, [operacoesFechadas, searchTerm, sortConfig]);
+  }, [operacoesFechadas, searchTerm, sortConfig, filterType, filterMonth, filterStatus]);
 
   const requestSort = (key: string) => {
     let direction: "ascending" | "descending" = "ascending";
@@ -686,16 +658,54 @@ export default function OperacoesEncerradasTable({
         </CardHeader>
 
         <CardContent className="p-6">
-          {/* Barra de pesquisa */}
-          <div className="mb-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Pesquisar por ação, data, resultado ou tipo..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-12 border-2 border-gray-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200 rounded-xl transition-all duration-300"
-              />
+          {/* Filtros avançados (igual ao principal) */}
+          <div className="mb-6 bg-gradient-to-r from-gray-50 to-indigo-50 rounded-xl p-4 border border-indigo-200">
+            <div className="flex flex-wrap gap-4">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-indigo-500" />
+                <Input
+                  placeholder="Pesquisar por ação, data, resultado ou tipo..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 h-12 border-2 border-indigo-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200 rounded-xl transition-all duration-300 bg-white"
+                />
+              </div>
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="w-[180px] h-12 border-2 border-indigo-200 focus:border-indigo-500 rounded-xl bg-white">
+                  <SelectValue placeholder="Filtrar por tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="day_trade">Day Trade</SelectItem>
+                  <SelectItem value="swing_trade">Swing Trade</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filterMonth} onValueChange={setFilterMonth}>
+                <SelectTrigger className="w-[180px] h-12 border-2 border-indigo-200 focus:border-indigo-500 rounded-xl bg-white">
+                  <SelectValue placeholder="Filtrar por mês" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os meses</SelectItem>
+                  {uniqueMonths.map((month) => (
+                    <SelectItem key={month} value={month}>
+                      {month.replace("-", "/")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-[180px] h-12 border-2 border-indigo-200 focus:border-indigo-500 rounded-xl bg-white">
+                  <SelectValue placeholder="Filtrar por status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os status</SelectItem>
+                  {uniqueStatuses.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -711,7 +721,12 @@ export default function OperacoesEncerradasTable({
               Ajuste os filtros ou tente outros termos de pesquisa
             </p>
             <Button
-              onClick={() => setSearchTerm("")}
+              onClick={() => {
+                setSearchTerm("");
+                setFilterType("all");
+                setFilterMonth("all");
+                setFilterStatus("all");
+              }}
               variant="outline"
               className="rounded-xl border-2 border-indigo-200 hover:border-indigo-300 hover:bg-indigo-50"
             >
@@ -811,16 +826,54 @@ export default function OperacoesEncerradasTable({
         </CardHeader>
 
         <CardContent className="p-6">
-          {/* Barra de pesquisa modernizada */}
+          {/* Filtros avançados */}
           <div className="mb-6 bg-gradient-to-r from-gray-50 to-indigo-50 rounded-xl p-4 border border-indigo-200">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-indigo-500" />
-              <Input
-                placeholder="Pesquisar por ação, data, resultado ou tipo..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 h-12 border-2 border-indigo-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200 rounded-xl transition-all duration-300 bg-white"
-              />
+            <div className="flex flex-wrap gap-4">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-indigo-500" />
+                <Input
+                  placeholder="Pesquisar por ação, data, resultado ou tipo..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 h-12 border-2 border-indigo-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200 rounded-xl transition-all duration-300 bg-white"
+                />
+              </div>
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="w-[180px] h-12 border-2 border-indigo-200 focus:border-indigo-500 rounded-xl bg-white">
+                  <SelectValue placeholder="Filtrar por tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="day_trade">Day Trade</SelectItem>
+                  <SelectItem value="swing_trade">Swing Trade</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={filterMonth} onValueChange={setFilterMonth}>
+                <SelectTrigger className="w-[180px] h-12 border-2 border-indigo-200 focus:border-indigo-500 rounded-xl bg-white">
+                  <SelectValue placeholder="Filtrar por mês" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os meses</SelectItem>
+                  {uniqueMonths.map((month) => (
+                    <SelectItem key={month} value={month}>
+                      {month.replace("-", "/")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <SelectTrigger className="w-[180px] h-12 border-2 border-indigo-200 focus:border-indigo-500 rounded-xl bg-white">
+                  <SelectValue placeholder="Filtrar por status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os status</SelectItem>
+                  {uniqueStatuses.map((status) => (
+                    <SelectItem key={status} value={status}>
+                      {status}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -913,7 +966,6 @@ export default function OperacoesEncerradasTable({
                 }
               }
 
-              // ...existing code...
               return (
                 <div
                   key={op.id ? op.id : `${op.ticker}-${op.data_fechamento}-${index}`}
@@ -1521,7 +1573,7 @@ export default function OperacoesEncerradasTable({
                                                         "Lucro Compensado": {
                                                           totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(
                                                             lucroOperacao
-                                                          )}</span> foi descontado de prejuízo anterior de <span class="font-semibold text-green-700">${tipoOperacao}</span>, resultando em <span class="font-bold">operação isenta de IR</span>.`,
+                                                          )}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>, resultando em <span class="font-bold">operação isenta de IR</span>.`,
                                                           parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(
                                                             prejuizoCompensado
                                                           )} do lucro foi usado para compensar o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(
