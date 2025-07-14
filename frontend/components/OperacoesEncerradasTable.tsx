@@ -724,7 +724,7 @@ export default function OperacoesEncerradasTable({
   }
 
   return (
-    <React.Fragment>
+    <>
       <Card className="border-0 shadow-xl rounded-2xl overflow-hidden">
         {/* Header modernizado com gradiente */}
         <CardHeader className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white p-6">
@@ -913,9 +913,10 @@ export default function OperacoesEncerradasTable({
                 }
               }
 
+              // ...existing code...
               return (
                 <div
-                  key={rowKey}
+                  key={op.id ? op.id : `${op.ticker}-${op.data_fechamento}-${index}`}
                   className={`border-b border-gray-100 last:border-b-0 hover:bg-gradient-to-r hover:from-indigo-50/50 hover:to-purple-50/50 transition-all duration-200 ${
                     index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
                   }`}
@@ -1206,109 +1207,91 @@ export default function OperacoesEncerradasTable({
                                         </span>
                                       </div>
 
-                                      {/* Cálculo detalhado */}
+                                      {/* Cálculo simplificado */}
                                       <div className="text-xs text-orange-700 leading-relaxed space-y-3">
                                         {(() => {
-                                          // CORREÇÃO: Calcular o saldo real de prejuízo disponível
-                                          // considerando compensações já utilizadas no mês atual
-                                          const mesOperacao = op.data_fechamento.substring(0, 7); // YYYY-MM
-                                          const diaOperacao = op.data_fechamento.substring(0, 10); // YYYY-MM-DD
+                                          // Calcular valores
+                                          const mesOperacao = op.data_fechamento.substring(0, 7);
+                                          const diaOperacao = op.data_fechamento.substring(0, 10);
                                           const tipoOperacao = op.day_trade ? "day trade" : "swing trade";
                                           
-                                          // Buscar operações do mesmo mês e tipo para calcular compensações já utilizadas
-                                          const operacoesMesmoTipo = processedOperacoes.filter(opMes => 
+                                          const operacoesMesmoTipo = operacoesFechadas.filter(opMes => 
                                             opMes.data_fechamento.substring(0, 7) === mesOperacao &&
                                             (opMes.day_trade ? "day trade" : "swing trade") === tipoOperacao &&
-                                            opMes.data_fechamento <= op.data_fechamento && // Apenas operações até esta data
-                                            opMes !== op // Excluir a operação atual
+                                            opMes.data_fechamento <= op.data_fechamento &&
+                                            opMes !== op
                                           );
                                           
-                                          // Buscar operações do mesmo dia e tipo (para controle sequencial)
-                                          const operacoesMesmoDia = processedOperacoes.filter(opDia => 
+                                          const operacoesMesmoDia = operacoesFechadas.filter(opDia => 
                                             opDia.data_fechamento.substring(0, 10) === diaOperacao &&
                                             (opDia.day_trade ? "day trade" : "swing trade") === tipoOperacao
-                                          ).sort((a, b) => {
-                                            // Ordenar por data/hora (assumindo que data_fechamento inclui hora, senão por ID)
-                                            return a.data_fechamento.localeCompare(b.data_fechamento);
-                                          });
+                                          ).sort((a, b) => a.data_fechamento.localeCompare(b.data_fechamento));
                                           
-                                          // Calcular total de lucros já compensados no mês
                                           const lucrosJaCompensados = operacoesMesmoTipo
                                             .filter(opMes => opMes.resultado > 0 && opMes.status_ir === "Lucro Compensado")
                                             .reduce((sum, opMes) => sum + opMes.resultado, 0);
                                           
-                                          // Saldo real de prejuízo anterior (descontando compensações já utilizadas)
                                           const prejuizoAnteriorOriginal = op.prejuizo_anterior_acumulado || 0;
                                           const prejuizoAnteriorDisponivel = Math.max(0, prejuizoAnteriorOriginal - lucrosJaCompensados);
-                                          
-                                          const prejuizoOperacao = Math.abs(op.resultado);
-                                          const prejuizoFuturo = prejuizoAnteriorDisponivel + prejuizoOperacao;
-                                          
-                                          // NOVA FUNCIONALIDADE: Calcular saldo sequencial para múltiplas operações no mesmo dia
-                                          const indexOperacaoAtual = operacoesMesmoDia.findIndex(opDia => 
-                                            opDia.ticker === op.ticker && 
-                                            opDia.data_fechamento === op.data_fechamento &&
-                                            opDia.resultado === op.resultado
-                                          );
-                                          
+                                          const totalPrejuizosMes = operacoesFechadas.filter(opMes =>
+                                            opMes.data_fechamento.substring(0, 7) === mesOperacao &&
+                                            (opMes.day_trade ? "day trade" : "swing trade") === tipoOperacao &&
+                                            opMes.resultado < 0
+                                          ).reduce((sum, opMes) => sum + Math.abs(opMes.resultado), 0);
+                                          const prejuizoTotalAcumulado = prejuizoAnteriorDisponivel + totalPrejuizosMes;
                                           const isMultiplasOperacoesDia = operacoesMesmoDia.length > 1;
                                           
-                                          // Calcular fluxo sequencial do saldo no dia
-                                          let saldoSequencial = prejuizoAnteriorDisponivel;
-                                          const fluxoDia = operacoesMesmoDia.map((opSeq, idx) => {
-                                            const saldoAnterior = saldoSequencial;
+                                          // Calcular fluxo sequencial apenas se múltiplas operações
+                                          let fluxoDia = [];
+                                          if (isMultiplasOperacoesDia) {
+                                            const indexOperacaoAtual = operacoesMesmoDia.findIndex(opDia => 
+                                              opDia.ticker === op.ticker && 
+                                              opDia.data_fechamento === op.data_fechamento &&
+                                              opDia.resultado === op.resultado
+                                            );
                                             
-                                            if (opSeq.resultado < 0) {
-                                              // Operação negativa: aumenta o saldo de prejuízo
-                                              saldoSequencial += Math.abs(opSeq.resultado);
-                                            } else if (opSeq.resultado > 0 && saldoSequencial > 0) {
-                                              // Operação positiva: pode compensar prejuízo acumulado
-                                              const compensacao = Math.min(saldoSequencial, opSeq.resultado);
-                                              saldoSequencial -= compensacao;
-                                            }
-                                            
-                                            return {
-                                              operacao: opSeq,
-                                              index: idx,
-                                              saldoAnterior,
-                                              saldoAtual: saldoSequencial,
-                                              isOperacaoAtual: idx === indexOperacaoAtual
-                                            };
-                                          });
-
+                                            let saldoSequencial = prejuizoAnteriorDisponivel;
+                                            fluxoDia = operacoesMesmoDia.map((opSeq, idx) => {
+                                              const saldoAnterior = saldoSequencial;
+                                              if (opSeq.resultado < 0) {
+                                                saldoSequencial += Math.abs(opSeq.resultado);
+                                              } else if (opSeq.resultado > 0 && saldoSequencial > 0) {
+                                                const compensacao = Math.min(saldoSequencial, opSeq.resultado);
+                                                saldoSequencial -= compensacao;
+                                              }
+                                              return {
+                                                operacao: opSeq,
+                                                index: idx,
+                                                saldoAnterior,
+                                                saldoAtual: saldoSequencial,
+                                                isOperacaoAtual: idx === indexOperacaoAtual
+                                              };
+                                            });
+                                          }
+                                          
                                           return (
                                             <>
-                                              {/* Título explicativo */}
-                                              <div className="font-semibold text-orange-800 mb-2">
-                                                📊 Cálculo do Prejuízo Acumulado:
-                                              </div>
-
-                                              {/* NOVA SEÇÃO: Controle Sequencial para Múltiplas Operações no Mesmo Dia */}
+                                              {/* Controle Sequencial - apenas se múltiplas operações */}
                                               {isMultiplasOperacoesDia && (
                                                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
                                                   <div className="flex items-center gap-2 mb-2">
                                                     <div className="text-purple-600">🔄</div>
                                                     <span className="font-semibold text-purple-800 text-xs">
-                                                      Controle Sequencial - {operacoesMesmoDia.length} operações em {diaOperacao.split('-').reverse().join('/')}
+                                                      {operacoesMesmoDia.length} operações em {diaOperacao.split('-').reverse().join('/')}
                                                     </span>
                                                   </div>
-                                                  
-                                                  <div className="text-xs text-purple-700 mb-2">
-                                                    Acompanhe como o saldo de prejuízo acumulado evolui ao longo do dia:
-                                                  </div>
-                                                  
-                                                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                                                  <div className="space-y-1 max-h-32 overflow-y-auto">
                                                     {fluxoDia.map((fluxo, idx) => (
                                                       <div 
                                                         key={idx}
-                                                        className={`flex items-center justify-between p-2 rounded border text-xs ${
+                                                        className={`flex items-center justify-between p-2 rounded text-xs ${
                                                           fluxo.isOperacaoAtual 
-                                                            ? "bg-orange-100 border-orange-300 ring-2 ring-orange-200" 
-                                                            : "bg-white/60 border-purple-100"
+                                                            ? "bg-orange-100 border border-orange-300" 
+                                                            : "bg-white/60"
                                                         }`}
                                                       >
                                                         <div className="flex items-center gap-2">
-                                                          <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                                                          <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
                                                             fluxo.isOperacaoAtual 
                                                               ? "bg-orange-500 text-white" 
                                                               : "bg-purple-200 text-purple-700"
@@ -1322,13 +1305,12 @@ export default function OperacoesEncerradasTable({
                                                             {fluxo.operacao.resultado >= 0 ? '+' : ''}{formatCurrency(fluxo.operacao.resultado)}
                                                           </span>
                                                         </div>
-                                                        <div className="flex items-center gap-2">
-                                                          <span className="text-gray-500">Saldo:</span>
-                                                          <span className="text-purple-600 font-medium">
+                                                        <div className="flex items-center gap-1">
+                                                          <span className="text-purple-600 font-medium text-xs">
                                                             {formatCurrency(fluxo.saldoAnterior)}
                                                           </span>
                                                           <span className="text-gray-400">→</span>
-                                                          <span className={`font-bold ${
+                                                          <span className={`font-bold text-xs ${
                                                             fluxo.isOperacaoAtual ? 'text-orange-700' : 'text-purple-700'
                                                           }`}>
                                                             {formatCurrency(fluxo.saldoAtual)}
@@ -1337,146 +1319,17 @@ export default function OperacoesEncerradasTable({
                                                       </div>
                                                     ))}
                                                   </div>
-                                                  
-                                                  <div className="mt-2 p-2 bg-white/60 rounded border border-purple-100">
-                                                    <div className="text-center text-xs text-purple-700">
-                                                      💡 <strong>Controle Sequencial:</strong> O saldo de prejuízo acumulado é atualizado após cada operação,
-                                                      permitindo acompanhar o impacto cumulativo ao longo do dia.
-                                                    </div>
-                                                  </div>
                                                 </div>
                                               )}
 
-                                              {/* Breakdown do cálculo principal */}
-                                              <div className="bg-white/60 rounded-lg p-3 space-y-2 border border-orange-300/50">
-                                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                                  <div className="text-center">
-                                                    <div className="font-semibold text-orange-800">
-                                                      Prejuízo Anterior
-                                                    </div>
-                                                    <div className="text-red-600 font-bold">
-                                                      {formatCurrency(prejuizoAnteriorDisponivel)}
-                                                    </div>
-                                                    <div className="text-orange-600 text-xs mt-1">
-                                                      {prejuizoAnteriorDisponivel > 0
-                                                        ? (lucrosJaCompensados > 0 
-                                                          ? `Saldo disponível (R$ ${formatCurrency(prejuizoAnteriorOriginal)} - R$ ${formatCurrency(lucrosJaCompensados)} já usado)`
-                                                          : "Acumulado de meses anteriores")
-                                                        : "Nenhum prejuízo anterior disponível"}
-                                                    </div>
-                                                  </div>
 
-                                                  <div className="text-center flex items-center justify-center">
-                                                    <div className="text-orange-700 font-bold text-lg">
-                                                      +
-                                                    </div>
-                                                  </div>
-
-                                                  <div className="text-center">
-                                                    <div className="font-semibold text-orange-800">
-                                                      Esta Operação
-                                                    </div>
-                                                    <div className="text-red-600 font-bold">
-                                                      {formatCurrency(prejuizoOperacao)}
-                                                    </div>
-                                                    <div className="text-orange-600 text-xs mt-1">
-                                                      Prejuízo atual
-                                                    </div>
-                                                  </div>
-                                                </div>
-
-                                                {/* Linha divisória */}
-                                                <div className="border-t border-orange-300/50 pt-2">
-                                                  <div className="text-center">
-                                                    <div className="font-semibold text-orange-800 mb-1">
-                                                      Novo Prejuízo Acumulado {isMultiplasOperacoesDia ? '(Final do Dia)' : ''}
-                                                    </div>
-                                                    <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1 inline-block">
-                                                      {formatCurrency(prejuizoFuturo)}
-                                                    </div>
-                                                    {isMultiplasOperacoesDia && (
-                                                      <div className="text-xs text-orange-600 mt-1">
-                                                        Saldo após todas as {operacoesMesmoDia.length} operações do dia
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              </div>
-
-                                              {/* Explicação educativa */}
-                                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-3">
-                                                <div className="flex items-start gap-2">
-                                                  <div className="text-blue-600 mt-0.5">
-                                                    💡
-                                                  </div>
-                                                  <div className="text-blue-700 text-xs leading-relaxed">
-                                                    <div className="font-semibold mb-1">
-                                                      Como funciona o acúmulo:
-                                                    </div>
-                                                    <div>
-                                                      {isMultiplasOperacoesDia ? (
-                                                        <>
-                                                          Neste dia ({diaOperacao.split('-').reverse().join('/')}) você teve{" "}
-                                                          <span className="font-bold">{operacoesMesmoDia.length} operações</span> de{" "}
-                                                          <span className="font-bold">{tipoOperacao}</span>. O prejuízo vai se acumulando 
-                                                          sequencialmente: começou com{" "}
-                                                          <span className="font-bold">{formatCurrency(prejuizoAnteriorDisponivel)}</span>
-                                                          {prejuizoAnteriorDisponivel > 0 && (
-                                                            <> de prejuízos anteriores</>
-                                                          )} e chegou a{" "}
-                                                          <span className="font-bold text-red-700">{formatCurrency(prejuizoFuturo)}</span> 
-                                                          ao final do dia.
-                                                        </>
-                                                      ) : (
-                                                        <>
-                                                          Este prejuízo de{" "}
-                                                          <span className="font-bold">
-                                                            {formatCurrency(prejuizoOperacao)}
-                                                          </span>{" "}
-                                                          em operações de{" "}
-                                                          <span className="font-bold">
-                                                            {tipoOperacao}
-                                                          </span>{" "}
-                                                          será
-                                                          {prejuizoAnteriorDisponivel > 0 ? (
-                                                            <>
-                                                              {" "}
-                                                              somado aos{" "}
-                                                              <span className="font-bold">
-                                                                {formatCurrency(prejuizoAnteriorDisponivel)}
-                                                              </span>{" "}
-                                                              {lucrosJaCompensados > 0 ? (
-                                                                <>
-                                                                  ainda disponíveis para compensação
-                                                                  (R$ {formatCurrency(prejuizoAnteriorOriginal)} original 
-                                                                  - R$ {formatCurrency(lucrosJaCompensados)} já utilizado no mês),
-                                                                </>
-                                                              ) : (
-                                                                <>já acumulados de meses anteriores,</>
-                                                              )}
-                                                              totalizando{" "}
-                                                              <span className="font-bold text-red-700">
-                                                                {formatCurrency(prejuizoFuturo)}
-                                                              </span>
-                                                              .
-                                                            </>
-                                                          ) : (
-                                                            <>
-                                                              {" "}
-                                                              acumulado como{" "}
-                                                              <span className="font-bold text-red-700">
-                                                                {formatCurrency(prejuizoFuturo)}
-                                                              </span>
-                                                              {lucrosJaCompensados > 0 && (
-                                                                <> (todo o prejuízo anterior de R$ {formatCurrency(prejuizoAnteriorOriginal)} já foi utilizado para compensar lucros no mês)</>
-                                                              )}
-                                                              .
-                                                            </>
-                                                          )}
-                                                        </>
-                                                      )}{" "}
-                                                      Este valor poderá ser compensado em lucros futuros de{" "}
-                                                      <span className="font-bold">{tipoOperacao}</span>.
+                                              {/* Prejuízo Total Acumulado - movido para baixo */}
+                                              <div className="bg-white/60 rounded-lg p-3 border border-orange-300/50 mt-4">
+                                                <div className="flex items-center justify-center gap-3 mb-2">
+                                                  <div className="text-center flex-1">
+                                                    Prejuízo Total Acumulado
+                                                    <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1">
+                                                      {formatCurrency(prejuizoTotalAcumulado)}
                                                     </div>
                                                   </div>
                                                 </div>
@@ -1485,32 +1338,13 @@ export default function OperacoesEncerradasTable({
                                               {/* Dica sobre compensação futura */}
                                               <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                                                 <div className="flex items-start gap-2">
-                                                  <div className="text-green-600 mt-0.5">
-                                                    ✨
-                                                  </div>
+                                                  <div className="text-green-600 mt-0.5">✨</div>
                                                   <div className="text-green-700 text-xs leading-relaxed">
-                                                    <div className="font-semibold mb-1">
-                                                      Compensação futura:
-                                                    </div>
+                                                    <div className="font-semibold mb-1">Compensação futura:</div>
                                                     <div>
-                                                      Quando você tiver lucros
-                                                      em operações de{" "}
-                                                      <span className="font-bold">
-                                                        {tipoOperacao}
-                                                      </span>
-                                                      , {prejuizoFuturo > 0 ? (
-                                                        <>
-                                                          o saldo de prejuízo acumulado de{" "}
-                                                          <span className="font-bold">
-                                                            {formatCurrency(prejuizoFuturo)}
-                                                          </span>
-                                                        </>
-                                                      ) : (
-                                                        <>este prejuízo</>
-                                                      )} será automaticamente
-                                                      descontado, reduzindo ou
-                                                      eliminando o imposto a
-                                                      pagar.
+                                                      Quando você tiver lucros em operações de <span className="font-bold">{tipoOperacao}</span>, 
+                                                      este saldo de <span className="font-bold text-red-700">{formatCurrency(prejuizoTotalAcumulado)}</span> será 
+                                                      automaticamente descontado, reduzindo ou eliminando o imposto a pagar.
                                                     </div>
                                                   </div>
                                                 </div>
@@ -1822,6 +1656,6 @@ export default function OperacoesEncerradasTable({
           operacoesFechadas={operacoesFechadas}
         />
       )}
-    </React.Fragment>
+    </>
   );
 }
