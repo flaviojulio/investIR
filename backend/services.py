@@ -711,26 +711,22 @@ def _criar_operacao_fechada_detalhada(op_abertura: Dict, op_fechamento: Dict, qu
     # LÓGICA PARA ABERTURA: Sempre usar preço médio histórico quando for compra→venda
     if tipo_fechamento == "compra_fechada_com_venda":
         # Cenário: Comprei ações → Vendi ações
-        # Abertura é COMPRA: SEMPRE usar preço médio antes do fechamento (custo real das ações)
-        # CORREÇÃO: Remover fallback que causava o bug - sempre usar PM histórico
-        if preco_medio_antes_fechamento is not None and preco_medio_antes_fechamento > 0:
+        is_day_trade = (op_abertura["date"] == op_fechamento["date"])
+        
+        if is_day_trade:
+            # Para day trade, usar preço real da compra do dia, não PM histórico
+            preco_unitario_abertura = op_abertura["price"]
+            preco_fonte_abertura = "operacao_original_day_trade"
+            logging.info(f"[ABERTURA COMPRA DAY TRADE] {ticker}: Usando preço da compra do dia R$ {preco_unitario_abertura:.4f}")
+        elif preco_medio_antes_fechamento is not None and preco_medio_antes_fechamento > 0:
             preco_unitario_abertura = preco_medio_antes_fechamento
             preco_fonte_abertura = "carteira_preco_medio_historico"
-            
-            logging.info(f"[ABERTURA COMPRA] {ticker}: Usando PM histórico R$ {preco_unitario_abertura:.4f} "
-                        f"em vez do preço da compra R$ {op_abertura['price']:.4f}")
+            logging.info(f"[ABERTURA COMPRA SWING] {ticker}: Usando PM histórico R$ {preco_unitario_abertura:.4f}")
         else:
-            # MUDANÇA CRÍTICA: Em vez de usar preço da operação, recalcular mais precisamente
-            # ou forçar o uso do preço médio mesmo que seja 0 (posição zerada)
-            logging.warning(f"[ABERTURA COMPRA] {ticker}: PM histórico é {preco_medio_antes_fechamento}, "
-                          f"tentando recálculo mais preciso...")
-            
-            # Tentar usar o preço médio mesmo se for 0 (para posições zeradas é correto)
-            preco_unitario_abertura = preco_medio_antes_fechamento if preco_medio_antes_fechamento is not None else op_abertura["price"]
-            preco_fonte_abertura = "carteira_preco_medio_historico" if preco_medio_antes_fechamento is not None else "operacao_original_fallback"
-            
-            logging.warning(f"[ABERTURA COMPRA] {ticker}: Usando valor R$ {preco_unitario_abertura:.4f} "
-                          f"(fonte: {preco_fonte_abertura})")
+            # Fallback (raro): usar preço original
+            preco_unitario_abertura = op_abertura["price"]
+            preco_fonte_abertura = "operacao_original_fallback"
+            logging.warning(f"[ABERTURA COMPRA FALLBACK] {ticker}: Usando preço original R$ {preco_unitario_abertura:.4f}")
     else:
         # Para outros cenários, usar preço original da operação de abertura
         preco_unitario_abertura = op_abertura["price"]

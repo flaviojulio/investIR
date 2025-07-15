@@ -1481,7 +1481,7 @@ export function Dashboard() {
                   </p>
                 </div>
                 
-                <TaxResults resultados={data.resultados} onUpdate={handleDataUpdate} />
+                <TaxResults resultados={data.resultados} operacoesFechadas={data.operacoes_fechadas} onUpdate={handleDataUpdate} />
               </div>
             )}
             {activeTab === "history" && (
