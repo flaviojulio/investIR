@@ -235,7 +235,6 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
             <span>{config.icon}</span>
             <span>{formatCurrency(valor)}</span>
           </div>
-          
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -257,9 +256,8 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
                 className="flex items-center gap-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
               >
                 <Eye className="h-4 w-4" />
-                Ver Detalhes Completos
+                Ver Detalhes do DARF
               </DropdownMenuItem>
-              
               {normalizedStatus === 'pendente' ? (
                 <DropdownMenuItem
                   onClick={() => handleToggleDarfStatus(yearMonth, darfType, normalizedStatus)}
@@ -280,10 +278,7 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        
-        <span className={`text-xs ${config.textColor}`}>
-          {tipo} · {config.text}
-        </span>
+        {/* Texto removido conforme solicitado */}
       </div>
     )
   }
@@ -644,8 +639,8 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
                           onClick={() => handleOpenDarfModal(resultado)}
                           className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 hover:text-blue-800"
                         >
-                          <ExternalLink className="h-3 w-3 mr-1" />
-                          Detalhes
+                          <FileText className="h-3 w-3 mr-1" />
+                          Detalhar DARF
                         </Button>
                       </TableCell>
                     </TableRow>

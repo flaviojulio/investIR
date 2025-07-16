@@ -3,7 +3,7 @@
 import { useParams } from 'next/navigation'; // To get ticker from URL
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { Operacao, ResultadoTicker } from '@/lib/types'; // Assuming ResultadoTicker will be added to types.ts
+// import removido: Operacao, ResultadoTicker
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -54,9 +54,9 @@ export default function AcaoDetalhePage() {
     });
   };
 
-  const [resultadoDoTicker, setResultadoDoTicker] = useState<ResultadoTicker | null>(null);
-  const [operacoesDoTicker, setOperacoesDoTicker] = useState<Operacao[]>([]);
-  const [proventosDoTicker, setProventosDoTicker] = useState<ProventosPorAcao | null>(null);
+  const [dados, setDados] = useState<any>(null);
+  const [operacoes, setOperacoes] = useState<any[]>([]);
+  const [proventos, setProventos] = useState<{ total_proventos: number; quantidade_pagamentos: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -77,13 +77,10 @@ export default function AcaoDetalhePage() {
           api.get(`/operacoes/ticker/${ticker}`),
           api.get(`/usuario/proventos/resumo_por_acao/`)
         ]);
-        
-        setResultadoDoTicker(resResultados.data);
-        
-        // Mapeia os campos da API para o formato esperado pelo frontend
+        setDados(resResultados.data);
         const operacoesMapeadas = Array.isArray(resOperacoes.data)
           ? resOperacoes.data.map((op: any, idx: number) => ({
-              id: idx, // ou op.id se existir
+              id: idx,
               date: op["Data do Negócio"] || op.date || "",
               ticker: op["Código de Negociação"] || op.ticker || "",
               operation: op["Tipo de Movimentação"] || op.operation || "",
@@ -92,69 +89,14 @@ export default function AcaoDetalhePage() {
               fees: op["Taxas"] ?? op.fees ?? 0,
             }))
           : [];
-        setOperacoesDoTicker(operacoesMapeadas);
-        
-        // Debug: Log dos dados de proventos
-        console.log("🔍 Debug - Dados da API de proventos:", resProventos.data);
-        console.log("🔍 Debug - Ticker atual:", ticker);
-        
-        // Filtra os proventos para o ticker específico
-        // Tenta diferentes variações do ticker
-        let proventosData = null;
-        if (Array.isArray(resProventos.data)) {
-          // Busca pelo campo correto da API: ticker_acao
-          proventosData = resProventos.data.find((p: any) => 
-            p.ticker_acao === ticker ||
-            p.ticker_acao?.toUpperCase() === ticker.toUpperCase() ||
-            p.ticker === ticker ||
-            p.ticker?.toUpperCase() === ticker.toUpperCase() ||
-            p.codigo === ticker ||
-            p.codigo?.toUpperCase() === ticker.toUpperCase() ||
-            p.acao === ticker ||
-            p.acao?.toUpperCase() === ticker.toUpperCase()
-          );
-        }
-        
-        console.log("🔍 Debug - Proventos filtrados para", ticker, ":", proventosData);
-        
-        // Tenta diferentes campos possíveis da API
-        let totalProventos = 0;
-        let quantidadePagamentos = 0;
-        
-        if (proventosData) {
-          // Campos baseados na estrutura real da API
-          totalProventos = proventosData.total_recebido_geral_acao || 
-                          proventosData.total_proventos || 
-                          proventosData.total_dividendos || 
-                          proventosData.total_jcp || 
-                          proventosData.total_rendimentos || 
-                          proventosData.total || 
-                          proventosData.valor_total || 
-                          proventosData.valor || 
-                          0;
-          
-          // Tenta calcular quantidade de pagamentos baseado nos detalhes
-          if (proventosData.detalhes_por_tipo && Array.isArray(proventosData.detalhes_por_tipo)) {
-            quantidadePagamentos = proventosData.detalhes_por_tipo.reduce((total: number, tipo: any) => {
-              return total + (tipo.quantidade_pagamentos || tipo.count || 0);
-            }, 0);
-          } else {
-            quantidadePagamentos = proventosData.quantidade_pagamentos || 
-                                  proventosData.count || 
-                                  proventosData.total_pagamentos || 
-                                  proventosData.quantidade || 
-                                  0;
-          }
-        }
-        
-        console.log("🔍 Debug - Total calculado:", totalProventos, "Quantidade:", quantidadePagamentos);
-        
-        setProventosDoTicker({ 
-          ticker, 
-          total_proventos: totalProventos, 
-          quantidade_pagamentos: quantidadePagamentos 
-        });
-        
+        setOperacoes(operacoesMapeadas);
+        const proventosData = Array.isArray(resProventos.data)
+          ? resProventos.data.find((p: any) => p.ticker_acao?.toUpperCase() === ticker.toUpperCase())
+          : null;
+        setProventos(proventosData ? {
+          total_proventos: proventosData.total_recebido_geral_acao || 0,
+          quantidade_pagamentos: proventosData.detalhes_por_tipo?.length || 0
+        } : { total_proventos: 0, quantidade_pagamentos: 0 });
       } catch (err: any) {
         let errorMessage = "Erro ao carregar dados da ação.";
         if (err.response?.data?.detail && typeof err.response.data.detail === 'string') {
@@ -166,12 +108,11 @@ export default function AcaoDetalhePage() {
         setLoading(false);
       }
     }
-
     fetchDetalhesAcao();
   }, [ticker]);
 
   // Filtro das operações baseado no termo de busca
-  const operacoesFiltradas = operacoesDoTicker.filter((op) => {
+  const operacoesFiltradas = operacoes.filter((op) => {
     if (!searchTerm) return true;
     
     const lowerSearchTerm = searchTerm.toLowerCase();
@@ -287,7 +228,7 @@ export default function AcaoDetalhePage() {
             <div className="h-8 w-1 bg-gradient-to-b from-blue-500 to-blue-600 rounded-full"></div>
             <h2 className="text-2xl font-bold text-gray-800">📈 Sua Posição Atual</h2>
           </div>
-          {resultadoDoTicker ? (
+          {dados ? (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
                 <CardHeader className="pb-3">
@@ -299,7 +240,7 @@ export default function AcaoDetalhePage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-blue-800 mb-2">{formatNumber(resultadoDoTicker.quantidade_atual)}</div>
+                  <div className="text-3xl font-bold text-blue-800 mb-2">{formatNumber(dados.quantidade_atual || 0)}</div>
                   <p className="text-sm text-blue-600">💡 Ações que você possui atualmente</p>
                 </CardContent>
               </div>
@@ -314,7 +255,7 @@ export default function AcaoDetalhePage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-green-800 mb-2">{formatCurrency(resultadoDoTicker.preco_medio_atual)}</div>
+                  <div className="text-3xl font-bold text-green-800 mb-2">{formatCurrency(dados.preco_medio_atual || 0)}</div>
                   <p className="text-sm text-green-600">💰 Preço médio pago por ação</p>
                 </CardContent>
               </div>
@@ -329,7 +270,7 @@ export default function AcaoDetalhePage() {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold text-purple-800 mb-2">{formatCurrency(resultadoDoTicker.custo_total_atual)}</div>
+                  <div className="text-3xl font-bold text-purple-800 mb-2">{formatCurrency(dados.custo_total_atual || 0)}</div>
                   <p className="text-sm text-purple-600">🏦 Total investido na posição</p>
                 </CardContent>
               </div>
@@ -346,12 +287,12 @@ export default function AcaoDetalhePage() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-3xl font-bold text-amber-800 mb-2">
-                    {proventosDoTicker ? formatCurrency(proventosDoTicker.total_proventos) : formatCurrency(0)}
+                    {proventos ? formatCurrency(proventos.total_proventos) : formatCurrency(0)}
                   </div>
                   <p className="text-sm text-amber-600">
-                    {proventosDoTicker?.total_proventos > 0 
-                      ? (proventosDoTicker?.quantidade_pagamentos > 0 
-                          ? `🎁 ${proventosDoTicker?.quantidade_pagamentos} pagamentos recebidos`
+                    {proventos?.total_proventos > 0 
+                      ? (proventos?.quantidade_pagamentos > 0 
+                          ? `🎁 ${proventos?.quantidade_pagamentos} pagamentos recebidos`
                           : "🎁 Proventos recebidos")
                       : "📊 Nenhum provento registrado ainda"
                     }
@@ -360,21 +301,21 @@ export default function AcaoDetalhePage() {
               </div>
 
               {/* Card de Lucro/Prejuízo com destaque especial */}
-              <div className={`${resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200' : 'bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200'} rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 col-span-full md:col-span-2`}>
+              <div className={`${(dados.lucro_prejuizo_realizado_total || 0) >= 0 ? 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-2 border-emerald-200' : 'bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200'} rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 col-span-full md:col-span-2`}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
-                    <CardTitle className={`text-xl font-semibold ${resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? 'text-emerald-700' : 'text-red-700'} flex items-center gap-2`}>
-                      {resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? <TrendingUp className="h-6 w-6" /> : <TrendingDown className="h-6 w-6" />}
+                    <CardTitle className={`text-xl font-semibold ${(dados.lucro_prejuizo_realizado_total || 0) >= 0 ? 'text-emerald-700' : 'text-red-700'} flex items-center gap-2`}>
+                      {(dados.lucro_prejuizo_realizado_total || 0) >= 0 ? <TrendingUp className="h-6 w-6" /> : <TrendingDown className="h-6 w-6" />}
                       Resultado Atual
                     </CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className={`text-4xl font-bold ${resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? 'text-emerald-800' : 'text-red-800'} mb-2`}>
-                    {formatCurrency(resultadoDoTicker.lucro_prejuizo_realizado_total)}
+                  <div className={`text-4xl font-bold ${(dados.lucro_prejuizo_realizado_total || 0) >= 0 ? 'text-emerald-800' : 'text-red-800'} mb-2`}>
+                    {formatCurrency(dados.lucro_prejuizo_realizado_total || 0)}
                   </div>
-                  <p className={`text-base ${resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                    {resultadoDoTicker.lucro_prejuizo_realizado_total >= 0 ? '🎉 Parabéns! Você já realizou lucro com vendas' : '📉 Prejuízo realizado com vendas (faz parte do aprendizado!)'}
+                  <p className={`text-base ${(dados.lucro_prejuizo_realizado_total || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {(dados.lucro_prejuizo_realizado_total || 0) >= 0 ? '🎉 Parabéns! Você já realizou lucro com vendas' : '📉 Prejuízo realizado com vendas (faz parte do aprendizado!)'}
                   </p>
                 </CardContent>
               </div>
@@ -392,7 +333,7 @@ export default function AcaoDetalhePage() {
             <div className="h-8 w-1 bg-gradient-to-b from-yellow-500 to-yellow-600 rounded-full"></div>
             <h2 className="text-2xl font-bold text-gray-800">📋 Histórico de Operações</h2>
           </div>
-          {resultadoDoTicker ? (
+          {dados ? (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
               <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 border-2 border-yellow-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
                 <CardHeader className="pb-3">
@@ -402,7 +343,7 @@ export default function AcaoDetalhePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-yellow-800 mb-2">{formatCurrency(resultadoDoTicker.total_investido_historico)}</div>
+                  <div className="text-2xl font-bold text-yellow-800 mb-2">{formatCurrency(dados.total_investido_historico || 0)}</div>
                   <p className="text-sm text-yellow-600">💵 Soma de todas as suas compras</p>
                 </CardContent>
               </div>
@@ -415,7 +356,7 @@ export default function AcaoDetalhePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-orange-800 mb-2">{formatCurrency(resultadoDoTicker.total_vendido_historico)}</div>
+                  <div className="text-2xl font-bold text-orange-800 mb-2">{formatCurrency(dados.total_vendido_historico || 0)}</div>
                   <p className="text-sm text-orange-600">📈 Soma de todas as suas vendas</p>
                 </CardContent>
               </div>
@@ -428,7 +369,7 @@ export default function AcaoDetalhePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-cyan-800 mb-2">{formatNumber(resultadoDoTicker.operacoes_compra_total_quantidade)}</div>
+                  <div className="text-2xl font-bold text-cyan-800 mb-2">{formatNumber(dados.operacoes_compra_total_quantidade || 0)}</div>
                   <p className="text-sm text-cyan-600">🛒 Total de ações compradas</p>
                 </CardContent>
               </div>
@@ -441,7 +382,7 @@ export default function AcaoDetalhePage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-indigo-800 mb-2">{formatNumber(resultadoDoTicker.operacoes_venda_total_quantidade)}</div>
+                  <div className="text-2xl font-bold text-indigo-800 mb-2">{formatNumber(dados.operacoes_venda_total_quantidade || 0)}</div>
                   <p className="text-sm text-indigo-600">💼 Total de ações vendidas</p>
                 </CardContent>
               </div>

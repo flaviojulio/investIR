@@ -127,7 +127,17 @@ def criar_tabelas():
                 cursor.execute('''
                     INSERT INTO operacoes_temp (id, date, ticker, operation, quantity, price, fees, usuario_id, corretora_id)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (row['id'], date_iso, row['ticker'], row['operation'], row['quantity'], row['price'], row['fees'], row['usuario_id'], row['corretora_id']))
+                ''', (
+                    row['id'],
+                    date_iso,
+                    row['ticker'],
+                    row['operation'],
+                    row['quantity'],
+                    row['price'],
+                    row['fees'],
+                    row.get('usuario_id', None),
+                    row.get('corretora_id', None)
+                ))
             cursor.execute('DROP TABLE operacoes')
             cursor.execute('ALTER TABLE operacoes_temp RENAME TO operacoes')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_operacoes_date ON operacoes(date)')
@@ -693,7 +703,7 @@ def obter_todas_operacoes(usuario_id: int) -> List[Dict[str, Any]]:
         LEFT JOIN corretoras c ON o.corretora_id = c.id
         LEFT JOIN importacoes i ON o.importacao_id = i.id
         WHERE o.usuario_id = ?
-        ORDER BY o.date
+        ORDER BY o.date ASC, o.id ASC
         '''
         cursor.execute(query, (usuario_id,))
         operacoes = []
