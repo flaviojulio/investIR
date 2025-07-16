@@ -11,7 +11,7 @@ from collections import defaultdict
 from typing import List, Dict, Any, Optional
 import logging
 
-import backend.calculos as calculos
+import calculos as calculos
 from models import (
     OperacaoCreate, AtualizacaoCarteira, Operacao, ResultadoTicker,
     ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo,
@@ -366,8 +366,11 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     logging.info(f"{len(operacoes_fechadas_calculadas)} operações fechadas calculadas.")
 
     # Obter resultados mensais para determinar o status do IR
-    resultados_mensais_list = obter_resultados_mensais(usuario_id=usuario_id)
-    resultados_mensais_map = {rm['mes']: rm for rm in resultados_mensais_list}
+    # Obter resultados mensais para determinar o status do IR
+    # Esta chamada foi removida para quebrar a dependência circular.
+    # A função _calcular_status_ir_operacao_fechada receberá um mapa vazio,
+    # o que é aceitável, pois o status do IR é recalculado depois.
+    resultados_mensais_map = {}
 
     # 4. Salvar as novas operações fechadas
     operacoes_fechadas_salvas = []
@@ -519,20 +522,19 @@ def recalcular_resultados(usuario_id: int) -> None:
     
     # 3. Agrupar resultados por mês
     resultados_por_mes = defaultdict(lambda: {
-        "swing_trade": {"resultado": 0.0, "vendas_total": 0.0},
-        "day_trade": {"resultado": 0.0, "vendas_total": 0.0, "irrf": 0.0}
+        "swing_trade": {"resultado": 0.0, "vendas_total": 0.0, "custo_swing": 0.0},
+        "day_trade": {"resultado": 0.0, "vendas_total": 0.0, "irrf": 0.0, "custo_day_trade": 0.0}
     })
 
     for op in operacoes_fechadas:
         mes = op['data_fechamento'].strftime("%Y-%m")
         if op['day_trade']:
             resultados_por_mes[mes]['day_trade']['resultado'] += op['resultado']
-            # O IRRF de 1% sobre o ganho de day trade precisa ser calculado aqui
-            # ou obtido de algum lugar. Assumindo 0 por enquanto.
+            resultados_por_mes[mes]['day_trade']['custo_day_trade'] += op['valor_compra'] # Adicionar esta linha
         else:
             resultados_por_mes[mes]['swing_trade']['resultado'] += op['resultado']
             resultados_por_mes[mes]['swing_trade']['vendas_total'] += op['valor_venda']
-
+            resultados_por_mes[mes]['swing_trade']['custo_swing'] += op['valor_compra'] # Adicionar esta linha
     # 4. Processar cada mês, aplicando regras fiscais
     prejuizo_acumulado_swing = 0.0
     prejuizo_acumulado_day = 0.0
@@ -574,6 +576,7 @@ def recalcular_resultados(usuario_id: int) -> None:
         resultado_dict = {
             "mes": mes_str,
             "vendas_swing": vendas_swing,
+            "custo_swing": res_mes['swing_trade']['custo_swing'], 
             "ganho_liquido_swing": ganho_final_swing,
             "isento_swing": isento_swing,
             "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
@@ -586,6 +589,7 @@ def recalcular_resultados(usuario_id: int) -> None:
             "irrf_day": irrf_day,
             "ir_devido_day": imposto_bruto_day,
             "ir_pagar_day": imposto_day if imposto_day >= 10 else 0,
+            "custo_day_trade": res_mes['day_trade']['custo_day_trade'],
         }
         # Adicionar lógica de DARF...
         salvar_resultado_mensal(resultado_dict, usuario_id=usuario_id)
