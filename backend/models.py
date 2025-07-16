@@ -107,7 +107,8 @@ class OperacaoBase(BaseModel):
     @field_validator('price', mode='before')
     @classmethod
     def validate_and_clean_price(cls, v):
-        if isinstance(v, (float, int)):
+        from decimal import Decimal
+        if isinstance(v, (float, int, Decimal)):
             if v < 0:
                 raise ValueError("Preço ('Preço') não pode ser negativo.")
             return float(v)
