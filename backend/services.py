@@ -472,6 +472,35 @@ def recalcular_carteira(usuario_id: int) -> None:
 
     logging.info(f"Carteira do usuário {usuario_id} atualizada no banco de dados.")
 
+def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
+    """
+    Calcula o status de IR para uma operação fechada
+    """
+    data_fechamento = op_fechada["data_fechamento"]
+    if isinstance(data_fechamento, str):
+        from datetime import datetime
+        data_fechamento_obj = datetime.fromisoformat(data_fechamento.split("T")[0]).date()
+    else:
+        data_fechamento_obj = data_fechamento
+
+    mes_fechamento = data_fechamento_obj.strftime("%Y-%m")
+    resultado_mes = resultados_mensais_map.get(mes_fechamento)
+
+    if op_fechada["resultado"] <= 0:
+        return "Prejuízo Acumulado"
+
+    if op_fechada["day_trade"]:
+        if resultado_mes and resultado_mes.get("ir_pagar_day", 0) > 0:
+            return "Tributável Day Trade"
+        else:
+            return "Lucro Compensado"
+    else:  # Swing Trade
+        if resultado_mes and resultado_mes.get("isento_swing", False):
+            return "Isento"
+        elif resultado_mes and resultado_mes.get("ir_pagar_swing", 0) > 0:
+            return "Tributável Swing"
+        else:
+            return "Lucro Compensado"
 
 def recalcular_resultados(usuario_id: int) -> None:
     """
