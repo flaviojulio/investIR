@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  calcularDetalhesCompensacao,
+  type CompensacaoInfo,
+  type DetalhesCompensacao,
+} from "@/lib/fiscal-utils";
+
 import React, { useState } from "react";
 import {
   Dialog,
@@ -399,198 +405,52 @@ export function DarfDetailsModal({
     ir_devido_day: resultadoMensal.ir_devido_day,
   });
 
-  // Para março/2023, estimar compensação usada (se aplicável)
-  let prejudoUsadoCompensacao = 0;
+  // Calcular valores para o cálculo didático usando as funções utilitárias
   let ganhoBruto = ganhoLiquido;
+  let prejudoUsadoCompensacao = 0;
 
-  // Nova lógica: calcular com base nas operações reais do mês
-  if (resultadoMensal?.mes && operacoesFechadas.length > 0) {
-    const mesAtual = resultadoMensal.mes.substring(0, 7); // YYYY-MM
-
-    console.log("🔍 [DARF DEBUG] Iniciando cálculo para:", {
-      mes: mesAtual,
-      tipoDarf,
-      totalOperacoes: operacoesFechadas.length,
-      prejudoAtual,
-      ganhoLiquido,
-    });
-
-    // Filtrar operações do mês atual e do tipo correto
-    const operacoesDoMes = operacoesFechadas.filter((op) => {
-      const dataMes = op.data_fechamento.substring(0, 7);
-      const isSameTipo = tipoDarf === "daytrade" ? op.day_trade : !op.day_trade;
-      return dataMes === mesAtual && isSameTipo;
-    });
-
-    console.log("📊 [DARF DEBUG] Operações filtradas:", {
-      operacoesDoMes: operacoesDoMes.length,
-      tickers: operacoesDoMes
-        .map((op) => `${op.ticker}(${op.resultado})`)
-        .join(", "),
-    });
-
-    // Calcular lucro total (soma de todas as operações com resultado positivo)
-    const lucroTotalMes = operacoesDoMes
-      .filter((op) => op.resultado > 0)
-      .reduce((total, op) => total + op.resultado, 0);
-
-    // Calcular prejuízo total do mês (soma de todas as operações com resultado negativo)
-    const prejuizoTotalMes = operacoesDoMes
-      .filter((op) => op.resultado < 0)
-      .reduce((total, op) => total + Math.abs(op.resultado), 0);
-
-    // Calcular prejuízo anterior acumulado (antes do mês atual)
-    // CORREÇÃO: Usar o prejuízo anterior das operações, não do ResultadoMensal
-    // pois o ResultadoMensal já foi processado e pode ter zerado após compensação
-    const operacaoComPrejuizoAnterior = operacoesDoMes.find(
-      (op) =>
-        op.prejuizo_anterior_acumulado && op.prejuizo_anterior_acumulado > 0
-    );
-    const prejudoAnteriorAcumulado =
-      operacaoComPrejuizoAnterior?.prejuizo_anterior_acumulado || 0;
-
-    console.log("💰 [DARF DEBUG] Cálculos intermediários:", {
-      lucroTotalMes,
-      prejuizoTotalMes,
-      prejudoAnteriorAcumulado,
-      prejudoAnteriorFromResultadoMensal: prejudoAtual,
-      operacoesLucro: operacoesDoMes.filter((op) => op.resultado > 0).length,
-      operacoesPrejuizo: operacoesDoMes.filter((op) => op.resultado < 0).length,
-      operacaoComPrejuizoAnterior: operacaoComPrejuizoAnterior
-        ? `${operacaoComPrejuizoAnterior.ticker}(${operacaoComPrejuizoAnterior.prejuizo_anterior_acumulado})`
-        : "nenhuma",
-    });
-
-    // O lucro bruto é a soma de todos os lucros do mês
-    ganhoBruto = lucroTotalMes;
-
-    // O prejuízo usado para compensação é a soma do prejuízo do mês + prejuízo anterior acumulado
-    // limitado ao valor do lucro bruto (não pode compensar mais que o lucro)
-    const prejudoTotalDisponivel = prejuizoTotalMes + prejudoAnteriorAcumulado;
-    prejudoUsadoCompensacao = Math.min(lucroTotalMes, prejudoTotalDisponivel);
-
-    console.log("🧮 [DARF DEBUG] Resultado final:", {
-      ganhoBruto,
-      prejudoTotalDisponivel,
-      prejudoUsadoCompensacao,
-      formula: `Math.min(${lucroTotalMes}, ${prejuizoTotalMes} + ${prejudoAnteriorAcumulado}) = ${prejudoUsadoCompensacao}`,
-    });
-
-    // NOVA FUNCIONALIDADE: Calcular saldo sequencial de prejuízo acumulado para múltiplas operações negativas no mesmo dia
-    // Ordenar operações do mês por data e hora
-    const operacoesOrdenadas = operacoesDoMes
-      .slice() // Criar cópia para não modificar o array original
-      .sort(
-        (a, b) =>
-          new Date(a.data_fechamento).getTime() -
-          new Date(b.data_fechamento).getTime()
+  // ✅ NOVA LÓGICA: usar as mesmas funções da tabela
+  if (operacaoFechada && operacoesFechadas.length > 0) {
+    // Se a operação tem lucro, calcular compensação
+    if (operacaoFechada.resultado > 0) {
+      const detalhesCompensacao = calcularDetalhesCompensacao(
+        operacaoFechada,
+        operacoesFechadas
       );
 
-    // Calcular fluxo sequencial do saldo de prejuízo acumulado
-    let saldoPrejuizoAtual = prejudoAnteriorAcumulado;
-    const fluxoPrejuizoSequencial: Array<{
-      operacao: any;
-      saldoAnterior: number;
-      resultado: number;
-      saldoAtual: number;
-      isMultiplasOperacoesDia: boolean;
-      indexNoDia: number;
-      totalOperacoesDia: number;
-      dia: string;
-    }> = [];
+      ganhoBruto = detalhesCompensacao.lucroOperacao;
+      prejudoUsadoCompensacao = detalhesCompensacao.valorCompensado;
 
-    // Agrupar operações por dia para identificar múltiplas operações negativas no mesmo dia
-    const operacoesPorDia: { [key: string]: any[] } = operacoesOrdenadas.reduce(
-      (acc: { [key: string]: any[] }, op) => {
-        const dia = op.data_fechamento.substring(0, 10); // YYYY-MM-DD
-        if (!acc[dia]) acc[dia] = [];
-        acc[dia].push(op);
-        return acc;
-      },
-      {}
-    );
-
-    // Para cada dia, calcular o saldo sequencial
-    Object.keys(operacoesPorDia)
-      .sort()
-      .forEach((dia) => {
-        const operacoesDoDia = operacoesPorDia[dia];
-
-        operacoesDoDia.forEach((op: any, index: number) => {
-          const saldoAnterior = saldoPrejuizoAtual;
-
-          if (op.resultado < 0) {
-            // Operação negativa: aumenta o saldo de prejuízo
-            saldoPrejuizoAtual += Math.abs(op.resultado);
-          } else if (op.resultado > 0 && saldoPrejuizoAtual > 0) {
-            // Operação positiva: pode compensar prejuízo acumulado
-            const compensacao = Math.min(saldoPrejuizoAtual, op.resultado);
-            saldoPrejuizoAtual -= compensacao;
-          }
-
-          // Registrar o fluxo sequencial
-          fluxoPrejuizoSequencial.push({
-            operacao: op,
-            saldoAnterior: saldoAnterior,
-            resultado: op.resultado,
-            saldoAtual: saldoPrejuizoAtual,
-            isMultiplasOperacoesDia: operacoesDoDia.length > 1,
-            indexNoDia: index + 1,
-            totalOperacoesDia: operacoesDoDia.length,
-            dia: dia,
-          });
-        });
+      console.log("🧮 [DARF DEBUG] Usando dados calculados:", {
+        lucroOperacao: detalhesCompensacao.lucroOperacao,
+        prejuizoAnteriorDisponivel:
+          detalhesCompensacao.prejuizoAnteriorDisponivel,
+        valorCompensado: detalhesCompensacao.valorCompensado,
+        lucroTributavel: detalhesCompensacao.lucroTributavel,
       });
-
-    console.log("📈 [DARF DEBUG] Fluxo sequencial de prejuízo acumulado:", {
-      saldoInicial: prejudoAnteriorAcumulado,
-      saldoFinal: saldoPrejuizoAtual,
-      totalOperacoes: fluxoPrejuizoSequencial.length,
-      diasComMultiplasOperacoes: Object.values(operacoesPorDia).filter(
-        (ops) => ops.length > 1
-      ).length,
-      fluxo: fluxoPrejuizoSequencial.map(
-        (f) =>
-          `${f.operacao.ticker}: ${formatCurrency(
-            f.saldoAnterior
-          )} → ${formatCurrency(f.saldoAtual)}`
-      ),
-    });
-
-    // Adicionar dados do fluxo sequencial para usar na interface
-    (window as any).darfDebugData = {
-      ...(window as any).darfDebugData,
-      fluxoPrejuizoSequencial,
-      operacoesPorDia,
-      saldoPrejuizoFinal: saldoPrejuizoAtual,
-    };
+    } else {
+      // Para operações de prejuízo, usar o valor da operação
+      ganhoBruto = 0;
+      prejudoUsadoCompensacao = 0;
+    }
   } else {
     // Fallback para a lógica anterior se não houver operações
-    // Lógica especial para março/2023 - sabemos que houve compensação de R$ 1.200
     const isMarco2023 = resultadoMensal?.mes === "2023-03";
 
     if (isMarco2023 && tipoDarf === "swing") {
-      // Para março/2023 swing trade, sabemos que:
-      // - Ganho líquido final: R$ 2.800
-      // - DARF: R$ 420 (que é 15% de R$ 2.800)
-      // - Isso indica que houve compensação de R$ 1.200
-      // - Ganho bruto foi R$ 4.000 (2.800 + 1.200)
       prejudoUsadoCompensacao = 1200;
       ganhoBruto = 4000;
     } else if (prejudoAtual > 0 && ganhoLiquido > 0) {
-      // Para outros casos, usar a lógica normal
       const darfCalculado = ganhoLiquido * aliquotaDecimal;
       const irrf = tipoDarf === "daytrade" ? resultadoMensal?.irrf_day || 0 : 0;
       const darfEsperado = Math.max(0, darfCalculado - irrf);
 
       if (Math.abs(darfEsperado - (darfValorMensal || 0)) < 0.01) {
-        // Confirma que o cálculo está correto, então houve compensação
         prejudoUsadoCompensacao = prejudoAtual;
         ganhoBruto = ganhoLiquido + prejudoUsadoCompensacao;
       }
     }
   }
-
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto rounded-2xl p-0">

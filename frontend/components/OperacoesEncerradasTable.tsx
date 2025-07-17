@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  getCompensacaoInfo,
+  calcularPrejuizoAcumuladoAteOperacao,
+  calcularDetalhesCompensacao,
+  type CompensacaoInfo,
+  type DetalhesCompensacao,
+  type PrejuizoAcumuladoInfo,
+} from "@/lib/fiscal-utils";
+
 import React, { useState, useEffect, useMemo } from "react";
 import {
   Card,
@@ -340,69 +349,6 @@ const TableHeader = ({
   </div>
 );
 
-// Função utilitária global para compensação de prejuízo
-function getCompensacaoInfo(
-  op: OperacaoFechada,
-  operacoesFechadas: OperacaoFechada[]
-): {
-  temCompensacao: boolean;
-  ehCompensacaoTotal: boolean;
-  ehCompensacaoParcial: boolean;
-  valorCompensado: number;
-  lucroTributavel: number;
-} {
-  // Só verifica compensação para operações com lucro
-  if (!op || op.resultado <= 0) {
-    return {
-      temCompensacao: false,
-      ehCompensacaoTotal: false,
-      ehCompensacaoParcial: false,
-      valorCompensado: 0,
-      lucroTributavel: 0,
-    };
-  }
-
-  const tipoOperacao = op.day_trade ? "day_trade" : "swing_trade";
-  const lucroOperacao = op.resultado;
-
-  // Calcular prejuízo anterior disponível
-  const operacoesAnteriores = operacoesFechadas
-    .filter((opAnt) => {
-      const mesmaTipo =
-        (opAnt.day_trade ? "day_trade" : "swing_trade") === tipoOperacao;
-      const dataAnterior =
-        new Date(opAnt.data_fechamento) < new Date(op.data_fechamento);
-      return mesmaTipo && dataAnterior;
-    })
-    .sort(
-      (a, b) =>
-        new Date(a.data_fechamento).getTime() -
-        new Date(b.data_fechamento).getTime()
-    );
-
-  // Calcular saldo de prejuízo disponível
-  let prejuizoAcumulado = 0;
-  for (const opAnt of operacoesAnteriores) {
-    if (opAnt.resultado < 0) {
-      prejuizoAcumulado += Math.abs(opAnt.resultado);
-    } else if (opAnt.resultado > 0) {
-      const compensacaoUsada = Math.min(prejuizoAcumulado, opAnt.resultado);
-      prejuizoAcumulado -= compensacaoUsada;
-    }
-  }
-
-  const valorCompensado = Math.min(lucroOperacao, prejuizoAcumulado);
-  const lucroTributavel = Math.max(0, lucroOperacao - valorCompensado);
-
-  return {
-    temCompensacao: valorCompensado > 0,
-    ehCompensacaoTotal: valorCompensado > 0 && lucroTributavel === 0,
-    ehCompensacaoParcial: valorCompensado > 0 && lucroTributavel > 0,
-    valorCompensado,
-    lucroTributavel,
-  };
-}
-
 // Subcomponent: OperationRow
 const OperationRow = ({
   op,
@@ -418,172 +364,6 @@ const OperationRow = ({
   operacoesFechadas,
   resultadosMensais, // ✅ Usar apenas a prop da interface oficial
 }: OperationRowProps) => {
-  const calcularPrejuizoAcumuladoAteOperacao = (
-    operacaoAtual: OperacaoFechada,
-    todasOperacoes: OperacaoFechada[]
-  ): {
-    prejuizoAnterior: number;
-    prejuizoAteOperacao: number;
-    operacoesAnteriores: OperacaoFechada[];
-  } => {
-    const tipoOperacao = operacaoAtual.day_trade ? "day_trade" : "swing_trade";
-
-    // Filtrar operações do mesmo tipo até a data/hora da operação atual
-    const operacoesRelevantes = todasOperacoes
-      .filter((op) => {
-        const mesmaTipoOperacao =
-          (op.day_trade ? "day_trade" : "swing_trade") === tipoOperacao;
-
-        // Incluir apenas operações até a data da operação atual (inclusive)
-        const dataOp = new Date(op.data_fechamento);
-        const dataAtual = new Date(operacaoAtual.data_fechamento);
-
-        return mesmaTipoOperacao && dataOp <= dataAtual;
-      })
-      .sort(
-        (a, b) =>
-          new Date(a.data_fechamento).getTime() -
-          new Date(b.data_fechamento).getTime()
-      );
-
-    // Encontrar o índice da operação atual
-    const indiceOperacaoAtual = operacoesRelevantes.findIndex(
-      (op) =>
-        op.ticker === operacaoAtual.ticker &&
-        op.data_fechamento === operacaoAtual.data_fechamento &&
-        op.resultado === operacaoAtual.resultado &&
-        op.quantidade === operacaoAtual.quantidade
-    );
-
-    // Operações anteriores (não incluindo a atual)
-    const operacoesAnteriores = operacoesRelevantes.slice(
-      0,
-      indiceOperacaoAtual
-    );
-
-    // Operações até a atual (incluindo a atual)
-    const operacoesAteAtual = operacoesRelevantes.slice(
-      0,
-      indiceOperacaoAtual + 1
-    );
-
-    // Calcular prejuízo anterior (sem a operação atual)
-    const prejuizoAnterior = operacoesAnteriores
-      .filter((op) => op.resultado < 0)
-      .reduce((acc, op) => acc + Math.abs(op.resultado), 0);
-
-    // Calcular prejuízo até a operação atual (incluindo ela se for prejuízo)
-    const prejuizoAteOperacao = operacoesAteAtual
-      .filter((op) => op.resultado < 0)
-      .reduce((acc, op) => acc + Math.abs(op.resultado), 0);
-
-    return {
-      prejuizoAnterior,
-      prejuizoAteOperacao,
-      operacoesAnteriores,
-    };
-  };
-
-  const calcularDetalhesCompensacao = (
-    operacaoAtual: OperacaoFechada,
-    todasOperacoes: OperacaoFechada[]
-  ): {
-    lucroOperacao: number;
-    prejuizoAnteriorDisponivel: number;
-    valorCompensado: number;
-    prejuizoRestante: number;
-    lucroTributavel: number;
-    operacoesAnteriores: OperacaoFechada[];
-    historicoPrejuizos: Array<{
-      data: string;
-      ticker: string;
-      valor: number;
-      usado: boolean;
-    }>;
-  } => {
-    const tipoOperacao = operacaoAtual.day_trade ? "day_trade" : "swing_trade";
-    const lucroOperacao = operacaoAtual.resultado;
-
-    // Buscar operações anteriores do mesmo tipo, ordenadas cronologicamente
-    const operacoesAnteriores = todasOperacoes
-      .filter((op) => {
-        const mesmaTipo =
-          (op.day_trade ? "day_trade" : "swing_trade") === tipoOperacao;
-        const dataAnterior =
-          new Date(op.data_fechamento) <
-          new Date(operacaoAtual.data_fechamento);
-        return mesmaTipo && dataAnterior;
-      })
-      .sort(
-        (a, b) =>
-          new Date(a.data_fechamento).getTime() -
-          new Date(b.data_fechamento).getTime()
-      );
-
-    // Calcular prejuízos acumulados até esta operação
-    let prejuizoAcumulado = 0;
-    let lucrosJaCompensados = 0;
-    const historicoPrejuizos: Array<{
-      data: string;
-      ticker: string;
-      valor: number;
-      usado: boolean;
-    }> = [];
-
-    // Processar operações anteriores para calcular saldo disponível
-    for (const op of operacoesAnteriores) {
-      if (op.resultado < 0) {
-        // É prejuízo - adiciona ao saldo
-        prejuizoAcumulado += Math.abs(op.resultado);
-        historicoPrejuizos.push({
-          data: op.data_fechamento,
-          ticker: op.ticker,
-          valor: Math.abs(op.resultado),
-          usado: false,
-        });
-      } else if (op.resultado > 0) {
-        // É lucro - pode ter compensado prejuízos anteriores
-        const lucroDisponivel = op.resultado;
-        const prejuizoParaCompensar = Math.min(
-          prejuizoAcumulado,
-          lucroDisponivel
-        );
-
-        if (prejuizoParaCompensar > 0) {
-          prejuizoAcumulado -= prejuizoParaCompensar;
-          lucrosJaCompensados += prejuizoParaCompensar;
-
-          // Marcar prejuízos como usados (FIFO)
-          let valorRestanteParaMarcar = prejuizoParaCompensar;
-          for (const item of historicoPrejuizos) {
-            if (!item.usado && valorRestanteParaMarcar > 0) {
-              const valorAUsar = Math.min(item.valor, valorRestanteParaMarcar);
-              if (valorAUsar === item.valor) {
-                item.usado = true;
-              }
-              valorRestanteParaMarcar -= valorAUsar;
-            }
-          }
-        }
-      }
-    }
-
-    // Calcular compensação da operação atual
-    const prejuizoAnteriorDisponivel = prejuizoAcumulado;
-    const valorCompensado = Math.min(lucroOperacao, prejuizoAnteriorDisponivel);
-    const prejuizoRestante = prejuizoAnteriorDisponivel - valorCompensado;
-    const lucroTributavel = Math.max(0, lucroOperacao - valorCompensado);
-
-    return {
-      lucroOperacao,
-      prejuizoAnteriorDisponivel,
-      valorCompensado,
-      prejuizoRestante,
-      lucroTributavel,
-      operacoesAnteriores,
-      historicoPrejuizos: historicoPrejuizos.filter((item) => !item.usado),
-    };
-  };
   // ✅ Usar a interface oficial
   const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
   if (op.ticker === "VALE3") {
@@ -672,7 +452,7 @@ const OperationRow = ({
         <div className="col-span-3 flex items-center justify-start">
           <div className="flex items-center gap-2 min-h-[32px]">
             {getStatusBadge(
-              op.status_ir || "",
+              op.resultado === 0 ? "Isento" : op.status_ir || "",
               isProfit,
               op,
               operacoesFechadas
@@ -692,7 +472,7 @@ const OperationRow = ({
         <div className="bg-gradient-to-br from-gray-50 via-blue-50/30 to-indigo-50/30 py-6 px-6 border-t border-indigo-200">
           <div className="grid grid-cols-12 gap-6 text-sm">
             {/* Operation Details Card */}
-            <div className="col-span-12 lg:col-span-6">
+            <div className="col-span-6 lg:col-span-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-10 w-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
                   <BarChart3 className="h-5 w-5 text-white" />
@@ -821,7 +601,30 @@ const OperationRow = ({
                           }`}
                         >
                           {isProfit ? "+" : "-"}
-                          {formatCurrency(Math.abs(op.resultado))}
+                          {formatCurrency(Math.abs(op.resultado)) + " "}
+                          {/* ✅ ADICIONAR apenas estas linhas: */}
+                          {(() => {
+                            const valorInvestido =
+                              op.valor_compra ||
+                              (op.preco_abertura && op.preco_abertura > 0
+                                ? op.preco_abertura * op.quantidade
+                                : 0);
+                            const percentual =
+                              valorInvestido > 0
+                                ? (op.resultado / valorInvestido) * 100
+                                : 0;
+
+                            return valorInvestido > 0 ? (
+                                <span
+                                  className={`text-xs font-semibold ${
+                                    isProfit ? "text-green-700" : "text-red-700"
+                                  }`}
+                                >
+                                  ({isProfit ? "+" : ""}
+                                  {percentual.toFixed(2)}%)
+                                </span>
+                            ) : null;
+                          })()}
                         </span>
                       </div>
                     </div>
