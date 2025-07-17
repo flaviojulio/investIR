@@ -1,4 +1,5 @@
 from typing import List, Dict, Any, Optional # Tuple replaced with tuple, Optional added
+import calculos  # Importa o módulo calculos para uso das funções de cálculo
 from datetime import date, datetime, timedelta # date was already implicitly imported via from datetime import date, datetime
 from decimal import Decimal # Kept for specific calculations in recalcular_resultados
 import calendar
@@ -502,17 +503,33 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     resultados = calculos.calcular_resultados_operacoes(operacoes_ajustadas)
     operacoes_fechadas_calculadas = resultados['operacoes_fechadas']
 
-    resultados_mensais_map = {} # Mapa vazio para evitar dependência circular
+    # ✅ CORREÇÃO: Buscar resultados mensais reais em vez de mapa vazio
+    resultados_mensais_list = obter_resultados_mensais(usuario_id=usuario_id)
+    resultados_mensais_map = {}
+    for rm in resultados_mensais_list:
+        mes_str = rm.get('mes', '')
+        resultados_mensais_map[mes_str] = rm
 
     operacoes_fechadas_salvas = []
     for op_fechada in operacoes_fechadas_calculadas:
         valor_base_lucro = op_fechada.preco_medio_compra * op_fechada.quantidade
+
+        # ✅ CORREÇÃO: Calcular status_ir usando a função existente
+        status_ir = calculos._calcular_status_ir_operacao_fechada(
+            {
+                "data_fechamento": op_fechada.data_fechamento,
+                "resultado": op_fechada.resultado,
+                "day_trade": op_fechada.day_trade
+            },
+            resultados_mensais_map
+        )
 
         op_dict = {
             "ticker": op_fechada.ticker,
             "quantidade": op_fechada.quantidade,
             "preco_abertura": op_fechada.preco_medio_compra,
             "preco_fechamento": op_fechada.preco_medio_venda,
+            "preco_medio_compra": op_fechada.preco_medio_compra,  # <-- Adicionado para o frontend
             "resultado": op_fechada.resultado,
             "day_trade": op_fechada.day_trade,
             "data_fechamento": op_fechada.data_fechamento,
@@ -524,6 +541,7 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
             "percentual_lucro": (op_fechada.resultado / valor_base_lucro) * 100 if valor_base_lucro != 0 else 0,
             "prejuizo_anterior_acumulado": 0,
             "operacoes_relacionadas": [],
+            "status_ir": status_ir  # ✅ CORREÇÃO: Campo adicionado
         }
         
         salvar_operacao_fechada(op_dict, usuario_id=usuario_id)
@@ -531,7 +549,6 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
 
     logging.info(f"{len(operacoes_fechadas_salvas)} operações fechadas salvas no banco.")
     return operacoes_fechadas_salvas
-
 
 def recalcular_carteira(usuario_id: int) -> None:
     """

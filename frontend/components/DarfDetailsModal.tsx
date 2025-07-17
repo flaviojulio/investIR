@@ -45,6 +45,7 @@ import {
   BarChart3,
 } from "lucide-react";
 
+// ✅ CORREÇÃO 2: Atualizar a interface do DarfDetailsModalProps
 interface DarfDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -52,8 +53,8 @@ interface DarfDetailsModalProps {
   resultadoMensal?: ResultadoMensal | null;
   tipoDarf: "swing" | "daytrade";
   onUpdateDashboard: () => void;
-  onDarfStatusChange?: (newStatus: string) => void;
-  operacoesFechadas?: OperacaoFechada[]; // Nova prop para calcular totais do mês
+  onDarfStatusChange?: (operationKey: string, newStatus: string) => void; // ✅ CORRIGIDO: inclui operationKey
+  operacoesFechadas?: OperacaoFechada[];
 }
 
 export function DarfDetailsModal({
@@ -91,6 +92,7 @@ export function DarfDetailsModal({
         `/impostos/darf_status/${resultadoMensal.mes}/${tipoDarf}`,
         { status: "Pago" }
       );
+
       toast({
         title: "✅ DARF Pago!",
         description: `DARF ${
@@ -101,8 +103,10 @@ export function DarfDetailsModal({
         className: "bg-green-50 border-green-200 text-green-800",
       });
 
-      if (onDarfStatusChange) {
-        onDarfStatusChange("pago");
+      // ✅ CORREÇÃO: Passa a operação específica E o novo status
+      if (onDarfStatusChange && operacaoFechada) {
+        const operationKey = `${operacaoFechada.ticker}-${operacaoFechada.data_abertura}-${operacaoFechada.data_fechamento}-${operacaoFechada.quantidade}`;
+        onDarfStatusChange(operationKey, "pago");
       }
 
       onUpdateDashboard();
@@ -141,6 +145,7 @@ export function DarfDetailsModal({
         `/impostos/darf_status/${resultadoMensal.mes}/${tipoDarf}`,
         { status: "Pendente" }
       );
+
       toast({
         title: "🔄 Status Atualizado",
         description: `DARF ${
@@ -149,8 +154,10 @@ export function DarfDetailsModal({
         className: "bg-blue-50 border-blue-200 text-blue-800",
       });
 
-      if (onDarfStatusChange) {
-        onDarfStatusChange("pendente");
+      // ✅ CORREÇÃO: Passa a operação específica E o novo status
+      if (onDarfStatusChange && operacaoFechada) {
+        const operationKey = `${operacaoFechada.ticker}-${operacaoFechada.data_abertura}-${operacaoFechada.data_fechamento}-${operacaoFechada.quantidade}`;
+        onDarfStatusChange(operationKey, "pendente");
       }
 
       onUpdateDashboard();
@@ -250,27 +257,75 @@ export function DarfDetailsModal({
     });
   };
 
-  // Determine which DARF details to use from ResultadoMensal based on tipoDarf
+  // ✅ CORREÇÃO: Mapear campos corretos do ResultadoMensal
   const darfCodigo =
     tipoDarf === "swing"
-      ? resultadoMensal.darf_codigo_swing
-      : resultadoMensal.darf_codigo_day;
-  const darfCompetencia =
-    tipoDarf === "swing"
-      ? resultadoMensal.darf_competencia_swing
-      : resultadoMensal.darf_competencia_day;
+      ? "6015" // Código padrão para swing trade
+      : "6015"; // Código padrão para day trade
+
+  const darfCompetencia = resultadoMensal.mes; // ✅ Campo que existe
+
   const darfValorMensal =
     tipoDarf === "swing"
-      ? resultadoMensal.darf_valor_swing
-      : resultadoMensal.darf_valor_day;
-  const darfVencimento =
-    tipoDarf === "swing"
-      ? resultadoMensal.darf_vencimento_swing
-      : resultadoMensal.darf_vencimento_day;
+      ? resultadoMensal.ir_pagar_swing || resultadoMensal.ir_devido_swing // ✅ Campos que existem
+      : resultadoMensal.ir_pagar_day || resultadoMensal.ir_devido_day; // ✅ Campos que existem
+
+  // ✅ Calcular vencimento baseado na competência
+  const darfVencimento = (() => {
+    if (!darfCompetencia) return new Date().toISOString().split("T")[0];
+
+    const [ano, mes] = darfCompetencia.split("-").map(Number);
+
+    // Próximo mês
+    let proxMes = mes + 1;
+    let proxAno = ano;
+    if (proxMes > 12) {
+      proxMes = 1;
+      proxAno += 1;
+    }
+
+    // Último dia do próximo mês
+    const ultimoDia = new Date(proxAno, proxMes, 0).getDate();
+    const vencimento = new Date(proxAno, proxMes - 1, ultimoDia);
+
+    // Ajustar para dia útil (se for sábado ou domingo, volta para sexta)
+    while (vencimento.getDay() === 0 || vencimento.getDay() === 6) {
+      vencimento.setDate(vencimento.getDate() - 1);
+    }
+
+    return vencimento.toISOString().split("T")[0];
+  })();
+
   const darfStatus =
     tipoDarf === "swing"
-      ? resultadoMensal.status_darf_swing_trade
-      : resultadoMensal.status_darf_day_trade;
+      ? resultadoMensal.status_darf_swing_trade || "Pendente" // ✅ Campo que existe
+      : resultadoMensal.status_darf_day_trade || "Pendente"; // ✅ Campo que existe
+
+  console.log("🔍 [BOTÃO DEBUG] Dados para exibição:", {
+    darfValorMensal,
+    darfStatus,
+    resultadoMensal: {
+      ir_pagar_swing: resultadoMensal?.ir_pagar_swing,
+      ir_pagar_day: resultadoMensal?.ir_pagar_day,
+      ir_devido_swing: resultadoMensal?.ir_devido_swing,
+      ir_devido_day: resultadoMensal?.ir_devido_day,
+      status_darf_swing_trade: resultadoMensal?.status_darf_swing_trade,
+      status_darf_day_trade: resultadoMensal?.status_darf_day_trade,
+    },
+    tipoDarf,
+    condicoes: {
+      temValor: darfValorMensal !== undefined && darfValorMensal !== null,
+      valorMaiorQue10: darfValorMensal >= 10.0,
+      statusNaoPago: darfStatus !== "Pago",
+      statusPago: darfStatus === "Pago",
+    },
+  });
+
+  // ✅ CORREÇÃO: Condição do botão mais robusta
+  const shouldShowMarkAsPaidButton =
+    darfValorMensal && darfValorMensal >= 10.0 && darfStatus !== "Pago";
+  const shouldShowMarkAsPendenteButton =
+    darfValorMensal && darfValorMensal >= 10.0 && darfStatus === "Pago";
 
   let impostoCalculadoDaOperacao = 0;
   if (operacaoFechada.status_ir === "Tributável Day Trade") {
@@ -319,7 +374,7 @@ export function DarfDetailsModal({
     ganhoLiquidoSwing,
     ganhoLiquidoDay,
     tipoDarf,
-    resultadoMensalCompleto: resultadoMensal
+    resultadoMensalCompleto: resultadoMensal,
   });
 
   // Calcular valores para o cálculo didático
@@ -329,11 +384,19 @@ export function DarfDetailsModal({
     tipoDarf === "swing" ? ganhoLiquidoSwing : ganhoLiquidoDay;
   const aliquotaDecimal = tipoDarf === "swing" ? 0.15 : 0.2;
 
-  console.log("⚙️ [DARF DEBUG] Valores calculados para o tipo:", {
+  // ✅ DEBUG: Verificar dados disponíveis
+  console.log("🔍 [DARF DEBUG] Dados mapeados:", {
     tipoDarf,
-    prejudoAtual,
-    ganhoLiquido,
-    aliquotaDecimal
+    resultadoMensalKeys: Object.keys(resultadoMensal),
+    darfCodigo,
+    darfCompetencia,
+    darfValorMensal,
+    darfVencimento,
+    darfStatus,
+    ir_pagar_swing: resultadoMensal.ir_pagar_swing,
+    ir_pagar_day: resultadoMensal.ir_pagar_day,
+    ir_devido_swing: resultadoMensal.ir_devido_swing,
+    ir_devido_day: resultadoMensal.ir_devido_day,
   });
 
   // Para março/2023, estimar compensação usada (se aplicável)
@@ -343,17 +406,17 @@ export function DarfDetailsModal({
   // Nova lógica: calcular com base nas operações reais do mês
   if (resultadoMensal?.mes && operacoesFechadas.length > 0) {
     const mesAtual = resultadoMensal.mes.substring(0, 7); // YYYY-MM
-    
+
     console.log("🔍 [DARF DEBUG] Iniciando cálculo para:", {
       mes: mesAtual,
       tipoDarf,
       totalOperacoes: operacoesFechadas.length,
       prejudoAtual,
-      ganhoLiquido
+      ganhoLiquido,
     });
-    
+
     // Filtrar operações do mês atual e do tipo correto
-    const operacoesDoMes = operacoesFechadas.filter(op => {
+    const operacoesDoMes = operacoesFechadas.filter((op) => {
       const dataMes = op.data_fechamento.substring(0, 7);
       const isSameTipo = tipoDarf === "daytrade" ? op.day_trade : !op.day_trade;
       return dataMes === mesAtual && isSameTipo;
@@ -361,33 +424,41 @@ export function DarfDetailsModal({
 
     console.log("📊 [DARF DEBUG] Operações filtradas:", {
       operacoesDoMes: operacoesDoMes.length,
-      tickers: operacoesDoMes.map(op => `${op.ticker}(${op.resultado})`).join(", ")
+      tickers: operacoesDoMes
+        .map((op) => `${op.ticker}(${op.resultado})`)
+        .join(", "),
     });
 
     // Calcular lucro total (soma de todas as operações com resultado positivo)
     const lucroTotalMes = operacoesDoMes
-      .filter(op => op.resultado > 0)
+      .filter((op) => op.resultado > 0)
       .reduce((total, op) => total + op.resultado, 0);
 
     // Calcular prejuízo total do mês (soma de todas as operações com resultado negativo)
     const prejuizoTotalMes = operacoesDoMes
-      .filter(op => op.resultado < 0)
+      .filter((op) => op.resultado < 0)
       .reduce((total, op) => total + Math.abs(op.resultado), 0);
 
     // Calcular prejuízo anterior acumulado (antes do mês atual)
     // CORREÇÃO: Usar o prejuízo anterior das operações, não do ResultadoMensal
     // pois o ResultadoMensal já foi processado e pode ter zerado após compensação
-    const operacaoComPrejuizoAnterior = operacoesDoMes.find(op => op.prejuizo_anterior_acumulado && op.prejuizo_anterior_acumulado > 0);
-    const prejudoAnteriorAcumulado = operacaoComPrejuizoAnterior?.prejuizo_anterior_acumulado || 0;
+    const operacaoComPrejuizoAnterior = operacoesDoMes.find(
+      (op) =>
+        op.prejuizo_anterior_acumulado && op.prejuizo_anterior_acumulado > 0
+    );
+    const prejudoAnteriorAcumulado =
+      operacaoComPrejuizoAnterior?.prejuizo_anterior_acumulado || 0;
 
     console.log("💰 [DARF DEBUG] Cálculos intermediários:", {
       lucroTotalMes,
       prejuizoTotalMes,
       prejudoAnteriorAcumulado,
       prejudoAnteriorFromResultadoMensal: prejudoAtual,
-      operacoesLucro: operacoesDoMes.filter(op => op.resultado > 0).length,
-      operacoesPrejuizo: operacoesDoMes.filter(op => op.resultado < 0).length,
-      operacaoComPrejuizoAnterior: operacaoComPrejuizoAnterior ? `${operacaoComPrejuizoAnterior.ticker}(${operacaoComPrejuizoAnterior.prejuizo_anterior_acumulado})` : 'nenhuma'
+      operacoesLucro: operacoesDoMes.filter((op) => op.resultado > 0).length,
+      operacoesPrejuizo: operacoesDoMes.filter((op) => op.resultado < 0).length,
+      operacaoComPrejuizoAnterior: operacaoComPrejuizoAnterior
+        ? `${operacaoComPrejuizoAnterior.ticker}(${operacaoComPrejuizoAnterior.prejuizo_anterior_acumulado})`
+        : "nenhuma",
     });
 
     // O lucro bruto é a soma de todos os lucros do mês
@@ -402,14 +473,18 @@ export function DarfDetailsModal({
       ganhoBruto,
       prejudoTotalDisponivel,
       prejudoUsadoCompensacao,
-      formula: `Math.min(${lucroTotalMes}, ${prejuizoTotalMes} + ${prejudoAnteriorAcumulado}) = ${prejudoUsadoCompensacao}`
+      formula: `Math.min(${lucroTotalMes}, ${prejuizoTotalMes} + ${prejudoAnteriorAcumulado}) = ${prejudoUsadoCompensacao}`,
     });
 
     // NOVA FUNCIONALIDADE: Calcular saldo sequencial de prejuízo acumulado para múltiplas operações negativas no mesmo dia
     // Ordenar operações do mês por data e hora
     const operacoesOrdenadas = operacoesDoMes
       .slice() // Criar cópia para não modificar o array original
-      .sort((a, b) => new Date(a.data_fechamento).getTime() - new Date(b.data_fechamento).getTime());
+      .sort(
+        (a, b) =>
+          new Date(a.data_fechamento).getTime() -
+          new Date(b.data_fechamento).getTime()
+      );
 
     // Calcular fluxo sequencial do saldo de prejuízo acumulado
     let saldoPrejuizoAtual = prejudoAnteriorAcumulado;
@@ -425,49 +500,61 @@ export function DarfDetailsModal({
     }> = [];
 
     // Agrupar operações por dia para identificar múltiplas operações negativas no mesmo dia
-    const operacoesPorDia: { [key: string]: any[] } = operacoesOrdenadas.reduce((acc: { [key: string]: any[] }, op) => {
-      const dia = op.data_fechamento.substring(0, 10); // YYYY-MM-DD
-      if (!acc[dia]) acc[dia] = [];
-      acc[dia].push(op);
-      return acc;
-    }, {});
+    const operacoesPorDia: { [key: string]: any[] } = operacoesOrdenadas.reduce(
+      (acc: { [key: string]: any[] }, op) => {
+        const dia = op.data_fechamento.substring(0, 10); // YYYY-MM-DD
+        if (!acc[dia]) acc[dia] = [];
+        acc[dia].push(op);
+        return acc;
+      },
+      {}
+    );
 
     // Para cada dia, calcular o saldo sequencial
-    Object.keys(operacoesPorDia).sort().forEach(dia => {
-      const operacoesDoDia = operacoesPorDia[dia];
-      
-      operacoesDoDia.forEach((op: any, index: number) => {
-        const saldoAnterior = saldoPrejuizoAtual;
-        
-        if (op.resultado < 0) {
-          // Operação negativa: aumenta o saldo de prejuízo
-          saldoPrejuizoAtual += Math.abs(op.resultado);
-        } else if (op.resultado > 0 && saldoPrejuizoAtual > 0) {
-          // Operação positiva: pode compensar prejuízo acumulado
-          const compensacao = Math.min(saldoPrejuizoAtual, op.resultado);
-          saldoPrejuizoAtual -= compensacao;
-        }
+    Object.keys(operacoesPorDia)
+      .sort()
+      .forEach((dia) => {
+        const operacoesDoDia = operacoesPorDia[dia];
 
-        // Registrar o fluxo sequencial
-        fluxoPrejuizoSequencial.push({
-          operacao: op,
-          saldoAnterior: saldoAnterior,
-          resultado: op.resultado,
-          saldoAtual: saldoPrejuizoAtual,
-          isMultiplasOperacoesDia: operacoesDoDia.length > 1,
-          indexNoDia: index + 1,
-          totalOperacoesDia: operacoesDoDia.length,
-          dia: dia
+        operacoesDoDia.forEach((op: any, index: number) => {
+          const saldoAnterior = saldoPrejuizoAtual;
+
+          if (op.resultado < 0) {
+            // Operação negativa: aumenta o saldo de prejuízo
+            saldoPrejuizoAtual += Math.abs(op.resultado);
+          } else if (op.resultado > 0 && saldoPrejuizoAtual > 0) {
+            // Operação positiva: pode compensar prejuízo acumulado
+            const compensacao = Math.min(saldoPrejuizoAtual, op.resultado);
+            saldoPrejuizoAtual -= compensacao;
+          }
+
+          // Registrar o fluxo sequencial
+          fluxoPrejuizoSequencial.push({
+            operacao: op,
+            saldoAnterior: saldoAnterior,
+            resultado: op.resultado,
+            saldoAtual: saldoPrejuizoAtual,
+            isMultiplasOperacoesDia: operacoesDoDia.length > 1,
+            indexNoDia: index + 1,
+            totalOperacoesDia: operacoesDoDia.length,
+            dia: dia,
+          });
         });
       });
-    });
 
     console.log("📈 [DARF DEBUG] Fluxo sequencial de prejuízo acumulado:", {
       saldoInicial: prejudoAnteriorAcumulado,
       saldoFinal: saldoPrejuizoAtual,
       totalOperacoes: fluxoPrejuizoSequencial.length,
-      diasComMultiplasOperacoes: Object.values(operacoesPorDia).filter(ops => ops.length > 1).length,
-      fluxo: fluxoPrejuizoSequencial.map(f => `${f.operacao.ticker}: ${formatCurrency(f.saldoAnterior)} → ${formatCurrency(f.saldoAtual)}`)
+      diasComMultiplasOperacoes: Object.values(operacoesPorDia).filter(
+        (ops) => ops.length > 1
+      ).length,
+      fluxo: fluxoPrejuizoSequencial.map(
+        (f) =>
+          `${f.operacao.ticker}: ${formatCurrency(
+            f.saldoAnterior
+          )} → ${formatCurrency(f.saldoAtual)}`
+      ),
     });
 
     // Adicionar dados do fluxo sequencial para usar na interface
@@ -475,7 +562,7 @@ export function DarfDetailsModal({
       ...(window as any).darfDebugData,
       fluxoPrejuizoSequencial,
       operacoesPorDia,
-      saldoPrejuizoFinal: saldoPrejuizoAtual
+      saldoPrejuizoFinal: saldoPrejuizoAtual,
     };
   } else {
     // Fallback para a lógica anterior se não houver operações
@@ -508,13 +595,15 @@ export function DarfDetailsModal({
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-y-auto rounded-2xl p-0">
         {/* Header modernizado com gradiente - adaptado ao tipo de operação */}
-        <DialogHeader className={`relative overflow-hidden rounded-t-2xl p-4 text-white mb-4 ${
-          operacaoFechada.status_ir === "Prejuízo Acumulado" 
-            ? "bg-gradient-to-r from-amber-600 via-orange-600 to-red-600"
-            : operacaoFechada.status_ir === "Lucro Compensado"
-            ? "bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600"
-            : "bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600"
-        }`}>
+        <DialogHeader
+          className={`relative overflow-hidden rounded-t-2xl p-4 text-white mb-4 ${
+            operacaoFechada.status_ir === "Prejuízo Acumulado"
+              ? "bg-gradient-to-r from-amber-600 via-orange-600 to-red-600"
+              : operacaoFechada.status_ir === "Lucro Compensado"
+              ? "bg-gradient-to-r from-green-600 via-emerald-600 to-teal-600"
+              : "bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600"
+          }`}
+        >
           <div className="relative z-10">
             <div className="flex items-center gap-3 mb-1">
               <div className="h-10 w-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
@@ -528,38 +617,37 @@ export function DarfDetailsModal({
               </div>
               <div>
                 <DialogTitle className="text-xl font-bold">
-                  {operacaoFechada.status_ir === "Prejuízo Acumulado" 
+                  {operacaoFechada.status_ir === "Prejuízo Acumulado"
                     ? `Fluxo de Prejuízo - ${tipoLabel}`
                     : operacaoFechada.status_ir === "Lucro Compensado"
                     ? `Análise Fiscal - ${tipoLabel}`
-                    : `DARF - ${tipoLabel}`
-                  }
+                    : `DARF - ${tipoLabel}`}
                 </DialogTitle>
-                <DialogDescription className={
-                  operacaoFechada.status_ir === "Prejuízo Acumulado" 
-                    ? "text-amber-100 text-sm"
-                    : operacaoFechada.status_ir === "Lucro Compensado"
-                    ? "text-green-100 text-sm"
-                    : "text-blue-100 text-sm"
-                }>
-                  {operacaoFechada.status_ir === "Prejuízo Acumulado" 
+                <DialogDescription
+                  className={
+                    operacaoFechada.status_ir === "Prejuízo Acumulado"
+                      ? "text-amber-100 text-sm"
+                      : operacaoFechada.status_ir === "Lucro Compensado"
+                      ? "text-green-100 text-sm"
+                      : "text-blue-100 text-sm"
+                  }
+                >
+                  {operacaoFechada.status_ir === "Prejuízo Acumulado"
                     ? "Controle de prejuízo acumulado para compensação futura"
                     : operacaoFechada.status_ir === "Lucro Compensado"
                     ? "Análise de compensação e situação fiscal"
-                    : "Documento de Arrecadação Federal"
-                  }
+                    : "Documento de Arrecadação Federal"}
                 </DialogDescription>
               </div>
             </div>
             <div className="flex items-center gap-2 mt-2">
               <Calendar className="h-3 w-3 text-white/70" />
               <span className="text-white/90 text-xs">
-                {operacaoFechada.status_ir === "Prejuízo Acumulado" 
+                {operacaoFechada.status_ir === "Prejuízo Acumulado"
                   ? `Prejuízo em: ${formatMonthYear(darfCompetencia)}`
                   : operacaoFechada.status_ir === "Lucro Compensado"
                   ? `Compensação em: ${formatMonthYear(darfCompetencia)}`
-                  : `Competência: ${formatMonthYear(darfCompetencia)}`
-                }
+                  : `Competência: ${formatMonthYear(darfCompetencia)}`}
               </span>
             </div>
           </div>
@@ -578,82 +666,82 @@ export function DarfDetailsModal({
                 </h4>
                 <span
                   className={`px-2 py-1 rounded-full text-xs font-medium ml-auto ${
-                  tipoDarf === "swing"
-                    ? "bg-green-100 text-green-800"
-                    : "bg-blue-100 text-blue-800"
-                }`}
-                style={{ marginLeft: "auto" }}
-              >
-                {tipoLabel}
-              </span>
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between items-center py-1">
-                <span className="text-xs text-gray-600">Código:</span>
-                <span className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">
-                  {darfCodigo || "6015"}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                <span className="flex flex-row items-center gap-1">
-                  <Calendar className="h-3 w-3 text-blue-400" />
-                  <span className="text-xs text-gray-600">
-                    Mês de Referência:
-                  </span>
-                </span>
-                <span className="font-semibold text-gray-800 text-xs">
-                  {formatMonthYear(darfCompetencia)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                <span className="text-xs text-gray-600">Vencimento:</span>
-                <span className="font-semibold text-gray-800 text-xs">
-                  {formatDate(darfVencimento)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-1 border-b border-gray-100">
-                <span className="flex items-center gap-1">
-                  <span className="text-xs text-gray-600">Valor Total:</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-3 w-3 text-gray-400 hover:text-gray-600 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs max-w-xs">
-                          {tipoDarf === "daytrade"
-                            ? "Valor já descontado do IRRF retido na fonte (0,01% sobre as vendas)"
-                            : "Valor total do imposto devido sobre ganhos de capital swing trade"}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </span>
-                <span className="font-bold text-gray-900 text-sm">
-                  {formatCurrency(darfValorMensal)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center py-1">
-                <span className="text-xs text-gray-600">Status:</span>
-                <div
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${statusDisplay.bgColor} ${statusDisplay.borderColor} border`}
+                    tipoDarf === "swing"
+                      ? "bg-green-100 text-green-800"
+                      : "bg-blue-100 text-blue-800"
+                  }`}
+                  style={{ marginLeft: "auto" }}
                 >
-                  {React.cloneElement(statusDisplay.icon, {
-                    className:
-                      "h-4 w-4 " + (statusDisplay.icon.props.className || ""),
-                  })}
-                  <span
-                    className={`font-semibold text-xs ${statusDisplay.textColor}`}
-                  >
-                    {statusDisplay.text}
+                  {tipoLabel}
+                </span>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-xs text-gray-600">Código:</span>
+                  <span className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">
+                    {darfCodigo || "6015"}
                   </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-gray-100">
+                  <span className="flex flex-row items-center gap-1">
+                    <Calendar className="h-3 w-3 text-blue-400" />
+                    <span className="text-xs text-gray-600">
+                      Mês de Referência:
+                    </span>
+                  </span>
+                  <span className="font-semibold text-gray-800 text-xs">
+                    {formatMonthYear(darfCompetencia)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-gray-100">
+                  <span className="text-xs text-gray-600">Vencimento:</span>
+                  <span className="font-semibold text-gray-800 text-xs">
+                    {formatDate(darfVencimento)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-gray-100">
+                  <span className="flex items-center gap-1">
+                    <span className="text-xs text-gray-600">Valor Total:</span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3 w-3 text-gray-400 hover:text-gray-600 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs max-w-xs">
+                            {tipoDarf === "daytrade"
+                              ? "Valor já descontado do IRRF retido na fonte (0,01% sobre as vendas)"
+                              : "Valor total do imposto devido sobre ganhos de capital swing trade"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </span>
+                  <span className="font-bold text-gray-900 text-sm">
+                    {formatCurrency(darfValorMensal)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-1">
+                  <span className="text-xs text-gray-600">Status:</span>
+                  <div
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full ${statusDisplay.bgColor} ${statusDisplay.borderColor} border`}
+                  >
+                    {React.cloneElement(statusDisplay.icon, {
+                      className:
+                        "h-4 w-4 " + (statusDisplay.icon.props.className || ""),
+                    })}
+                    <span
+                      className={`font-semibold text-xs ${statusDisplay.textColor}`}
+                    >
+                      {statusDisplay.text}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          
-          {/* Accordeons explicativos */}
-          <Accordion type="single" collapsible>
+
+            {/* Accordeons explicativos */}
+            <Accordion type="single" collapsible>
               <AccordionItem
                 value="calculation"
                 className="border rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border-green-200 mb-4"
@@ -694,8 +782,9 @@ export function DarfDetailsModal({
                             {formatCurrency(ganhoBruto)}
                           </span>
                           <p className="text-xs text-green-600 mt-1">
-                            Soma de todas as operações de lucro de {tipoLabel.toLowerCase()}{" "}
-                            em {formatMonthYear(darfCompetencia)}
+                            Soma de todas as operações de lucro de{" "}
+                            {tipoLabel.toLowerCase()} em{" "}
+                            {formatMonthYear(darfCompetencia)}
                           </p>
                         </div>
                       </div>
@@ -864,7 +953,10 @@ export function DarfDetailsModal({
                 </AccordionTrigger>
                 <AccordionContent className="px-4 pb-4">
                   {(() => {
-                    if (!resultadoMensal?.mes || operacoesFechadas.length === 0) {
+                    if (
+                      !resultadoMensal?.mes ||
+                      operacoesFechadas.length === 0
+                    ) {
                       return (
                         <div className="text-center text-gray-600 py-4">
                           <p>Dados de operações não disponíveis</p>
@@ -873,23 +965,40 @@ export function DarfDetailsModal({
                     }
 
                     const mesAtual = resultadoMensal.mes.substring(0, 7); // YYYY-MM
-                    
+
                     // Filtrar operações do mês atual e do tipo correto
-                    const operacoesDoMes = operacoesFechadas.filter(op => {
+                    const operacoesDoMes = operacoesFechadas.filter((op) => {
                       const dataMes = op.data_fechamento.substring(0, 7);
-                      const isSameTipo = tipoDarf === "daytrade" ? op.day_trade : !op.day_trade;
+                      const isSameTipo =
+                        tipoDarf === "daytrade" ? op.day_trade : !op.day_trade;
                       return dataMes === mesAtual && isSameTipo;
                     });
 
-                    const operacoesLucro = operacoesDoMes.filter(op => op.resultado > 0);
-                    const operacoesPrejuizo = operacoesDoMes.filter(op => op.resultado < 0);
-                    
-                    const lucroTotalMes = operacoesLucro.reduce((total, op) => total + op.resultado, 0);
-                    const prejuizoTotalMes = operacoesPrejuizo.reduce((total, op) => total + Math.abs(op.resultado), 0);
+                    const operacoesLucro = operacoesDoMes.filter(
+                      (op) => op.resultado > 0
+                    );
+                    const operacoesPrejuizo = operacoesDoMes.filter(
+                      (op) => op.resultado < 0
+                    );
+
+                    const lucroTotalMes = operacoesLucro.reduce(
+                      (total, op) => total + op.resultado,
+                      0
+                    );
+                    const prejuizoTotalMes = operacoesPrejuizo.reduce(
+                      (total, op) => total + Math.abs(op.resultado),
+                      0
+                    );
 
                     // CORREÇÃO: Usar o prejuízo anterior das operações, não do ResultadoMensal
-                    const operacaoComPrejuizoAnterior = operacoesDoMes.find(op => op.prejuizo_anterior_acumulado && op.prejuizo_anterior_acumulado > 0);
-                    const prejudoAnteriorReal = operacaoComPrejuizoAnterior?.prejuizo_anterior_acumulado || 0;
+                    const operacaoComPrejuizoAnterior = operacoesDoMes.find(
+                      (op) =>
+                        op.prejuizo_anterior_acumulado &&
+                        op.prejuizo_anterior_acumulado > 0
+                    );
+                    const prejudoAnteriorReal =
+                      operacaoComPrejuizoAnterior?.prejuizo_anterior_acumulado ||
+                      0;
 
                     console.log("📈 [BREAKDOWN DEBUG] Operações do mês:", {
                       mesAtual,
@@ -901,8 +1010,11 @@ export function DarfDetailsModal({
                       prejuizoTotalMes,
                       prejudoAtual: prejudoAtual || 0,
                       prejudoAnteriorReal,
-                      prejudoTotalDisponivel: prejuizoTotalMes + prejudoAnteriorReal,
-                      operacaoComPrejuizoAnterior: operacaoComPrejuizoAnterior ? `${operacaoComPrejuizoAnterior.ticker}(${operacaoComPrejuizoAnterior.prejuizo_anterior_acumulado})` : 'nenhuma'
+                      prejudoTotalDisponivel:
+                        prejuizoTotalMes + prejudoAnteriorReal,
+                      operacaoComPrejuizoAnterior: operacaoComPrejuizoAnterior
+                        ? `${operacaoComPrejuizoAnterior.ticker}(${operacaoComPrejuizoAnterior.prejuizo_anterior_acumulado})`
+                        : "nenhuma",
                     });
 
                     return (
@@ -911,20 +1023,32 @@ export function DarfDetailsModal({
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
                             <div className="text-center">
-                              <div className="text-lg font-bold text-blue-700">{operacoesDoMes.length}</div>
-                              <div className="text-xs text-blue-600">Total de Operações</div>
+                              <div className="text-lg font-bold text-blue-700">
+                                {operacoesDoMes.length}
+                              </div>
+                              <div className="text-xs text-blue-600">
+                                Total de Operações
+                              </div>
                             </div>
                           </div>
                           <div className="bg-green-50 rounded-lg p-3 border border-green-200">
                             <div className="text-center">
-                              <div className="text-lg font-bold text-green-700">{operacoesLucro.length}</div>
-                              <div className="text-xs text-green-600">Operações de Lucro</div>
+                              <div className="text-lg font-bold text-green-700">
+                                {operacoesLucro.length}
+                              </div>
+                              <div className="text-xs text-green-600">
+                                Operações de Lucro
+                              </div>
                             </div>
                           </div>
                           <div className="bg-red-50 rounded-lg p-3 border border-red-200">
                             <div className="text-center">
-                              <div className="text-lg font-bold text-red-700">{operacoesPrejuizo.length}</div>
-                              <div className="text-xs text-red-600">Operações de Prejuízo</div>
+                              <div className="text-lg font-bold text-red-700">
+                                {operacoesPrejuizo.length}
+                              </div>
+                              <div className="text-xs text-red-600">
+                                Operações de Prejuízo
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -944,14 +1068,23 @@ export function DarfDetailsModal({
                                     <div className="text-lg font-bold text-green-700">
                                       +{formatCurrency(lucroTotalMes)}
                                     </div>
-                                    <div className="text-xs text-green-600">Total dos Lucros</div>
+                                    <div className="text-xs text-green-600">
+                                      Total dos Lucros
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="max-h-32 overflow-y-auto space-y-1">
                                   {operacoesLucro.map((op, idx) => (
-                                    <div key={idx} className="flex justify-between items-center text-xs bg-white/40 rounded px-2 py-1">
-                                      <span className="font-medium">{op.ticker}</span>
-                                      <span className="text-green-700">+{formatCurrency(op.resultado)}</span>
+                                    <div
+                                      key={idx}
+                                      className="flex justify-between items-center text-xs bg-white/40 rounded px-2 py-1"
+                                    >
+                                      <span className="font-medium">
+                                        {op.ticker}
+                                      </span>
+                                      <span className="text-green-700">
+                                        +{formatCurrency(op.resultado)}
+                                      </span>
                                     </div>
                                   ))}
                                 </div>
@@ -976,14 +1109,23 @@ export function DarfDetailsModal({
                                     <div className="text-lg font-bold text-red-700">
                                       -{formatCurrency(prejuizoTotalMes)}
                                     </div>
-                                    <div className="text-xs text-red-600">Total dos Prejuízos</div>
+                                    <div className="text-xs text-red-600">
+                                      Total dos Prejuízos
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="max-h-32 overflow-y-auto space-y-1">
                                   {operacoesPrejuizo.map((op, idx) => (
-                                    <div key={idx} className="flex justify-between items-center text-xs bg-white/40 rounded px-2 py-1">
-                                      <span className="font-medium">{op.ticker}</span>
-                                      <span className="text-red-700">{formatCurrency(op.resultado)}</span>
+                                    <div
+                                      key={idx}
+                                      className="flex justify-between items-center text-xs bg-white/40 rounded px-2 py-1"
+                                    >
+                                      <span className="font-medium">
+                                        {op.ticker}
+                                      </span>
+                                      <span className="text-red-700">
+                                        {formatCurrency(op.resultado)}
+                                      </span>
                                     </div>
                                   ))}
                                 </div>
@@ -998,66 +1140,117 @@ export function DarfDetailsModal({
 
                         {/* NOVA SEÇÃO: Fluxo Sequencial de Prejuízo Acumulado */}
                         {(() => {
-                          const fluxoSequencial = (window as any).darfDebugData?.fluxoPrejuizoSequencial || [];
-                          const operacoesPorDia = (window as any).darfDebugData?.operacoesPorDia || {};
-                          const diasComMultiplasOperacoes = Object.values(operacoesPorDia).filter((ops: any) => ops.length > 1);
-                          
-                          if (fluxoSequencial.length > 0 && diasComMultiplasOperacoes.length > 0) {
+                          const fluxoSequencial =
+                            (window as any).darfDebugData
+                              ?.fluxoPrejuizoSequencial || [];
+                          const operacoesPorDia =
+                            (window as any).darfDebugData?.operacoesPorDia ||
+                            {};
+                          const diasComMultiplasOperacoes = Object.values(
+                            operacoesPorDia
+                          ).filter((ops: any) => ops.length > 1);
+
+                          if (
+                            fluxoSequencial.length > 0 &&
+                            diasComMultiplasOperacoes.length > 0
+                          ) {
                             return (
                               <div className="bg-gradient-to-br from-purple-50 to-violet-50 rounded-lg p-4 border border-purple-200">
                                 <h4 className="font-semibold text-purple-800 mb-3 flex items-center gap-2">
                                   <TrendingDown className="h-4 w-4" />
                                   Fluxo Sequencial de Prejuízo Acumulado
                                   <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-full text-xs font-normal">
-                                    {diasComMultiplasOperacoes.length} dia(s) com múltiplas operações
+                                    {diasComMultiplasOperacoes.length} dia(s)
+                                    com múltiplas operações
                                   </span>
                                 </h4>
                                 <div className="space-y-3 max-h-64 overflow-y-auto">
-                                  {Object.keys(operacoesPorDia).sort().map(dia => {
-                                    const operacoesDoDia = operacoesPorDia[dia];
-                                    if (operacoesDoDia.length <= 1) return null;
-                                    
-                                    const fluxoDoDia = fluxoSequencial.filter((f: any) => f.dia === dia);
-                                    
-                                    return (
-                                      <div key={dia} className="bg-white/60 rounded-lg p-3 border border-purple-100">
-                                        <div className="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-2">
-                                          <Calendar className="h-3 w-3" />
-                                          {new Date(dia).toLocaleDateString('pt-BR')} - {operacoesDoDia.length} operações
+                                  {Object.keys(operacoesPorDia)
+                                    .sort()
+                                    .map((dia) => {
+                                      const operacoesDoDia =
+                                        operacoesPorDia[dia];
+                                      if (operacoesDoDia.length <= 1)
+                                        return null;
+
+                                      const fluxoDoDia = fluxoSequencial.filter(
+                                        (f: any) => f.dia === dia
+                                      );
+
+                                      return (
+                                        <div
+                                          key={dia}
+                                          className="bg-white/60 rounded-lg p-3 border border-purple-100"
+                                        >
+                                          <div className="text-xs font-semibold text-purple-700 mb-2 flex items-center gap-2">
+                                            <Calendar className="h-3 w-3" />
+                                            {new Date(dia).toLocaleDateString(
+                                              "pt-BR"
+                                            )}{" "}
+                                            - {operacoesDoDia.length} operações
+                                          </div>
+                                          <div className="space-y-1">
+                                            {fluxoDoDia.map(
+                                              (fluxo: any, idx: number) => (
+                                                <div
+                                                  key={idx}
+                                                  className="flex items-center justify-between text-xs bg-white/40 rounded px-2 py-1.5"
+                                                >
+                                                  <div className="flex items-center gap-2">
+                                                    <span className="bg-purple-200 text-purple-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+                                                      {fluxo.indexNoDia}
+                                                    </span>
+                                                    <span className="font-medium">
+                                                      {fluxo.operacao.ticker}
+                                                    </span>
+                                                    <span
+                                                      className={`${
+                                                        fluxo.resultado >= 0
+                                                          ? "text-green-600"
+                                                          : "text-red-600"
+                                                      }`}
+                                                    >
+                                                      {fluxo.resultado >= 0
+                                                        ? "+"
+                                                        : ""}
+                                                      {formatCurrency(
+                                                        fluxo.resultado
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                  <div className="flex items-center gap-2 text-xs">
+                                                    <span className="text-gray-500">
+                                                      Saldo:
+                                                    </span>
+                                                    <span className="text-purple-700 font-medium">
+                                                      {formatCurrency(
+                                                        fluxo.saldoAnterior
+                                                      )}
+                                                    </span>
+                                                    <span className="text-gray-400">
+                                                      →
+                                                    </span>
+                                                    <span className="text-purple-800 font-bold">
+                                                      {formatCurrency(
+                                                        fluxo.saldoAtual
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              )
+                                            )}
+                                          </div>
                                         </div>
-                                        <div className="space-y-1">
-                                          {fluxoDoDia.map((fluxo: any, idx: number) => (
-                                            <div key={idx} className="flex items-center justify-between text-xs bg-white/40 rounded px-2 py-1.5">
-                                              <div className="flex items-center gap-2">
-                                                <span className="bg-purple-200 text-purple-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
-                                                  {fluxo.indexNoDia}
-                                                </span>
-                                                <span className="font-medium">{fluxo.operacao.ticker}</span>
-                                                <span className={`${fluxo.resultado >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                                  {fluxo.resultado >= 0 ? '+' : ''}{formatCurrency(fluxo.resultado)}
-                                                </span>
-                                              </div>
-                                              <div className="flex items-center gap-2 text-xs">
-                                                <span className="text-gray-500">Saldo:</span>
-                                                <span className="text-purple-700 font-medium">
-                                                  {formatCurrency(fluxo.saldoAnterior)}
-                                                </span>
-                                                <span className="text-gray-400">→</span>
-                                                <span className="text-purple-800 font-bold">
-                                                  {formatCurrency(fluxo.saldoAtual)}
-                                                </span>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
+                                      );
+                                    })}
                                 </div>
                                 <div className="mt-3 p-2 bg-white/60 rounded border border-purple-100">
                                   <div className="text-center text-xs text-purple-700">
-                                    💡 <strong>Controle Sequencial:</strong> O saldo de prejuízo acumulado é atualizado após cada operação, 
-                                    garantindo cálculo preciso mesmo com múltiplas operações negativas no mesmo dia.
+                                    💡 <strong>Controle Sequencial:</strong> O
+                                    saldo de prejuízo acumulado é atualizado
+                                    após cada operação, garantindo cálculo
+                                    preciso mesmo com múltiplas operações
+                                    negativas no mesmo dia.
                                   </div>
                                 </div>
                               </div>
@@ -1074,20 +1267,35 @@ export function DarfDetailsModal({
                           <div className="space-y-2 text-sm">
                             <div className="flex justify-between items-center">
                               <span>Lucro Total do Mês:</span>
-                              <span className="font-bold text-green-700">+{formatCurrency(lucroTotalMes)}</span>
+                              <span className="font-bold text-green-700">
+                                +{formatCurrency(lucroTotalMes)}
+                              </span>
                             </div>
                             <div className="flex justify-between items-center">
                               <span>Prejuízo do Mês:</span>
-                              <span className="font-bold text-red-700">-{formatCurrency(prejuizoTotalMes)}</span>
+                              <span className="font-bold text-red-700">
+                                -{formatCurrency(prejuizoTotalMes)}
+                              </span>
                             </div>
                             <div className="flex justify-between items-center">
                               <span>Prejuízo Acumulado Anterior:</span>
-                              <span className="font-bold text-amber-700">-{formatCurrency(prejudoAnteriorReal)}</span>
+                              <span className="font-bold text-amber-700">
+                                -{formatCurrency(prejudoAnteriorReal)}
+                              </span>
                             </div>
                             <div className="border-t pt-2 mt-2">
                               <div className="flex justify-between items-center font-bold">
                                 <span>Lucro Tributável:</span>
-                                <span className="text-blue-700">{formatCurrency(Math.max(0, lucroTotalMes - prejuizoTotalMes - prejudoAnteriorReal))}</span>
+                                <span className="text-blue-700">
+                                  {formatCurrency(
+                                    Math.max(
+                                      0,
+                                      lucroTotalMes -
+                                        prejuizoTotalMes -
+                                        prejudoAnteriorReal
+                                    )
+                                  )}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -1196,7 +1404,7 @@ export function DarfDetailsModal({
                         Para pagar DARF sem código de barras:
                       </p>
                     </div>
-                    
+
                     {/* Passos do pagamento */}
                     <div className="space-y-3">
                       <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-green-200">
@@ -1204,70 +1412,84 @@ export function DarfDetailsModal({
                           1
                         </div>
                         <div>
-                          <span className="font-medium text-green-800">Acesse sua conta bancária</span>
+                          <span className="font-medium text-green-800">
+                            Acesse sua conta bancária
+                          </span>
                           <p className="text-xs text-green-600 mt-1">
                             Entre no Internet Banking do seu banco
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-green-200">
                         <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
                           2
                         </div>
                         <div>
-                          <span className="font-medium text-green-800">Navegue até Pagamentos</span>
+                          <span className="font-medium text-green-800">
+                            Navegue até Pagamentos
+                          </span>
                           <p className="text-xs text-green-600 mt-1">
                             Localize "Pagamentos" → "Impostos e Tributos"
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-green-200">
                         <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
                           3
                         </div>
                         <div>
-                          <span className="font-medium text-green-800">Selecione DARF</span>
+                          <span className="font-medium text-green-800">
+                            Selecione DARF
+                          </span>
                           <p className="text-xs text-green-600 mt-1">
                             Escolha a opção "DARF" na lista de tributos
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-start gap-3 p-3 bg-white rounded-lg border border-green-200">
                         <div className="bg-green-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
                           4
                         </div>
                         <div>
-                          <span className="font-medium text-green-800">Preencha os dados</span>
+                          <span className="font-medium text-green-800">
+                            Preencha os dados
+                          </span>
                           <p className="text-xs text-green-600 mt-1">
-                            Insira os dados do seu DARF: código da receita, competência, vencimento e valor
+                            Insira os dados do seu DARF: código da receita,
+                            competência, vencimento e valor
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg border-2 border-green-300">
                         <div className="bg-green-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
                           ✓
                         </div>
                         <div>
-                          <span className="font-medium text-green-800">Revise e finalize</span>
+                          <span className="font-medium text-green-800">
+                            Revise e finalize
+                          </span>
                           <p className="text-xs text-green-600 mt-1">
                             Confira todas as informações e confirme o pagamento
                           </p>
                         </div>
                       </div>
                     </div>
-                    
+
                     {/* Dica adicional */}
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
                       <div className="flex items-center gap-2 mb-2">
                         <Lightbulb className="h-4 w-4 text-blue-600" />
-                        <span className="font-semibold text-blue-800 text-sm">💡 Dica Importante:</span>
+                        <span className="font-semibold text-blue-800 text-sm">
+                          💡 Dica Importante:
+                        </span>
                       </div>
                       <p className="text-xs text-blue-700">
-                        Mantenha o comprovante de pagamento guardado por 5 anos. Ele é sua garantia de que o imposto foi quitado!
+                        Mantenha o comprovante de pagamento guardado por 5 anos.
+                        Ele é sua garantia de que o imposto foi quitado!
                       </p>
                     </div>
                   </div>
@@ -1290,49 +1512,49 @@ export function DarfDetailsModal({
             </Button>
           </div>
           <div className="flex gap-2">
-            {darfStatus === "Pago" &&
-              darfValorMensal &&
-              darfValorMensal > 0 && (
-                <Button
-                  variant="outline"
-                  onClick={handleMarkAsPendente}
-                  disabled={isMarkingPendente}
-                  className="rounded-lg border-2 border-orange-200 hover:border-orange-300 hover:bg-orange-50 transition-all duration-200 text-sm"
-                >
-                  {isMarkingPendente ? (
-                    <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-orange-500 border-t-transparent"></div>
-                      Atualizando...
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-3 w-3" />
-                      Marcar como Pendente
-                    </div>
-                  )}
-                </Button>
-              )}
-            {darfStatus !== "Pago" &&
-              darfValorMensal &&
-              darfValorMensal >= 10.0 && (
-                <Button
-                  onClick={handleMarkAsPaid}
-                  disabled={isMarkingPaid}
-                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 text-sm"
-                >
-                  {isMarkingPaid ? (
-                    <div className="flex items-center gap-2">
-                      <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
-                      Marcando...
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-3 w-3" />
-                      Marcar como Pago
-                    </div>
-                  )}
-                </Button>
-              )}
+            {/* ✅ Botão "Marcar como Pendente" - aparece quando status é "Pago" */}
+            {shouldShowMarkAsPendenteButton && (
+              <Button
+                variant="outline"
+                onClick={handleMarkAsPendente}
+                disabled={isMarkingPendente}
+                className="rounded-lg border-2 border-orange-200 hover:border-orange-300 hover:bg-orange-50 transition-all duration-200 text-sm"
+              >
+                {isMarkingPendente ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-orange-500 border-t-transparent"></div>
+                    Atualizando...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-3 w-3" />
+                    Marcar como Pendente
+                  </div>
+                )}
+              </Button>
+            )}
+
+            {/* ✅ Botão "Marcar como Pago" - aparece quando status NÃO é "Pago" */}
+            {shouldShowMarkAsPaidButton && (
+              <Button
+                onClick={handleMarkAsPaid}
+                disabled={isMarkingPaid}
+                className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105 text-sm"
+              >
+                {isMarkingPaid ? (
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+                    Marcando...
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-3 w-3" />
+                    Marcar como Pago
+                  </div>
+                )}
+              </Button>
+            )}
+
             <DialogClose asChild>
               <Button
                 variant="outline"

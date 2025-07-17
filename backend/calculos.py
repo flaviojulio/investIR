@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Dict, Any, Optional
 
-from .models import Operacao
+from models import Operacao
 
 @dataclass
 class PosicaoAcao:

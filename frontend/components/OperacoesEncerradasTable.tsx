@@ -43,21 +43,34 @@ import {
   Crown,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+  SelectValue,
+} from "@/components/ui/select";
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { DarfDetailsModal } from "@/components/DarfDetailsModal";
 
 // Formatting helpers
 const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
+    value
+  );
 
-const formatNumber = (value: number) => new Intl.NumberFormat("pt-BR").format(value);
+const formatNumber = (value: number) =>
+  new Intl.NumberFormat("pt-BR").format(value);
 
 const formatDate = (dateString: string) => {
   const dateOnly = dateString.split("T")[0];
   const [year, month, day] = dateOnly.split("-");
   const date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 };
 
 const formatDateShort = (dateString: string) => {
@@ -68,7 +81,20 @@ const formatDateShort = (dateString: string) => {
 };
 
 const getMonthName = (dateString: string): string => {
-  const months = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
+  const months = [
+    "JAN",
+    "FEV",
+    "MAR",
+    "ABR",
+    "MAI",
+    "JUN",
+    "JUL",
+    "AGO",
+    "SET",
+    "OUT",
+    "NOV",
+    "DEZ",
+  ];
   const date = new Date(dateString);
   return months[date.getMonth()];
 };
@@ -76,26 +102,80 @@ const getMonthName = (dateString: string): string => {
 // DARF status helper
 const getDarfStatusForOperation = (
   op: OperacaoFechada,
-  darfStatusMap?: Map<string, string>
+  darfStatusMap?: Map<string, string>,
+  resultadosMensais?: ResultadoMensal[] // ✅ ADICIONAR este parâmetro
 ): string | null => {
-  if (op.status_ir !== "Tributável Day Trade" && op.status_ir !== "Tributável Swing") {
+  // Só mostra DARF para operações tributáveis
+  if (
+    op.status_ir !== "Tributável Day Trade" &&
+    op.status_ir !== "Tributável Swing"
+  ) {
     return null;
   }
 
   const operationKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}`;
+
+  // ✅ PRIORIDADE 1: Status manual do usuário
   if (darfStatusMap && darfStatusMap.has(operationKey)) {
-    return darfStatusMap.get(operationKey) || null;
+    const status = darfStatusMap.get(operationKey);
+    console.log("🎯 [DARF STATUS] Status do mapa encontrado:", status);
+    return status;
   }
 
-  if (op.ticker === "VALE3" && op.day_trade) return "pago";
-  if (op.ticker === "PETR4" && !op.day_trade) return "pendente";
-  return op.resultado > 1000 ? "pago" : "pendente";
+  // ✅ PRIORIDADE 2: Status do backend
+  if (resultadosMensais && Array.isArray(resultadosMensais)) {
+    const mesOperacao = op.data_fechamento.substring(0, 7);
+    const resultadoMensal = resultadosMensais.find(
+      (rm) => rm.mes === mesOperacao
+    );
+
+    if (resultadoMensal) {
+      const statusBackend = op.day_trade
+        ? resultadoMensal.status_darf_day_trade
+        : resultadoMensal.status_darf_swing_trade;
+
+      console.log("🎯 [DARF STATUS] Status do backend:", {
+        mesOperacao,
+        isDayTrade: op.day_trade,
+        statusBackend,
+      });
+
+      if (statusBackend) {
+        return statusBackend.toLowerCase(); // "Pago" → "pago"
+      }
+    }
+  }
+
+  // ✅ PRIORIDADE 3: Status padrão
+  return "pendente";
 };
 
 interface OperacoesEncerradasTableProps {
   operacoesFechadas?: OperacaoFechada[];
   resultadosMensais?: ResultadoMensal[];
   onUpdateDashboard?: () => void;
+}
+
+interface OperationRowProps {
+  op: OperacaoFechada;
+  index: number;
+  isExpanded: boolean;
+  toggleRow: (rowKey: string) => void;
+  isProfit: boolean;
+  getStatusBadge: (status: string, isProfit: boolean) => JSX.Element;
+  getDarfBadge: (
+    darfStatus: string | null,
+    op: OperacaoFechada
+  ) => JSX.Element | null;
+  getDarfStatusForOperation: (
+    op: OperacaoFechada,
+    darfStatusMap?: Map<string, string>,
+    resultadosMensais?: ResultadoMensal[] // ✅ Terceiro parâmetro
+  ) => string | null;
+  darfStatusMap: Map<string, string>;
+  handleOpenDarfModal: (op: OperacaoFechada) => void;
+  operacoesFechadas: OperacaoFechada[];
+  resultadosMensais: ResultadoMensal[]; // ✅ Nova prop
 }
 
 // Subcomponent: Filters
@@ -253,21 +333,12 @@ const OperationRow = ({
   darfStatusMap,
   handleOpenDarfModal,
   operacoesFechadas,
-}: {
-  op: OperacaoFechada;
-  index: number;
-  isExpanded: boolean;
-  toggleRow: (rowKey: string) => void;
-  isProfit: boolean;
-  getStatusBadge: (status: string, isProfit: boolean) => JSX.Element;
-  getDarfBadge: (darfStatus: string | null, op: OperacaoFechada) => JSX.Element | null;
-  getDarfStatusForOperation: (op: OperacaoFechada, darfStatusMap?: Map<string, string>) => string | null;
-  darfStatusMap: Map<string, string>;
-  handleOpenDarfModal: (op: OperacaoFechada) => void;
-  operacoesFechadas: OperacaoFechada[];
-}) => {
+  resultadosMensais, // ✅ Usar apenas a prop da interface oficial
+}: OperationRowProps) => {
+  // ✅ Usar a interface oficial
   const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
-
+  // DEBUG: Verificar se preço médio está vindo do backend
+  console.log("[DEBUG] Linha da tabela - ticker:", op.ticker, "data_fechamento:", op.data_fechamento, "preço_medio (valor_compra):", op.valor_compra);
   // DEBUG for specific operations
   if (op.data_fechamento?.includes("2023-03")) {
     console.log("📅 OPERAÇÃO MARÇO 2023:", {
@@ -286,7 +357,10 @@ const OperationRow = ({
       console.log("- Dados brutos do backend:", JSON.stringify(op, null, 2));
       console.log("- Cálculo isProfit:", `${op.resultado} >= 0 = ${isProfit}`);
       console.log("- Vai exibir como:", isProfit ? "LUCRO" : "PREJUÍZO");
-      console.log("- Valor que será mostrado: R$", Math.abs(op.resultado).toFixed(2));
+      console.log(
+        "- Valor que será mostrado: R$",
+        Math.abs(op.resultado).toFixed(2)
+      );
     }
   }
 
@@ -364,7 +438,7 @@ const OperationRow = ({
             {(op.status_ir === "Tributável Day Trade" ||
               op.status_ir === "Tributável Swing") &&
               getDarfBadge(
-                getDarfStatusForOperation(op, darfStatusMap),
+                getDarfStatusForOperation(op, darfStatusMap, resultadosMensais), // ✅ Ordem correta
                 op
               )}
           </div>
@@ -540,21 +614,36 @@ const OperationRow = ({
                           {(op.status_ir === "Tributável Day Trade" ||
                             op.status_ir === "Tributável Swing") &&
                             getDarfBadge(
-                              getDarfStatusForOperation(op, darfStatusMap),
+                              getDarfStatusForOperation(
+                                op,
+                                darfStatusMap,
+                                resultadosMensais
+                              ), // ✅ Ordem correta
                               op
                             )}
                         </div>
-
                         {/* Descrições */}
                         <div className="text-xs text-indigo-700 leading-relaxed space-y-1">
                           <div>
                             <span className="font-semibold">Tributação:</span>{" "}
-                            {op.status_ir === "Isento" && "Operação isenta de imposto de renda"}
-                            {op.status_ir === "Tributável Day Trade" && "Sujeita a IR de 20% sobre o lucro"}
-                            {op.status_ir === "Tributável Swing" && "Sujeita a IR de 15% sobre o lucro"}
-                            {op.status_ir === "Prejuízo Acumulado" && "Prejuízo para compensação em outras operações"}
-                            {op.status_ir === "Lucro Compensado" && "Lucro compensado por prejuízos em outras operações de mesmo tipo"}
-                            {!op.status_ir && "Status não definido"}
+                            {op.status_ir === "Isento" &&
+                              "Operação isenta de imposto de renda"}
+                            {op.status_ir === "Tributável Day Trade" &&
+                              "Sujeita a IR de 20% sobre o lucro"}
+                            {op.status_ir === "Tributável Swing" &&
+                              "Sujeita a IR de 15% sobre o lucro"}
+                            {op.status_ir === "Prejuízo Acumulado" &&
+                              "Prejuízo para compensação em outras operações"}
+                            {op.status_ir === "Lucro Compensado" &&
+                              "Lucro compensado por prejuízos em outras operações de mesmo tipo"}
+                            {!op.status_ir &&
+                              (() => {
+                                console.log(
+                                  "[DEBUG] Operação sem status_ir definido:",
+                                  op
+                                );
+                                return "Status não definido";
+                              })()}
                           </div>
                         </div>
                       </div>
@@ -570,61 +659,123 @@ const OperationRow = ({
                           </div>
                           <div className="text-xs text-orange-700 leading-relaxed space-y-3">
                             {(() => {
-                              const mesOperacao = op.data_fechamento.substring(0, 7);
-                              const diaOperacao = op.data_fechamento.substring(0, 10);
-                              const tipoOperacao = op.day_trade ? "day trade" : "swing trade";
-
-                              const operacoesMesmoTipo = operacoesFechadas.filter((opMes) =>
-                                opMes.data_fechamento.substring(0, 7) === mesOperacao &&
-                                (opMes.day_trade ? "day trade" : "swing trade") === tipoOperacao &&
-                                opMes.data_fechamento <= op.data_fechamento &&
-                                opMes !== op
+                              const mesOperacao = op.data_fechamento.substring(
+                                0,
+                                7
                               );
+                              const diaOperacao = op.data_fechamento.substring(
+                                0,
+                                10
+                              );
+                              const tipoOperacao = op.day_trade
+                                ? "day trade"
+                                : "swing trade";
 
-                              const operacoesMesmoDia = operacoesFechadas.filter((opDia) =>
-                                opDia.data_fechamento.substring(0, 10) === diaOperacao &&
-                                (opDia.day_trade ? "day trade" : "swing trade") === tipoOperacao
-                              ).sort((a, b) => a.data_fechamento.localeCompare(b.data_fechamento));
+                              const operacoesMesmoTipo =
+                                operacoesFechadas.filter(
+                                  (opMes) =>
+                                    opMes.data_fechamento.substring(0, 7) ===
+                                      mesOperacao &&
+                                    (opMes.day_trade
+                                      ? "day trade"
+                                      : "swing trade") === tipoOperacao &&
+                                    opMes.data_fechamento <=
+                                      op.data_fechamento &&
+                                    opMes !== op
+                                );
+
+                              const operacoesMesmoDia = operacoesFechadas
+                                .filter(
+                                  (opDia) =>
+                                    opDia.data_fechamento.substring(0, 10) ===
+                                      diaOperacao &&
+                                    (opDia.day_trade
+                                      ? "day trade"
+                                      : "swing trade") === tipoOperacao
+                                )
+                                .sort((a, b) =>
+                                  a.data_fechamento.localeCompare(
+                                    b.data_fechamento
+                                  )
+                                );
 
                               const lucrosJaCompensados = operacoesMesmoTipo
-                                .filter((opMes) => opMes.resultado > 0 && opMes.status_ir === "Lucro Compensado")
-                                .reduce((sum, opMes) => sum + opMes.resultado, 0);
+                                .filter(
+                                  (opMes) =>
+                                    opMes.resultado > 0 &&
+                                    opMes.status_ir === "Lucro Compensado"
+                                )
+                                .reduce(
+                                  (sum, opMes) => sum + opMes.resultado,
+                                  0
+                                );
 
-                              const prejuizoAnteriorOriginal = op.prejuizo_anterior_acumulado || 0;
-                              const prejuizoAnteriorDisponivel = Math.max(0, prejuizoAnteriorOriginal - lucrosJaCompensados);
-                              const totalPrejuizosMes = operacoesFechadas.filter((opMes) =>
-                                opMes.data_fechamento.substring(0, 7) === mesOperacao &&
-                                (opMes.day_trade ? "day trade" : "swing trade") === tipoOperacao &&
-                                opMes.resultado < 0
-                              ).reduce((sum, opMes) => sum + Math.abs(opMes.resultado), 0);
-                              const prejuizoTotalAcumulado = prejuizoAnteriorDisponivel + totalPrejuizosMes;
-                              const isMultiplasOperacoesDia = operacoesMesmoDia.length > 1;
+                              const prejuizoAnteriorOriginal =
+                                op.prejuizo_anterior_acumulado || 0;
+                              const prejuizoAnteriorDisponivel = Math.max(
+                                0,
+                                prejuizoAnteriorOriginal - lucrosJaCompensados
+                              );
+                              const totalPrejuizosMes = operacoesFechadas
+                                .filter(
+                                  (opMes) =>
+                                    opMes.data_fechamento.substring(0, 7) ===
+                                      mesOperacao &&
+                                    (opMes.day_trade
+                                      ? "day trade"
+                                      : "swing trade") === tipoOperacao &&
+                                    opMes.resultado < 0
+                                )
+                                .reduce(
+                                  (sum, opMes) =>
+                                    sum + Math.abs(opMes.resultado),
+                                  0
+                                );
+                              const prejuizoTotalAcumulado =
+                                prejuizoAnteriorDisponivel + totalPrejuizosMes;
+                              const isMultiplasOperacoesDia =
+                                operacoesMesmoDia.length > 1;
 
                               let fluxoDia = [];
                               if (isMultiplasOperacoesDia) {
-                                const indexOperacaoAtual = operacoesMesmoDia.findIndex((opDia) =>
-                                  opDia.ticker === op.ticker &&
-                                  opDia.data_fechamento === op.data_fechamento &&
-                                  opDia.resultado === op.resultado
-                                );
+                                const indexOperacaoAtual =
+                                  operacoesMesmoDia.findIndex(
+                                    (opDia) =>
+                                      opDia.ticker === op.ticker &&
+                                      opDia.data_fechamento ===
+                                        op.data_fechamento &&
+                                      opDia.resultado === op.resultado
+                                  );
 
-                                let saldoSequencial = prejuizoAnteriorDisponivel;
-                                fluxoDia = operacoesMesmoDia.map((opSeq, idx) => {
-                                  const saldoAnterior = saldoSequencial;
-                                  if (opSeq.resultado < 0) {
-                                    saldoSequencial += Math.abs(opSeq.resultado);
-                                  } else if (opSeq.resultado > 0 && saldoSequencial > 0) {
-                                    const compensacao = Math.min(saldoSequencial, opSeq.resultado);
-                                    saldoSequencial -= compensacao;
+                                let saldoSequencial =
+                                  prejuizoAnteriorDisponivel;
+                                fluxoDia = operacoesMesmoDia.map(
+                                  (opSeq, idx) => {
+                                    const saldoAnterior = saldoSequencial;
+                                    if (opSeq.resultado < 0) {
+                                      saldoSequencial += Math.abs(
+                                        opSeq.resultado
+                                      );
+                                    } else if (
+                                      opSeq.resultado > 0 &&
+                                      saldoSequencial > 0
+                                    ) {
+                                      const compensacao = Math.min(
+                                        saldoSequencial,
+                                        opSeq.resultado
+                                      );
+                                      saldoSequencial -= compensacao;
+                                    }
+                                    return {
+                                      operacao: opSeq,
+                                      index: idx,
+                                      saldoAnterior,
+                                      saldoAtual: saldoSequencial,
+                                      isOperacaoAtual:
+                                        idx === indexOperacaoAtual,
+                                    };
                                   }
-                                  return {
-                                    operacao: opSeq,
-                                    index: idx,
-                                    saldoAnterior,
-                                    saldoAtual: saldoSequencial,
-                                    isOperacaoAtual: idx === indexOperacaoAtual,
-                                  };
-                                });
+                                );
                               }
 
                               return (
@@ -632,45 +783,75 @@ const OperationRow = ({
                                   {isMultiplasOperacoesDia && (
                                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
                                       <div className="flex items-center gap-2 mb-2">
-                                        <div className="text-purple-600">🔄</div>
+                                        <div className="text-purple-600">
+                                          🔄
+                                        </div>
                                         <span className="font-semibold text-purple-800 text-xs">
-                                          {operacoesMesmoDia.length} operações em {diaOperacao.split('-').reverse().join('/')}
+                                          {operacoesMesmoDia.length} operações
+                                          em{" "}
+                                          {diaOperacao
+                                            .split("-")
+                                            .reverse()
+                                            .join("/")}
                                         </span>
                                       </div>
                                       <div className="space-y-1 max-h-32 overflow-y-auto">
                                         {fluxoDia.map((fluxo, idx) => (
-                                          <div 
+                                          <div
                                             key={idx}
                                             className={`flex items-center justify-between p-2 rounded text-xs ${
-                                              fluxo.isOperacaoAtual 
-                                                ? "bg-orange-100 border border-orange-300" 
+                                              fluxo.isOperacaoAtual
+                                                ? "bg-orange-100 border border-orange-300"
                                                 : "bg-white/60"
                                             }`}
                                           >
                                             <div className="flex items-center gap-2">
-                                              <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
-                                                fluxo.isOperacaoAtual 
-                                                  ? "bg-orange-500 text-white" 
-                                                  : "bg-purple-200 text-purple-700"
-                                              }`}>
+                                              <span
+                                                className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
+                                                  fluxo.isOperacaoAtual
+                                                    ? "bg-orange-500 text-white"
+                                                    : "bg-purple-200 text-purple-700"
+                                                }`}
+                                              >
                                                 {idx + 1}
                                               </span>
-                                              <span className="font-medium">{fluxo.operacao.ticker}</span>
-                                              <span className={`${
-                                                fluxo.operacao.resultado >= 0 ? 'text-green-600' : 'text-red-600'
-                                              }`}>
-                                                {fluxo.operacao.resultado >= 0 ? '+' : ''}{formatCurrency(fluxo.operacao.resultado)}
+                                              <span className="font-medium">
+                                                {fluxo.operacao.ticker}
+                                              </span>
+                                              <span
+                                                className={`${
+                                                  fluxo.operacao.resultado >= 0
+                                                    ? "text-green-600"
+                                                    : "text-red-600"
+                                                }`}
+                                              >
+                                                {fluxo.operacao.resultado >= 0
+                                                  ? "+"
+                                                  : ""}
+                                                {formatCurrency(
+                                                  fluxo.operacao.resultado
+                                                )}
                                               </span>
                                             </div>
                                             <div className="flex items-center gap-1">
                                               <span className="text-purple-600 font-medium text-xs">
-                                                {formatCurrency(fluxo.saldoAnterior)}
+                                                {formatCurrency(
+                                                  fluxo.saldoAnterior
+                                                )}
                                               </span>
-                                              <span className="text-gray-400">→</span>
-                                              <span className={`font-bold text-xs ${
-                                                fluxo.isOperacaoAtual ? 'text-orange-700' : 'text-purple-700'
-                                              }`}>
-                                                {formatCurrency(fluxo.saldoAtual)}
+                                              <span className="text-gray-400">
+                                                →
+                                              </span>
+                                              <span
+                                                className={`font-bold text-xs ${
+                                                  fluxo.isOperacaoAtual
+                                                    ? "text-orange-700"
+                                                    : "text-purple-700"
+                                                }`}
+                                              >
+                                                {formatCurrency(
+                                                  fluxo.saldoAtual
+                                                )}
                                               </span>
                                             </div>
                                           </div>
@@ -684,7 +865,9 @@ const OperationRow = ({
                                       <div className="text-center flex-1">
                                         Prejuízo Total Acumulado
                                         <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1">
-                                          {formatCurrency(prejuizoTotalAcumulado)}
+                                          {formatCurrency(
+                                            prejuizoTotalAcumulado
+                                          )}
                                         </div>
                                       </div>
                                     </div>
@@ -692,13 +875,28 @@ const OperationRow = ({
 
                                   <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                                     <div className="flex items-start gap-2">
-                                      <div className="text-green-600 mt-0.5">✨</div>
+                                      <div className="text-green-600 mt-0.5">
+                                        ✨
+                                      </div>
                                       <div className="text-green-700 text-xs leading-relaxed">
-                                        <div className="font-semibold mb-1">Compensação futura:</div>
+                                        <div className="font-semibold mb-1">
+                                          Compensação futura:
+                                        </div>
                                         <div>
-                                          Quando você tiver lucros em operações de <span className="font-bold">{tipoOperacao}</span>, 
-                                          este saldo de <span className="font-bold text-red-700">{formatCurrency(prejuizoTotalAcumulado)}</span> será 
-                                          automaticamente descontado, reduzindo ou eliminando o imposto a pagar.
+                                          Quando você tiver lucros em operações
+                                          de{" "}
+                                          <span className="font-bold">
+                                            {tipoOperacao}
+                                          </span>
+                                          , este saldo de{" "}
+                                          <span className="font-bold text-red-700">
+                                            {formatCurrency(
+                                              prejuizoTotalAcumulado
+                                            )}
+                                          </span>{" "}
+                                          será automaticamente descontado,
+                                          reduzindo ou eliminando o imposto a
+                                          pagar.
                                         </div>
                                       </div>
                                     </div>
@@ -711,82 +909,182 @@ const OperationRow = ({
                       )}
 
                       {/* Profit Compensation Card */}
-                      {isProfit && (op.prejuizo_anterior_acumulado || 0) > 0 && (
-                        <div className="flex flex-col p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Info className="h-4 w-4 text-green-600" />
-                            <span className="text-xs font-semibold uppercase tracking-wide text-green-600">
-                              Compensação de Prejuízo
-                            </span>
-                          </div>
-                          <div className="text-xs text-green-700 leading-relaxed">
-                            {(() => {
-                              const prejuizoAnterior = op.prejuizo_anterior_acumulado || 0;
-                              const lucroOperacao = op.resultado;
-                              const tipoOperacao = op.day_trade ? "day trade" : "swing trade";
+                      {isProfit &&
+                        (op.prejuizo_anterior_acumulado || 0) > 0 && (
+                          <div className="flex flex-col p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Info className="h-4 w-4 text-green-600" />
+                              <span className="text-xs font-semibold uppercase tracking-wide text-green-600">
+                                Compensação de Prejuízo
+                              </span>
+                            </div>
+                            <div className="text-xs text-green-700 leading-relaxed">
+                              {(() => {
+                                const prejuizoAnterior =
+                                  op.prejuizo_anterior_acumulado || 0;
+                                const lucroOperacao = op.resultado;
+                                const tipoOperacao = op.day_trade
+                                  ? "day trade"
+                                  : "swing trade";
 
-                              if (prejuizoAnterior > 0) {
-                                const prejuizoCompensado = Math.min(lucroOperacao, prejuizoAnterior);
-                                const prejuizoRestante = prejuizoAnterior - prejuizoCompensado;
-                                const lucroTributavel = Math.max(0, lucroOperacao - prejuizoAnterior);
+                                if (prejuizoAnterior > 0) {
+                                  const prejuizoCompensado = Math.min(
+                                    lucroOperacao,
+                                    prejuizoAnterior
+                                  );
+                                  const prejuizoRestante =
+                                    prejuizoAnterior - prejuizoCompensado;
+                                  const lucroTributavel = Math.max(
+                                    0,
+                                    lucroOperacao - prejuizoAnterior
+                                  );
 
-                                return (
-                                  <>
-                                    <div className="mb-2">
-                                      <span className="font-bold">Cálculo da Compensação:</span>
-                                    </div>
-                                    <div className="space-y-1 mb-3 text-xs">
-                                      <div>• Lucro da operação: <span className="font-bold text-green-800">{formatCurrency(lucroOperacao)}</span></div>
-                                      <div>• Prejuízo anterior acumulado: <span className="font-bold text-red-600">{formatCurrency(prejuizoAnterior)}</span></div>
-                                      <div className="border-t pt-1 mt-1">
-                                        <div>• Prejuízo compensado: <span className="font-bold text-orange-600">{formatCurrency(prejuizoCompensado)}</span></div>
-                                        {prejuizoRestante > 0 && <div>• Prejuízo restante: <span className="font-bold text-red-600">{formatCurrency(prejuizoRestante)}</span></div>}
-                                        {lucroTributavel > 0 && <div>• Lucro tributável: <span className="font-bold text-green-800">{formatCurrency(lucroTributavel)}</span></div>}
+                                  return (
+                                    <>
+                                      <div className="mb-2">
+                                        <span className="font-bold">
+                                          Cálculo da Compensação:
+                                        </span>
                                       </div>
-                                    </div>
-                                    <div className="text-xs">
-                                      {(() => {
-                                        const statusBased = {
-                                          "Lucro Compensado": {
-                                            totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(lucroOperacao)}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>, resultando em <span class="font-bold">operação isenta de IR</span>.`,
-                                            parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(prejuizoCompensado)} do lucro foi usado para compensar o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(lucroTributavel)}) está sujeito a tributação de ${op.day_trade ? "20%" : "15%"}.`,
-                                          },
-                                          "Tributável Swing": {
-                                            totalText: `<span class="font-semibold text-green-700">Operação Compensada:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(lucroOperacao)}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>. <span class="font-bold">IR = R$ 0,00</span> (isenta por compensação).`,
-                                            parcialText: `<span class="font-semibold text-blue-700">Compensação + Tributação:</span> ${formatCurrency(prejuizoCompensado)} do lucro compensaram o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(lucroTributavel)}) está sujeito a <span class="font-bold">IR de 15%</span> = ${formatCurrency(lucroTributavel * 0.15)}.`,
-                                          },
-                                          "Tributável Day Trade": {
-                                            totalText: `<span class="font-semibold text-green-700">Day Trade Compensado:</span> Todo o lucro de <span class="font-bold">${formatCurrency(lucroOperacao)}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>. <span class="font-bold">IR = R$ 0,00</span> (isenta por compensação).`,
-                                            parcialText: `<span class="font-semibold text-blue-700">Compensação + Tributação:</span> ${formatCurrency(prejuizoCompensado)} do lucro compensou o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(lucroTributavel)}) está sujeito a <span class="font-bold">IR de 20%</span> = ${formatCurrency(lucroTributavel * 0.2)}.`,
-                                          },
-                                          Isento: {
-                                            totalText: `<span class="font-semibold text-green-700">Isenta com Compensação:</span> Esta operação é isenta de IR e ainda compensou ${formatCurrency(prejuizoCompensado)} do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
-                                            parcialText: `<span class="font-semibold text-green-700">Isenta com Compensação:</span> Esta operação é isenta de IR e ainda compensou ${formatCurrency(prejuizoCompensado)} do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
-                                          },
-                                        };
+                                      <div className="space-y-1 mb-3 text-xs">
+                                        <div>
+                                          • Lucro da operação:{" "}
+                                          <span className="font-bold text-green-800">
+                                            {formatCurrency(lucroOperacao)}
+                                          </span>
+                                        </div>
+                                        <div>
+                                          • Prejuízo anterior acumulado:{" "}
+                                          <span className="font-bold text-red-600">
+                                            {formatCurrency(prejuizoAnterior)}
+                                          </span>
+                                        </div>
+                                        <div className="border-t pt-1 mt-1">
+                                          <div>
+                                            • Prejuízo compensado:{" "}
+                                            <span className="font-bold text-orange-600">
+                                              {formatCurrency(
+                                                prejuizoCompensado
+                                              )}
+                                            </span>
+                                          </div>
+                                          {prejuizoRestante > 0 && (
+                                            <div>
+                                              • Prejuízo restante:{" "}
+                                              <span className="font-bold text-red-600">
+                                                {formatCurrency(
+                                                  prejuizoRestante
+                                                )}
+                                              </span>
+                                            </div>
+                                          )}
+                                          {lucroTributavel > 0 && (
+                                            <div>
+                                              • Lucro tributável:{" "}
+                                              <span className="font-bold text-green-800">
+                                                {formatCurrency(
+                                                  lucroTributavel
+                                                )}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="text-xs">
+                                        {(() => {
+                                          const statusBased = {
+                                            "Lucro Compensado": {
+                                              totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(
+                                                lucroOperacao
+                                              )}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>, resultando em <span class="font-bold">operação isenta de IR</span>.`,
+                                              parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(
+                                                prejuizoCompensado
+                                              )} do lucro foi usado para compensar o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(
+                                                lucroTributavel
+                                              )}) está sujeito a tributação de ${
+                                                op.day_trade ? "20%" : "15%"
+                                              }.`,
+                                            },
+                                            "Tributável Swing": {
+                                              totalText: `<span class="font-semibold text-green-700">Operação Compensada:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(
+                                                lucroOperacao
+                                              )}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>. <span class="font-bold">IR = R$ 0,00</span> (isenta por compensação).`,
+                                              parcialText: `<span class="font-semibold text-blue-700">Compensação + Tributação:</span> ${formatCurrency(
+                                                prejuizoCompensado
+                                              )} do lucro compensaram o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(
+                                                lucroTributavel
+                                              )}) está sujeito a <span class="font-bold">IR de 15%</span> = ${formatCurrency(
+                                                lucroTributavel * 0.15
+                                              )}.`,
+                                            },
+                                            "Tributável Day Trade": {
+                                              totalText: `<span class="font-semibold text-green-700">Day Trade Compensado:</span> Todo o lucro de <span class="font-bold">${formatCurrency(
+                                                lucroOperacao
+                                              )}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>. <span class="font-bold">IR = R$ 0,00</span> (isenta por compensação).`,
+                                              parcialText: `<span class="font-semibold text-blue-700">Compensação + Tributação:</span> ${formatCurrency(
+                                                prejuizoCompensado
+                                              )} do lucro compensou o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(
+                                                lucroTributavel
+                                              )}) está sujeito a <span class="font-bold">IR de 20%</span> = ${formatCurrency(
+                                                lucroTributavel * 0.2
+                                              )}.`,
+                                            },
+                                            Isento: {
+                                              totalText: `<span class="font-semibold text-green-700">Isenta com Compensação:</span> Esta operação é isenta de IR e ainda compensou ${formatCurrency(
+                                                prejuizoCompensado
+                                              )} do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
+                                              parcialText: `<span class="font-semibold text-green-700">Isenta com Compensação:</span> Esta operação é isenta de IR e ainda compensou ${formatCurrency(
+                                                prejuizoCompensado
+                                              )} do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
+                                            },
+                                          };
 
-                                        const currentStatus = op.status_ir || "Outros";
-                                        const statusConfig = statusBased[currentStatus] || {
-                                          totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro foi descontado de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
-                                          parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(prejuizoCompensado)} do lucro foi usado para abater do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
-                                        };
+                                          const currentStatus =
+                                            op.status_ir || "Outros";
+                                          const statusConfig = statusBased[
+                                            currentStatus
+                                          ] || {
+                                            totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro foi descontado de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
+                                            parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(
+                                              prejuizoCompensado
+                                            )} do lucro foi usado para abater do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
+                                          };
 
-                                        const textToShow = lucroTributavel > 0 ? statusConfig.parcialText : statusConfig.totalText;
+                                          const textToShow =
+                                            lucroTributavel > 0
+                                              ? statusConfig.parcialText
+                                              : statusConfig.totalText;
 
-                                        return <div dangerouslySetInnerHTML={{ __html: textToShow }} />;
-                                      })()}
-                                    </div>
-                                  </>
+                                          return (
+                                            <div
+                                              dangerouslySetInnerHTML={{
+                                                __html: textToShow,
+                                              }}
+                                            />
+                                          );
+                                        })()}
+                                      </div>
+                                    </>
+                                  );
+                                }
+                                return (
+                                  <div className="text-xs">
+                                    Este lucro foi compensado por prejuízos
+                                    acumulados de operações de{" "}
+                                    <span className="font-bold">
+                                      {tipoOperacao}
+                                    </span>
+                                    .
+                                  </div>
                                 );
-                              }
-                              return <div className="text-xs">Este lucro foi compensado por prejuízos acumulados de operações de <span className="font-bold">{tipoOperacao}</span>.</div>;
-                            })()}
+                              })()}
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
 
                       {/* DARF Button */}
-                      {(op.status_ir === "Tributável Day Trade" || op.status_ir === "Tributável Swing") && (
+                      {(op.status_ir === "Tributável Day Trade" ||
+                        op.status_ir === "Tributável Swing") && (
                         <div className="flex items-center justify-center mt-2">
                           <Button
                             onClick={() => handleOpenDarfModal(op)}
@@ -830,7 +1128,9 @@ const SummaryCards = ({
             Total
           </div>
           <div
-            className={`text-sm font-bold ${totalResultadoOperacoes >= 0 ? "text-green-200" : "text-red-200"}`}
+            className={`text-sm font-bold ${
+              totalResultadoOperacoes >= 0 ? "text-green-200" : "text-red-200"
+            }`}
           >
             {formatCurrency(totalResultadoOperacoes)}
           </div>
@@ -880,15 +1180,25 @@ const SummaryCards = ({
 );
 
 // Main Component
-export default function OperacoesEncerradasTable(props: OperacoesEncerradasTableProps) {
+export default function OperacoesEncerradasTable(
+  props: OperacoesEncerradasTableProps
+) {
   // Handler for DARF status change
   const handleDarfStatusChange = (operationKey: string, newStatus: string) => {
-    setDarfStatusMap(prev => {
+    console.log("🔄 [DARF STATUS] Atualizando:", { operationKey, newStatus });
+
+    setDarfStatusMap((prev) => {
       const updated = new Map(prev);
       updated.set(operationKey, newStatus);
+      console.log(
+        "🔄 [DARF STATUS] Map atualizado:",
+        Array.from(updated.entries())
+      );
       return updated;
     });
-    setIsDarfModalOpen(false); // Optionally close modal after status change
+
+    // ✅ OPCIONAL: Fechar modal após atualização (se desejar)
+    // setIsDarfModalOpen(false);
   };
   // Wrapper for dashboard update
   const handleUpdateDashboard = () => {
@@ -898,64 +1208,121 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
   };
   // DARF modal state and handler
   const [isDarfModalOpen, setIsDarfModalOpen] = useState(false);
-  const [selectedOpForDarf, setSelectedOpForDarf] = useState<OperacaoFechada | null>(null);
-  const [selectedResultadoMensalForDarf, setSelectedResultadoMensalForDarf] = useState<ResultadoMensal | null>(null);
+  const [selectedOpForDarf, setSelectedOpForDarf] =
+    useState<OperacaoFechada | null>(null);
+  const [selectedResultadoMensalForDarf, setSelectedResultadoMensalForDarf] =
+    useState<ResultadoMensal | null>(null);
 
   const handleOpenDarfModal = (op: OperacaoFechada) => {
+    console.log("📂 [DARF MODAL] Abrindo modal para operação:", {
+      ticker: op.ticker,
+      data_abertura: op.data_abertura,
+      data_fechamento: op.data_fechamento,
+      quantidade: op.quantidade,
+      operationKey: `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}`,
+      status_ir: op.status_ir,
+    });
+
     setSelectedOpForDarf(op);
-    // Find the matching ResultadoMensal if needed (by month/year)
+
+    // Find the matching ResultadoMensal
     if (resultadosMensais && Array.isArray(resultadosMensais)) {
       const mesAno = op.data_fechamento.substring(0, 7);
-      const resultadoMensal = resultadosMensais.find(rm => rm.mes === mesAno);
+      const resultadoMensal = resultadosMensais.find((rm) => rm.mes === mesAno);
+
+      console.log("📊 [DARF MODAL] Resultado mensal encontrado:", {
+        mesAno,
+        resultadoMensal: resultadoMensal ? "encontrado" : "não encontrado",
+        resultadoMensalData: resultadoMensal,
+      });
+
       setSelectedResultadoMensalForDarf(resultadoMensal || null);
     } else {
       setSelectedResultadoMensalForDarf(null);
     }
+
     setIsDarfModalOpen(true);
   };
+
   // DARF status map state (default empty Map)
-  const [darfStatusMap, setDarfStatusMap] = useState<Map<string, string>>(new Map());
+  const [darfStatusMap, setDarfStatusMap] = useState<Map<string, string>>(
+    new Map()
+  );
   // Helper to render DARF badge
+  // ✅ CORREÇÃO 3: Badge do DARF com ícones e cores corretas
   const getDarfBadge = (darfStatus: string | null, op: OperacaoFechada) => {
     if (!darfStatus) return null;
+
     let color = "gray";
     let bg = "bg-gray-100";
     let text = "DARF";
+    let icon = "📄";
+
     if (darfStatus === "pago") {
-      color = "green"; bg = "bg-green-100"; text = "DARF Pago";
+      color = "green";
+      bg = "bg-green-100";
+      text = "DARF Pago";
+      icon = "✅";
     } else if (darfStatus === "pendente") {
-      color = "yellow"; bg = "bg-yellow-100"; text = "DARF Pendente";
-    } else if (darfStatus === "isento") {
-      color = "blue"; bg = "bg-blue-100"; text = "Isento";
+      color = "amber";
+      bg = "bg-amber-100";
+      text = "DARF Pendente";
+      icon = "⏳";
+    } else if (darfStatus === "vencido") {
+      color = "red";
+      bg = "bg-red-100";
+      text = "DARF Vencido";
+      icon = "⚠️";
     }
+
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-semibold border border-${color}-300 ${bg} text-${color}-700 ml-1`}>
+      <span
+        className={`px-2 py-1 rounded-full text-xs font-semibold border border-${color}-300 ${bg} text-${color}-700 ml-1 flex items-center gap-1`}
+      >
+        <span>{icon}</span>
         {text}
       </span>
     );
   };
+
   // Helper to render status badge
+  // ✅ CORREÇÃO 1: Função getStatusBadge corrigida
   const getStatusBadge = (status: string, isProfit: boolean) => {
     let color = "gray";
     let bg = "bg-gray-100";
     let text = status;
+
     if (status === "Isento") {
-      color = "green"; bg = "bg-green-100"; text = "Isento";
+      color = "green";
+      bg = "bg-green-100";
+      text = "Isento";
     } else if (status === "Tributável Day Trade") {
-      color = "orange"; bg = "bg-orange-100"; text = "Day Trade";
+      color = "orange";
+      bg = "bg-orange-100";
+      text = "Tributável"; // ✅ CORRIGIDO: mostra status fiscal, não tipo
     } else if (status === "Tributável Swing") {
-      color = "blue"; bg = "bg-blue-100"; text = "Swing Trade";
+      color = "blue";
+      bg = "bg-blue-100";
+      text = "Tributável"; // ✅ CORRIGIDO: mostra status fiscal, não tipo
     } else if (status === "Prejuízo Acumulado") {
-      color = "red"; bg = "bg-red-100"; text = "Prejuízo";
+      color = "red";
+      bg = "bg-red-100";
+      text = "Prejuízo";
     } else if (status === "Lucro Compensado") {
-      color = "emerald"; bg = "bg-emerald-100"; text = "Compensado";
+      color = "emerald";
+      bg = "bg-emerald-100";
+      text = "Compensado";
     }
+
     return (
-      <span className={`px-2 py-1 rounded-full text-xs font-semibold border border-${color}-300 ${bg} text-${color}-700`}>
+      <span
+        className={`px-2 py-1 rounded-full text-xs font-semibold border border-${color}-300 ${bg} text-${color}-700`}
+      >
         {text}
       </span>
     );
   };
+
   // Expanded rows state and handler
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
@@ -971,7 +1338,11 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
     });
   };
 
-  const { operacoesFechadas = [], resultadosMensais = [], onUpdateDashboard = () => {} } = props;
+  const {
+    operacoesFechadas = [],
+    resultadosMensais = [],
+    onUpdateDashboard = () => {},
+  } = props;
 
   // States and memos...
   // (The rest of the state declarations, useEffects, and helpers remain the same as in the original code, but now we use subcomponents in the render.)
@@ -985,12 +1356,16 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
 
   // Unique months and statuses for filters
   const uniqueMonths = useMemo(() => {
-    const months = operacoesFechadas.map(op => op.data_fechamento.substring(0, 7));
+    const months = operacoesFechadas.map((op) =>
+      op.data_fechamento.substring(0, 7)
+    );
     return Array.from(new Set(months));
   }, [operacoesFechadas]);
 
   const uniqueStatuses = useMemo(() => {
-    const statuses = operacoesFechadas.map(op => op.status_ir || "");
+    const statuses = operacoesFechadas
+      .map((op) => op.status_ir || "")
+      .filter((status) => status !== "");
     return Array.from(new Set(statuses));
   }, [operacoesFechadas]);
 
@@ -999,34 +1374,49 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
     let ops = operacoesFechadas ? [...operacoesFechadas] : [];
 
     if (filterType !== "all") {
-      ops = ops.filter(op => (filterType === "day_trade" ? op.day_trade : !op.day_trade));
+      ops = ops.filter((op) =>
+        filterType === "day_trade" ? op.day_trade : !op.day_trade
+      );
     }
     if (filterMonth !== "all") {
-      ops = ops.filter(op => op.data_fechamento && op.data_fechamento.substring(0, 7) === filterMonth);
+      ops = ops.filter(
+        (op) =>
+          op.data_fechamento &&
+          op.data_fechamento.substring(0, 7) === filterMonth
+      );
     }
     if (filterStatus !== "all") {
-      ops = ops.filter(op => (op.status_ir || "") === filterStatus);
+      ops = ops.filter((op) => (op.status_ir || "") === filterStatus);
     }
     if (searchTerm.trim()) {
       const term = searchTerm.trim().toLowerCase();
-      ops = ops.filter(op =>
-        op.ticker.toLowerCase().includes(term) ||
-        (op.data_fechamento && op.data_fechamento.toLowerCase().includes(term)) ||
-        (op.resultado.toString().toLowerCase().includes(term)) ||
-        (op.day_trade ? "day trade" : "swing trade").includes(term)
+      ops = ops.filter(
+        (op) =>
+          op.ticker.toLowerCase().includes(term) ||
+          (op.data_fechamento &&
+            op.data_fechamento.toLowerCase().includes(term)) ||
+          op.resultado.toString().toLowerCase().includes(term) ||
+          (op.day_trade ? "day trade" : "swing trade").includes(term)
       );
     }
     return ops;
   }, [operacoesFechadas, filterType, filterMonth, filterStatus, searchTerm]);
 
   // Sorting state and logic
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: "ascending" | "descending" }>({ key: "data_fechamento", direction: "descending" });
+  const [sortConfig, setSortConfig] = useState<{
+    key: string;
+    direction: "ascending" | "descending";
+  }>({ key: "data_fechamento", direction: "descending" });
 
   const requestSort = (key: string) => {
     setSortConfig((prev) => {
       if (prev.key === key) {
         // Toggle direction
-        return { key, direction: prev.direction === "ascending" ? "descending" : "ascending" };
+        return {
+          key,
+          direction:
+            prev.direction === "ascending" ? "descending" : "ascending",
+        };
       }
       return { key, direction: "descending" };
     });
@@ -1057,10 +1447,19 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
     });
   }, [processedOperacoes, sortConfig]);
 
-  const totalResultadoOperacoes = processedOperacoes.reduce((acc, op) => acc + op.resultado, 0);
-  const totalLucros = processedOperacoes.filter((op) => op.resultado > 0).reduce((acc, op) => acc + op.resultado, 0);
-  const totalPrejuizos = processedOperacoes.filter((op) => op.resultado < 0).reduce((acc, op) => acc + Math.abs(op.resultado), 0);
-  const operacoesTributaveis = processedOperacoes.filter((op) => op.status_ir?.includes("Tributável")).length;
+  const totalResultadoOperacoes = processedOperacoes.reduce(
+    (acc, op) => acc + op.resultado,
+    0
+  );
+  const totalLucros = processedOperacoes
+    .filter((op) => op.resultado > 0)
+    .reduce((acc, op) => acc + op.resultado, 0);
+  const totalPrejuizos = processedOperacoes
+    .filter((op) => op.resultado < 0)
+    .reduce((acc, op) => acc + Math.abs(op.resultado), 0);
+  const operacoesTributaveis = processedOperacoes.filter((op) =>
+    op.status_ir?.includes("Tributável")
+  ).length;
 
   const hasOriginalData = operacoesFechadas.length > 0;
   const hasFilteredResults = processedOperacoes.length > 0;
@@ -1074,7 +1473,9 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
               <BarChart3 className="h-6 w-6 text-white" />
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold">Operações Encerradas</CardTitle>
+              <CardTitle className="text-2xl font-bold">
+                Operações Encerradas
+              </CardTitle>
               <CardDescription className="text-indigo-100">
                 Histórico de suas operações de compra e venda finalizadas
               </CardDescription>
@@ -1086,10 +1487,15 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
             <div className="mx-auto w-24 h-24 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-full flex items-center justify-center mb-6">
               <Building2 className="h-12 w-12 text-indigo-400" />
             </div>
-            <h3 className="text-2xl font-bold text-gray-800 mb-2">Comece sua jornada!</h3>
-            <p className="text-gray-600 text-lg mb-4">Suas operações finalizadas aparecerão aqui</p>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">
+              Comece sua jornada!
+            </h3>
+            <p className="text-gray-600 text-lg mb-4">
+              Suas operações finalizadas aparecerão aqui
+            </p>
             <p className="text-gray-500 text-sm max-w-md mx-auto">
-              Execute algumas operações de compra e venda para ver o histórico e análise de resultados
+              Execute algumas operações de compra e venda para ver o histórico e
+              análise de resultados
             </p>
           </div>
         </CardContent>
@@ -1107,7 +1513,9 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
                 <BarChart3 className="h-6 w-6 text-white" />
               </div>
               <div>
-                <CardTitle className="text-2xl font-bold">Operações Encerradas</CardTitle>
+                <CardTitle className="text-2xl font-bold">
+                  Operações Encerradas
+                </CardTitle>
                 <CardDescription className="text-indigo-100">
                   Histórico de suas operações de compra e venda finalizadas
                 </CardDescription>
@@ -1116,7 +1524,9 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
               <div className="flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-white/80" />
-                <span className="text-xs font-medium text-white/80 uppercase tracking-wide">Resultado Total:</span>
+                <span className="text-xs font-medium text-white/80 uppercase tracking-wide">
+                  Resultado Total:
+                </span>
                 <span className="text-sm font-bold text-white">R$ 0,00</span>
               </div>
             </div>
@@ -1139,8 +1549,12 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
             <div className="mx-auto w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mb-6">
               <Search className="h-10 w-10 text-gray-400" />
             </div>
-            <h3 className="text-xl font-bold text-gray-800 mb-2">Nenhuma operação encontrada</h3>
-            <p className="text-gray-600 mb-4">Ajuste os filtros ou tente outros termos de pesquisa</p>
+            <h3 className="text-xl font-bold text-gray-800 mb-2">
+              Nenhuma operação encontrada
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Ajuste os filtros ou tente outros termos de pesquisa
+            </p>
             <Button
               onClick={() => {
                 setSearchTerm("");
@@ -1169,7 +1583,9 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
                 <BarChart3 className="h-6 w-6 text-white" />
               </div>
               <div>
-                <CardTitle className="text-2xl font-bold">Operações Encerradas</CardTitle>
+                <CardTitle className="text-2xl font-bold">
+                  Operações Encerradas
+                </CardTitle>
                 <CardDescription className="text-indigo-100">
                   Histórico de suas operações de compra e venda finalizadas
                 </CardDescription>
@@ -1200,10 +1616,18 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
           <div className="border border-indigo-200 border-t-0 rounded-b-xl overflow-hidden">
             {sortedOperacoes.map((op, index) => (
               <OperationRow
-                key={op.id ? op.id : `${op.ticker}-${op.data_fechamento}-${index}`}
+                key={`${op.ticker}-${
+                  op.data_fechamento
+                }-${index}-${getDarfStatusForOperation(
+                  op,
+                  darfStatusMap,
+                  resultadosMensais
+                )}`} // ✅ Ordem correta
                 op={op}
                 index={index}
-                isExpanded={expandedRows.has(`${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`)}
+                isExpanded={expandedRows.has(
+                  `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`
+                )}
                 toggleRow={toggleRow}
                 isProfit={op.resultado >= 0}
                 getStatusBadge={getStatusBadge}
@@ -1212,6 +1636,7 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
                 darfStatusMap={darfStatusMap}
                 handleOpenDarfModal={handleOpenDarfModal}
                 operacoesFechadas={operacoesFechadas}
+                resultadosMensais={resultadosMensais} // ✅ Apenas uma vez
               />
             ))}
           </div>
