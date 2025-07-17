@@ -503,7 +503,7 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     resultados = calculos.calcular_resultados_operacoes(operacoes_ajustadas)
     operacoes_fechadas_calculadas = resultados['operacoes_fechadas']
 
-    # ✅ CORREÇÃO: Buscar resultados mensais reais em vez de mapa vazio
+    # ✅ CORREÇÃO: Buscar resultados mensais reais
     resultados_mensais_list = obter_resultados_mensais(usuario_id=usuario_id)
     resultados_mensais_map = {}
     for rm in resultados_mensais_list:
@@ -512,9 +512,13 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
 
     operacoes_fechadas_salvas = []
     for op_fechada in operacoes_fechadas_calculadas:
-        valor_base_lucro = op_fechada.preco_medio_compra * op_fechada.quantidade
+        # ✅ VALORES CORRETOS: Separar preços unitários de valores totais
+        preco_medio_compra = op_fechada.preco_medio_compra      # Preço por ação
+        preco_medio_venda = op_fechada.preco_medio_venda        # Preço por ação
+        valor_total_compra = preco_medio_compra * op_fechada.quantidade  # Valor total
+        valor_total_venda = preco_medio_venda * op_fechada.quantidade    # Valor total
 
-        # ✅ CORREÇÃO: Calcular status_ir usando a função existente
+        # ✅ CORREÇÃO: Calcular status_ir
         status_ir = calculos._calcular_status_ir_operacao_fechada(
             {
                 "data_fechamento": op_fechada.data_fechamento,
@@ -527,28 +531,35 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
         op_dict = {
             "ticker": op_fechada.ticker,
             "quantidade": op_fechada.quantidade,
-            "preco_abertura": op_fechada.preco_medio_compra,
-            "preco_fechamento": op_fechada.preco_medio_venda,
-            "preco_medio_compra": op_fechada.preco_medio_compra,  # <-- Adicionado para o frontend
+            
+            # ✅ CORREÇÃO: Preços médios unitários (para os cards)
+            "preco_abertura": preco_medio_compra,           # Preço médio por ação de compra
+            "preco_fechamento": preco_medio_venda,          # Preço médio por ação de venda
+            
+            # ✅ CORREÇÃO: Valores totais (para cálculos)
+            "valor_compra": valor_total_compra,             # Valor total da compra
+            "valor_venda": valor_total_venda,               # Valor total da venda
+            
             "resultado": op_fechada.resultado,
             "day_trade": op_fechada.day_trade,
             "data_fechamento": op_fechada.data_fechamento,
-            "data_abertura": op_fechada.data_fechamento, # Simplificação
-            "tipo": "compra-venda", # Simplificação
-            "valor_compra": valor_base_lucro,
-            "valor_venda": op_fechada.preco_medio_venda * op_fechada.quantidade,
+            "data_abertura": op_fechada.data_fechamento,    # ✅ TODO: Implementar data_abertura real
+            "tipo": "compra-venda",
             "taxas_total": 0,
-            "percentual_lucro": (op_fechada.resultado / valor_base_lucro) * 100 if valor_base_lucro != 0 else 0,
-            "prejuizo_anterior_acumulado": 0,
+            "percentual_lucro": (op_fechada.resultado / valor_total_compra) * 100 if valor_total_compra != 0 else 0,
+            "prejuizo_anterior_acumulado": 0,               # ✅ TODO: Implementar cálculo real
             "operacoes_relacionadas": [],
-            "status_ir": status_ir  # ✅ CORREÇÃO: Campo adicionado
+            "status_ir": status_ir
         }
+        
+        debug_operacao_fechada(op_dict)
         
         salvar_operacao_fechada(op_dict, usuario_id=usuario_id)
         operacoes_fechadas_salvas.append(op_dict)
 
     logging.info(f"{len(operacoes_fechadas_salvas)} operações fechadas salvas no banco.")
     return operacoes_fechadas_salvas
+
 
 def recalcular_carteira(usuario_id: int) -> None:
     """
@@ -2364,7 +2375,10 @@ def _criar_operacao_fechada_detalhada_v2(ticker, data_abertura, data_fechamento,
         "percentual_lucro": percentual_lucro,
         "day_trade": day_trade,
         "prejuizo_anterior_acumulado": prejuizo_anterior,
-        "operacoes_relacionadas": []
+        "operacoes_relacionadas": [],
+        # Novos campos para frontend
+        "preco_medio_compra": preco_abertura if tipo == "compra-venda" else preco_fechamento,
+        "preco_medio_venda": preco_fechamento if tipo == "compra-venda" else preco_abertura
     }
 
 
@@ -2464,6 +2478,27 @@ def _calcular_preco_medio_antes_operacao(ticker: str, usuario_id: int, data_limi
         else:
             return None
 
+
+def debug_operacao_fechada(op_dict):
+    """
+    Função para debugar os valores calculados de uma operação fechada.
+    
+    Esta função serve para verificar se os cálculos estão corretos
+    antes de salvar no banco de dados.
+    
+    Args:
+        op_dict (dict): Dicionário com os dados da operação fechada
+    """
+    print("🔍 [DEBUG OPERAÇÃO FECHADA]")
+    print(f"Ticker: {op_dict['ticker']}")
+    print(f"Quantidade: {op_dict['quantidade']}")
+    print(f"Preço médio compra (unitário): R$ {op_dict['preco_abertura']:.2f}")
+    print(f"Preço médio venda (unitário): R$ {op_dict['preco_fechamento']:.2f}")
+    print(f"Valor total compra: R$ {op_dict['valor_compra']:.2f}")
+    print(f"Valor total venda: R$ {op_dict['valor_venda']:.2f}")
+    print(f"Resultado: R$ {op_dict['resultado']:.2f}")
+    print(f"Verificação: {op_dict['valor_venda']} - {op_dict['valor_compra']} = {op_dict['valor_venda'] - op_dict['valor_compra']}")
+    print("=" * 50)
 
 # INSTRUÇÕES DE IMPLEMENTAÇÃO FINAL:
 

@@ -156,6 +156,22 @@ interface OperacoesEncerradasTableProps {
   onUpdateDashboard?: () => void;
 }
 
+interface OperacaoFechada {
+  ticker: string;
+  quantidade: number;
+  resultado: number;
+  day_trade: boolean;
+  data_fechamento: string;
+  data_abertura?: string;
+  status_ir?: string;
+  valor_compra?: number;
+  valor_venda?: number;
+  prejuizo_anterior_acumulado?: number;
+  preco_abertura?: number;      
+  preco_fechamento?: number;    
+  // ...outros campos possíveis
+}
+
 interface OperationRowProps {
   op: OperacaoFechada;
   index: number;
@@ -170,12 +186,12 @@ interface OperationRowProps {
   getDarfStatusForOperation: (
     op: OperacaoFechada,
     darfStatusMap?: Map<string, string>,
-    resultadosMensais?: ResultadoMensal[] // ✅ Terceiro parâmetro
+    resultadosMensais?: ResultadoMensal[]
   ) => string | null;
   darfStatusMap: Map<string, string>;
   handleOpenDarfModal: (op: OperacaoFechada) => void;
   operacoesFechadas: OperacaoFechada[];
-  resultadosMensais: ResultadoMensal[]; // ✅ Nova prop
+  resultadosMensais: ResultadoMensal[];
 }
 
 // Subcomponent: Filters
@@ -337,33 +353,21 @@ const OperationRow = ({
 }: OperationRowProps) => {
   // ✅ Usar a interface oficial
   const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
-  // DEBUG: Verificar se preço médio está vindo do backend
-  console.log("[DEBUG] Linha da tabela - ticker:", op.ticker, "data_fechamento:", op.data_fechamento, "preço_medio (valor_compra):", op.valor_compra);
-  // DEBUG for specific operations
-  if (op.data_fechamento?.includes("2023-03")) {
-    console.log("📅 OPERAÇÃO MARÇO 2023:", {
-      index,
+  if (op.ticker === "VALE3") {
+    console.log("🔍 [CARDS DEBUG] Dados da operação VALE3:", {
       ticker: op.ticker,
-      data_fechamento: op.data_fechamento,
+      quantidade: op.quantidade,
+      preco_abertura: op.preco_abertura, // ✅ Existe
+      preco_fechamento: op.preco_fechamento, // ✅ Existe
+      valor_compra: op.valor_compra,
+      valor_venda: op.valor_venda,
       resultado: op.resultado,
+      // Campos extras para diagnóstico
       day_trade: op.day_trade,
+      data_fechamento: op.data_fechamento,
       status_ir: op.status_ir,
-      prejuizo_anterior_acumulado: op.prejuizo_anterior_acumulado,
-      isProfit,
     });
-
-    if (op.ticker === "ITUB4") {
-      console.log("🔍 [ITUB4 MARÇO DETALHADO]:");
-      console.log("- Dados brutos do backend:", JSON.stringify(op, null, 2));
-      console.log("- Cálculo isProfit:", `${op.resultado} >= 0 = ${isProfit}`);
-      console.log("- Vai exibir como:", isProfit ? "LUCRO" : "PREJUÍZO");
-      console.log(
-        "- Valor que será mostrado: R$",
-        Math.abs(op.resultado).toFixed(2)
-      );
-    }
   }
-
   return (
     <div
       key={rowKey}
@@ -508,22 +512,35 @@ const OperationRow = ({
                       <div className="flex items-center gap-1 mb-1">
                         <TrendingUp className="h-3 w-3 text-green-600" />
                         <span className="text-xs font-semibold uppercase tracking-wide text-green-600">
-                          Preço Médio
+                          Preço Médio de Compra
                         </span>
                       </div>
                       <span className="text-sm font-bold text-green-800">
-                        {formatCurrency(op.valor_compra)}
+                        {formatCurrency(
+                          op.preco_abertura && op.preco_abertura > 0
+                            ? op.preco_abertura
+                            : op.valor_compra && op.quantidade
+                              ? op.valor_compra / op.quantidade
+                              : 0
+                        )}
                       </span>
                     </div>
+
                     <div className="flex flex-col p-3 bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg border border-cyan-200">
                       <div className="flex items-center gap-1 mb-1">
                         <TrendingDown className="h-3 w-3 text-cyan-600" />
                         <span className="text-xs font-semibold uppercase tracking-wide text-cyan-600">
-                          Valor de Venda
+                          Preço de Venda
                         </span>
                       </div>
                       <span className="text-sm font-bold text-cyan-800">
-                        {formatCurrency(op.valor_venda)}
+                        {formatCurrency(
+                          op.preco_fechamento && op.preco_fechamento > 0
+                            ? op.preco_fechamento
+                            : op.valor_venda && op.quantidade
+                              ? op.valor_venda / op.quantidade
+                              : 0
+                        )}
                       </span>
                     </div>
                   </div>
