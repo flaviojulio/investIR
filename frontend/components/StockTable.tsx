@@ -47,80 +47,51 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
   // New state for search term
   const [searchTermST, setSearchTermST] = useState<string>("");
   
-  // New state for data to be displayed in the table
-  const [processedCarteira, setProcessedCarteira] = useState<CarteiraItemWithCalc[]>(carteira as CarteiraItemWithCalc[]); 
-
-  useEffect(() => {
-    // Augment items with values needed for sorting/filtering, especially calculated ones
+  // New state for data to be displayed in the table - REPLACED with useMemo
+  const processedCarteira = useMemo(() => {
     const augmentedCarteira = carteira.map(item => {
       const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
-      const valorInicial = item.custo_total; // Para comprados: custo. Para vendidos: valor recebido na venda.
-      
-      // _valorAtualCalculated agora é sempre positivo (valor de mercado absoluto)
+      const valorInicial = item.custo_total;
       const valorDeMercadoAbsoluto = Math.abs(item.quantidade * currentPrice);
 
       let resultadoDaPosicao;
-      if (item.quantidade > 0) { // Posição Comprada
+      if (item.quantidade > 0) {
         resultadoDaPosicao = valorDeMercadoAbsoluto - valorInicial;
-      } else { // Posição Vendida (item.quantidade < 0)
+      } else {
         resultadoDaPosicao = valorInicial - valorDeMercadoAbsoluto;
       }
 
       const resultadoPercentualDaPosicao = valorInicial !== 0 ? (resultadoDaPosicao / Math.abs(valorInicial)) * 100 : 0;
 
-      // Logging
-      if (valorInicial === 0 && resultadoDaPosicao !== 0) {
-        console.warn("StockTable (useEffect): Calculando resultado percentual com valorInicial zero e resultadoDaPosicao não-zero.", { ticker: item.ticker, quantidade: item.quantidade, custo_total: item.custo_total, preco_medio: item.preco_medio, valorInicial, resultadoDaPosicao });
-      }
-
       return {
         ...item,
-        _valorAtualCalculated: valorDeMercadoAbsoluto, // Coluna "Valor Atual*" - agora sempre positivo
-        _resultadoAtualCalculated: resultadoDaPosicao, // Coluna "Resultado*"
-        _resultadoPercentualCalculated: resultadoPercentualDaPosicao, // Coluna "Resultado (%)*"
+        _valorAtualCalculated: valorDeMercadoAbsoluto,
+        _resultadoAtualCalculated: resultadoDaPosicao,
+        _resultadoPercentualCalculated: resultadoPercentualDaPosicao,
       };
     });
 
-    let newProcessedData = [...augmentedCarteira];
+    let newProcessedData = [...augmentedCarteira].filter(item => item.quantidade !== 0);
 
-    newProcessedData = newProcessedData.filter(item => item.quantidade !== 0);
-
-    // 1. Filtering based on searchTermST
     if (searchTermST) {
       const lowercasedSearchTerm = searchTermST.toLowerCase();
-      newProcessedData = newProcessedData.filter(item => {
-        return (
-          item.ticker.toLowerCase().includes(lowercasedSearchTerm) ||
-          (item.nome || '').toLowerCase().includes(lowercasedSearchTerm) || // Added nome to filter
-          item.quantidade.toString().includes(lowercasedSearchTerm) ||
-          item.custo_total.toString().includes(lowercasedSearchTerm) || 
-          formatCurrency(item._valorAtualCalculated).toLowerCase().includes(lowercasedSearchTerm) || // Search formatted currency
-          (item._resultadoPercentualCalculated.toFixed(2) + "%").toLowerCase().includes(lowercasedSearchTerm)
-        );
-      });
+      newProcessedData = newProcessedData.filter(item =>
+        item.ticker.toLowerCase().includes(lowercasedSearchTerm) ||
+        (item.nome || '').toLowerCase().includes(lowercasedSearchTerm)
+      );
     }
 
-    // 2. Sorting based on sortConfigST
     if (sortConfigST !== null) {
       newProcessedData.sort((a, b) => {
-        const getSortValue = (item: any, key: string) => { // item is augmented type
+        const getSortValue = (item: any, key: string) => {
           switch (key) {
-            case 'ticker':
-              return item.ticker.toLowerCase();
-            case 'nome': // Added nome sorting
-              return (item.nome || '').toLowerCase();
-            case 'quantidade':
-              return item.quantidade;
-            case 'custo_total': // Valor Inicial
-              return item.custo_total;
-            case 'calculated_valorAtual':
-              return item._valorAtualCalculated;
-            case 'calculated_resultadoPercentual':
-              return item._resultadoPercentualCalculated;
-            default:
-              // Should not happen if keys are correct, but good to have a fallback
-              const val = item[key];
-              return typeof val === 'string' ? val.toLowerCase() : val;
+            case 'ticker': return item.ticker.toLowerCase();
+            case 'nome': return (item.nome || '').toLowerCase();
+            case 'quantidade': return item.quantidade;
+            case 'custo_total': return item.custo_total;
+            case 'calculated_valorAtual': return item._valorAtualCalculated;
+            case 'calculated_resultadoPercentual': return item._resultadoPercentualCalculated;
+            default: return item[key];
           }
         };
 
@@ -128,20 +99,17 @@ export function StockTable({ carteira, onUpdate, showValues = true }: StockTable
         const valB = getSortValue(b, sortConfigST.key);
 
         let comparison = 0;
-        if (valA === null || valA === undefined) comparison = -1; // Treat null/undefined as smaller
+        if (valA === null || valA === undefined) comparison = -1;
         else if (valB === null || valB === undefined) comparison = 1;
-        else if (typeof valA === 'number' && typeof valB === 'number') {
-          comparison = valA - valB;
-        } else if (typeof valA === 'string' && typeof valB === 'string') {
-          comparison = valA.localeCompare(valB);
-        }
+        else if (typeof valA === 'number' && typeof valB === 'number') comparison = valA - valB;
+        else if (typeof valA === 'string' && typeof valB === 'string') comparison = valA.localeCompare(valB);
         
         return sortConfigST.direction === 'descending' ? comparison * -1 : comparison;
       });
     }
 
-    setProcessedCarteira(newProcessedData as CarteiraItemWithCalc[]);
-  }, [carteira, searchTermST, sortConfigST, formatCurrency]); // formatCurrency is stable if defined outside or memoized
+    return newProcessedData;
+  }, [carteira, searchTermST, sortConfigST]);
 
   const requestSortST = (key: string) => {
     let direction: 'ascending' | 'descending' = 'ascending';

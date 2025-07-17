@@ -996,30 +996,26 @@ export default function OperacoesEncerradasTable(props: OperacoesEncerradasTable
 
   // Main processedOperacoes memo
   const processedOperacoes = useMemo(() => {
-    let ops = [...operacoesFechadas];
-    // Filter by type
+    let ops = operacoesFechadas ? [...operacoesFechadas] : [];
+
     if (filterType !== "all") {
       ops = ops.filter(op => (filterType === "day_trade" ? op.day_trade : !op.day_trade));
     }
-    // Filter by month
     if (filterMonth !== "all") {
-      ops = ops.filter(op => op.data_fechamento.substring(0, 7) === filterMonth);
+      ops = ops.filter(op => op.data_fechamento && op.data_fechamento.substring(0, 7) === filterMonth);
     }
-    // Filter by status
     if (filterStatus !== "all") {
       ops = ops.filter(op => (op.status_ir || "") === filterStatus);
     }
-    // Filter by search term
     if (searchTerm.trim()) {
       const term = searchTerm.trim().toLowerCase();
       ops = ops.filter(op =>
         op.ticker.toLowerCase().includes(term) ||
-        op.data_fechamento.toLowerCase().includes(term) ||
-        (op.resultado + "").toLowerCase().includes(term) ||
+        (op.data_fechamento && op.data_fechamento.toLowerCase().includes(term)) ||
+        (op.resultado.toString().toLowerCase().includes(term)) ||
         (op.day_trade ? "day trade" : "swing trade").includes(term)
       );
     }
-    // TODO: Add sorting logic if needed
     return ops;
   }, [operacoesFechadas, filterType, filterMonth, filterStatus, searchTerm]);
 

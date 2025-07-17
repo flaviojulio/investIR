@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Dict, Any, Optional
 
-from models import Operacao
+from .models import Operacao
 
 @dataclass
 class PosicaoAcao:
@@ -122,7 +122,6 @@ class OperacaoFechada:
     day_trade: bool
     data_fechamento: date
 
-
 def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[OperacaoFechada]:
     """
     Calcula o resultado consolidado de todas as operações de day trade para um ticker.
@@ -160,51 +159,6 @@ def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[Operacao
         day_trade=True,
         data_fechamento=data_operacao
     )
-
-def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
-    """
-    Orquestra o cálculo de resultados para uma lista de operações de um usuário.
-
-    Args:
-        operacoes: Lista de todas as operações do usuário, ordenadas por data.
-
-    Returns:
-        Um dicionário contendo 'operacoes_fechadas' e 'carteira_final'.
-    """
-    operacoes_fechadas = []
-    posicoes = defaultdict(PosicaoAcao)
-
-    operacoes_por_dia = defaultdict(list)
-    for op in operacoes:
-        operacoes_por_dia[op.date].append(op)
-
-    for data, ops_dia in sorted(operacoes_por_dia.items()):
-        classificadas = classificar_operacoes_por_dia(ops_dia)
-
-        # Processa Day Trades
-        ops_dt_por_ticker = defaultdict(list)
-        for op_dt in classificadas['day_trade']:
-            ops_dt_por_ticker[op_dt.ticker].append(op_dt)
-
-        for ticker, ops_dt in ops_dt_por_ticker.items():
-            resultado_dt = calcular_resultado_day_trade(ops_dt)
-            if resultado_dt:
-                operacoes_fechadas.append(resultado_dt)
-
-        # Processa Swing Trades
-        for op_st in sorted(classificadas['swing_trade'], key=lambda x: x.id or 0):
-            if op_st.ticker not in posicoes:
-                posicoes[op_st.ticker] = PosicaoAcao(ticker=op_st.ticker)
-
-            posicao_atual = posicoes[op_st.ticker]
-            resultado_st = processar_operacao_swing_trade(posicao_atual, op_st)
-            if resultado_st:
-                operacoes_fechadas.append(resultado_st)
-
-    return {
-        "operacoes_fechadas": operacoes_fechadas,
-        "carteira_final": posicoes
-    }
 
 def processar_operacao_swing_trade(posicao: PosicaoAcao, operacao: Operacao) -> Optional[OperacaoFechada]:
     """
@@ -287,3 +241,78 @@ def processar_operacao_swing_trade(posicao: PosicaoAcao, operacao: Operacao) -> 
             posicao.valor_venda_total += valor_venda
             posicao.preco_medio_venda = posicao.valor_venda_total / posicao.quantidade_vendida
             return None
+
+def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
+    """
+    Orquestra o cálculo de resultados para uma lista de operações de um usuário.
+
+    Args:
+        operacoes: Lista de todas as operações do usuário, ordenadas por data.
+
+    Returns:
+        Um dicionário contendo 'operacoes_fechadas' e 'carteira_final'.
+    """
+    operacoes_fechadas = []
+    posicoes = defaultdict(PosicaoAcao)
+
+    operacoes_por_dia = defaultdict(list)
+    for op in operacoes:
+        operacoes_por_dia[op.date].append(op)
+
+    for data, ops_dia in sorted(operacoes_por_dia.items()):
+        classificadas = classificar_operacoes_por_dia(ops_dia)
+
+        # Processa Day Trades
+        ops_dt_por_ticker = defaultdict(list)
+        for op_dt in classificadas['day_trade']:
+            ops_dt_por_ticker[op_dt.ticker].append(op_dt)
+
+        for ticker, ops_dt in ops_dt_por_ticker.items():
+            resultado_dt = calcular_resultado_day_trade(ops_dt)
+            if resultado_dt:
+                operacoes_fechadas.append(resultado_dt)
+
+        # Processa Swing Trades
+        for op_st in sorted(classificadas['swing_trade'], key=lambda x: x.id or 0):
+            if op_st.ticker not in posicoes:
+                posicoes[op_st.ticker] = PosicaoAcao(ticker=op_st.ticker)
+
+            posicao_atual = posicoes[op_st.ticker]
+            resultado_st = processar_operacao_swing_trade(posicao_atual, op_st)
+            if resultado_st:
+                operacoes_fechadas.append(resultado_st)
+
+    return {
+        "operacoes_fechadas": operacoes_fechadas,
+        "carteira_final": posicoes
+    }
+
+def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
+    """
+    Calcula o status de IR para uma operação fechada
+    """
+    data_fechamento = op_fechada["data_fechamento"]
+    if isinstance(data_fechamento, str):
+        from datetime import datetime
+        data_fechamento_obj = datetime.fromisoformat(data_fechamento.split("T")[0]).date()
+    else:
+        data_fechamento_obj = data_fechamento
+
+    mes_fechamento = data_fechamento_obj.strftime("%Y-%m")
+    resultado_mes = resultados_mensais_map.get(mes_fechamento)
+
+    if op_fechada["resultado"] <= 0:
+        return "Prejuízo Acumulado"
+
+    if op_fechada["day_trade"]:
+        if resultado_mes and resultado_mes.get("ir_pagar_day", 0) > 0:
+            return "Tributável Day Trade"
+        else:
+            return "Lucro Compensado"
+    else:  # Swing Trade
+        if resultado_mes and resultado_mes.get("isento_swing", False):
+            return "Isento"
+        elif resultado_mes and resultado_mes.get("ir_pagar_swing", 0) > 0:
+            return "Tributável Swing"
+        else:
+            return "Lucro Compensado"
