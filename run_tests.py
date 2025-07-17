@@ -2,12 +2,12 @@ import unittest
 import sys
 import os
 
-# Adiciona o diretório 'backend' ao sys.path para que seja reconhecido como um pacote
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'backend')))
+# Adiciona o diretório raiz ao path para que 'backend' seja encontrado como um pacote
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # Descobre e executa os testes no diretório 'backend/tests'
 loader = unittest.TestLoader()
-suite = loader.discover('tests')
+suite = loader.discover('backend/tests')
 
 runner = unittest.TextTestRunner()
 result = runner.run(suite)

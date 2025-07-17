@@ -107,8 +107,7 @@ class OperacaoBase(BaseModel):
     @field_validator('price', mode='before')
     @classmethod
     def validate_and_clean_price(cls, v):
-        from decimal import Decimal
-        if isinstance(v, (float, int, Decimal)):
+        if isinstance(v, (float, int)):
             if v < 0:
                 raise ValueError("Preço ('Preço') não pode ser negativo.")
             return float(v)
@@ -132,7 +131,7 @@ class OperacaoBase(BaseModel):
                 return price_float
             except ValueError:
                 raise ValueError("Formato de preço inválido para 'Preço'. Não foi possível converter para float.")
-        raise TypeError("Tipo inválido para 'Preço'. Deve ser string, float, int ou Decimal.")
+        raise TypeError("Tipo inválido para 'Preço'. Deve ser string, float ou int.")
 
     @field_validator('ticker') # Applied to the field after aliasing
     @classmethod

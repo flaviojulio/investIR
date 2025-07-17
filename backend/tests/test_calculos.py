@@ -1,7 +1,6 @@
 import unittest
 from datetime import date
 from decimal import Decimal
-
 from ..models import Operacao
 from ..calculos import (
     PosicaoAcao,
@@ -145,6 +144,27 @@ class TestCalculos(unittest.TestCase):
 
         # Resultado: (5000 * 31) - (5000 * 31) = 0
         self.assertAlmostEqual(op_dt.resultado, 0.0)
+
+    def test_custodia_zerada_antes_de_nova_compra(self):
+        """
+        Testa se o PM é calculado corretamente para uma nova compra após a
+        custódia ter sido completamente zerada em operações anteriores.
+        """
+        operacoes = [
+            # Cenário complexo que zera a posição
+            Operacao(id=1, ticker="VALE3", date=date(2023, 1, 20), operation="buy", quantity=2000, price=Decimal("25.50"), fees=Decimal("0"), usuario_id=1, importacao_id=1),
+            Operacao(id=2, ticker="VALE3", date=date(2023, 1, 25), operation="sell", quantity=1000, price=Decimal("26.00"), fees=Decimal("0"), usuario_id=1, importacao_id=1),
+            Operacao(id=3, ticker="VALE3", date=date(2023, 3, 30), operation="buy", quantity=3000, price=Decimal("24.00"), fees=Decimal("0"), usuario_id=1, importacao_id=1),
+            Operacao(id=4, ticker="VALE3", date=date(2023, 3, 30), operation="sell", quantity=4000, price=Decimal("25.00"), fees=Decimal("0"), usuario_id=1, importacao_id=1),
+            # Posição zerada, nova compra
+            Operacao(id=5, ticker="VALE3", date=date(2024, 6, 15), operation="buy", quantity=1000, price=Decimal("32.00"), fees=Decimal("0"), usuario_id=1, importacao_id=1),
+        ]
+
+        resultados = calcular_resultados_operacoes(operacoes)
+        carteira = resultados['carteira_final']
+
+        self.assertEqual(carteira['VALE3'].quantidade, 1000)
+        self.assertAlmostEqual(carteira['VALE3'].preco_medio, 32.00)
 
 if __name__ == '__main__':
     unittest.main()
