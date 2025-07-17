@@ -162,64 +162,44 @@ def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[Operacao
 
 def processar_operacao_swing_trade(posicao: PosicaoAcao, operacao: Operacao) -> Optional[OperacaoFechada]:
     """
-    Processa uma única operação de swing trade, atualizando a posição e
-    retornando uma operação fechada se aplicável.
+    Processa uma única operação de swing trade (compra ou venda),
+    atualizando a posição da ação e retornando uma operação fechada (resultado)
+    se uma venda ocorrer. O cálculo do custo de aquisição é baseado no preço
+    médio ponderado de todas as compras realizadas.
     """
     if operacao.operation == 'buy':
+        # Adiciona o custo da nova compra ao custo total e a quantidade comprada à quantidade total.
         custo_compra = operacao.quantity * operacao.price + operacao.fees
+        posicao.custo_total += custo_compra
+        posicao.quantidade += operacao.quantity
 
-        if posicao.quantidade_vendida > 0:
-            qtd_coberta = min(posicao.quantidade_vendida, operacao.quantity)
-            valor_venda_original = qtd_coberta * posicao.preco_medio_venda
-            custo_recompra = qtd_coberta * operacao.price
-            resultado = valor_venda_original - custo_recompra
-
-            posicao.quantidade_vendida -= qtd_coberta
-            posicao.valor_venda_total -= valor_venda_original
-            if posicao.quantidade_vendida > 0:
-                posicao.preco_medio_venda = posicao.valor_venda_total / posicao.quantidade_vendida
-            else:
-                posicao.preco_medio_venda = 0
-
-            op_fechada = OperacaoFechada(
-                ticker=posicao.ticker,
-                quantidade=qtd_coberta,
-                preco_medio_compra=operacao.price,
-                preco_medio_venda=posicao.preco_medio_venda,
-                resultado=resultado,
-                day_trade=False,
-                data_fechamento=operacao.date
-            )
-
-            qtd_restante = operacao.quantity - qtd_coberta
-            if qtd_restante > 0:
-                posicao.quantidade += qtd_restante
-                posicao.custo_total += qtd_restante * operacao.price + operacao.fees
-                posicao.preco_medio = posicao.custo_total / posicao.quantidade
-
-            return op_fechada
-        else:
-            posicao.quantidade += operacao.quantity
-            posicao.custo_total += custo_compra
-            posicao.preco_medio = posicao.custo_total / posicao.quantidade
-            return None
-    else: # sell
-        valor_venda = operacao.quantity * operacao.price - operacao.fees
-
+        # Recalcula o preço médio ponderado após a compra.
         if posicao.quantidade > 0:
-            qtd_a_vender = min(posicao.quantidade, operacao.quantity)
+            posicao.preco_medio = posicao.custo_total / posicao.quantidade
 
-            custo_venda = qtd_a_vender * posicao.preco_medio
-            resultado = (qtd_a_vender * operacao.price) - custo_venda - operacao.fees
+        return None  # Compras não fecham operações, apenas atualizam a posição.
 
+    elif operacao.operation == 'sell':
+        # A venda só pode ocorrer se houver uma posição comprada.
+        if posicao.quantidade > 0:
+            qtd_a_vender = min(operacao.quantity, posicao.quantidade)
+
+            # O custo das ações vendidas é baseado no preço médio ponderado atual.
+            custo_da_venda = qtd_a_vender * posicao.preco_medio
+            valor_da_venda = qtd_a_vender * operacao.price - operacao.fees
+            resultado = valor_da_venda - custo_da_venda
+
+            # Atualiza a posição em carteira, deduzindo a quantidade e o custo proporcional.
             posicao.quantidade -= qtd_a_vender
-            posicao.custo_total -= custo_venda
-            if posicao.quantidade > 0:
-                posicao.preco_medio = posicao.custo_total / posicao.quantidade
-            else:
-                posicao.preco_medio = 0
+            posicao.custo_total -= custo_da_venda
 
-            op_fechada = OperacaoFechada(
+            # Se a posição for zerada, o preço médio e o custo total também devem ser zerados.
+            if posicao.quantidade == 0:
+                posicao.preco_medio = 0
+                posicao.custo_total = 0
+
+            # Cria um registro da operação fechada com o resultado apurado.
+            return OperacaoFechada(
                 ticker=posicao.ticker,
                 quantidade=qtd_a_vender,
                 preco_medio_compra=posicao.preco_medio,
@@ -229,18 +209,7 @@ def processar_operacao_swing_trade(posicao: PosicaoAcao, operacao: Operacao) -> 
                 data_fechamento=operacao.date
             )
 
-            qtd_restante = operacao.quantity - qtd_a_vender
-            if qtd_restante > 0:
-                posicao.quantidade_vendida += qtd_restante
-                posicao.valor_venda_total += qtd_restante * operacao.price - operacao.fees
-                posicao.preco_medio_venda = posicao.valor_venda_total / posicao.quantidade_vendida
-
-            return op_fechada
-        else:
-            posicao.quantidade_vendida += operacao.quantity
-            posicao.valor_venda_total += valor_venda
-            posicao.preco_medio_venda = posicao.valor_venda_total / posicao.quantidade_vendida
-            return None
+    return None  # Retorna None se a operação não for uma venda ou se não houver posição para vender.
 
 def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
     """
