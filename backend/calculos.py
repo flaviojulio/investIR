@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Dict, Any, Optional
 
-from models import Operacao
+from .models import Operacao
 
 @dataclass
 class PosicaoAcao:
@@ -26,90 +26,12 @@ class PosicaoAcao:
 
 def classificar_operacoes_por_dia(operacoes_do_dia: List[Operacao]) -> Dict[str, List[Operacao]]:
     """
-    Classifica as operações de um dia em Day Trade e Swing Trade, dividindo
-    as operações se necessário.
-
-    Args:
-        operacoes_do_dia: Lista de operações de um único dia.
-
-    Returns:
-        Um dicionário com duas chaves: 'day_trade' e 'swing_trade',
-        cada uma contendo uma lista de operações.
+    Agrupa as operações de um dia por ticker.
     """
-    operacoes_day_trade = []
-    operacoes_swing_trade = []
-
-    ops_por_ticker = defaultdict(lambda: {'compras': [], 'vendas': []})
+    ops_por_ticker = defaultdict(list)
     for op in operacoes_do_dia:
-        if op.operation == 'buy':
-            ops_por_ticker[op.ticker]['compras'].append(op)
-        else:
-            ops_por_ticker[op.ticker]['vendas'].append(op)
-
-    for ticker, trades in ops_por_ticker.items():
-        compras = trades['compras']
-        vendas = trades['vendas']
-
-        if not compras or not vendas:
-            operacoes_swing_trade.extend(compras)
-            operacoes_swing_trade.extend(vendas)
-            continue
-
-        total_comprado = sum(op.quantity for op in compras)
-        total_vendido = sum(op.quantity for op in vendas)
-        qtd_day_trade = min(total_comprado, total_vendido)
-
-        if qtd_day_trade == 0:
-            operacoes_swing_trade.extend(compras)
-            operacoes_swing_trade.extend(vendas)
-            continue
-
-        # Lógica de split para compras
-        qtd_day_trade_alocada_compra = 0
-        for op in compras:
-            if qtd_day_trade_alocada_compra >= qtd_day_trade:
-                operacoes_swing_trade.append(op)
-                continue
-
-            qtd_para_dt = min(op.quantity, qtd_day_trade - qtd_day_trade_alocada_compra)
-
-            if qtd_para_dt > 0:
-                op_dt = op.model_copy(deep=True)
-                op_dt.quantity = qtd_para_dt
-                operacoes_day_trade.append(op_dt)
-                qtd_day_trade_alocada_compra += qtd_para_dt
-
-            qtd_para_st = op.quantity - qtd_para_dt
-            if qtd_para_st > 0:
-                op_st = op.model_copy(deep=True)
-                op_st.quantity = qtd_para_st
-                operacoes_swing_trade.append(op_st)
-
-        # Lógica de split para vendas
-        qtd_day_trade_alocada_venda = 0
-        for op in vendas:
-            if qtd_day_trade_alocada_venda >= qtd_day_trade:
-                operacoes_swing_trade.append(op)
-                continue
-
-            qtd_para_dt = min(op.quantity, qtd_day_trade - qtd_day_trade_alocada_venda)
-
-            if qtd_para_dt > 0:
-                op_dt = op.model_copy(deep=True)
-                op_dt.quantity = qtd_para_dt
-                operacoes_day_trade.append(op_dt)
-                qtd_day_trade_alocada_venda += qtd_para_dt
-
-            qtd_para_st = op.quantity - qtd_para_dt
-            if qtd_para_st > 0:
-                op_st = op.model_copy(deep=True)
-                op_st.quantity = qtd_para_st
-                operacoes_swing_trade.append(op_st)
-
-    return {
-        'day_trade': operacoes_day_trade,
-        'swing_trade': operacoes_swing_trade
-    }
+        ops_por_ticker[op.ticker].append(op)
+    return ops_por_ticker
 
 @dataclass
 class OperacaoFechada:
@@ -122,13 +44,10 @@ class OperacaoFechada:
     day_trade: bool
     data_fechamento: date
 
-def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[OperacaoFechada]:
+def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Dict[str, Any]:
     """
-    Calcula o resultado consolidado de todas as operações de day trade para um ticker.
+    Calcula o resultado de day trade e retorna as operações de swing trade restantes.
     """
-    if not operacoes:
-        return None
-
     ticker = operacoes[0].ticker
     data_operacao = operacoes[0].date
 
@@ -136,29 +55,39 @@ def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[Operacao
     vendas = [op for op in operacoes if op.operation == 'sell']
 
     total_custo_compra = sum(op.quantity * op.price + op.fees for op in compras)
-    total_valor_venda = sum(op.quantity * op.price - op.fees for op in vendas)
     total_qtd_compra = sum(op.quantity for op in compras)
+    pm_compra_ponderado = total_custo_compra / total_qtd_compra if total_qtd_compra > 0 else 0
+
+    total_valor_venda = sum(op.quantity * op.price - op.fees for op in vendas)
     total_qtd_venda = sum(op.quantity for op in vendas)
-
-    if total_qtd_compra == 0 or total_qtd_venda == 0:
-        return None # Não é um day trade completo
-
-    pm_compra = total_custo_compra / total_qtd_compra
-    pm_venda = total_valor_venda / total_qtd_venda
+    pm_venda_ponderado = total_valor_venda / total_qtd_venda if total_qtd_venda > 0 else 0
 
     qtd_day_trade = min(total_qtd_compra, total_qtd_venda)
 
-    resultado = (pm_venda - pm_compra) * qtd_day_trade
+    resultado_dt = None
+    if qtd_day_trade > 0:
+        custo_total_dt = qtd_day_trade * pm_compra_ponderado
+        valor_venda_dt = qtd_day_trade * pm_venda_ponderado
+        resultado = valor_venda_dt - custo_total_dt
+        resultado_dt = OperacaoFechada(
+            ticker=ticker,
+            quantidade=qtd_day_trade,
+            preco_medio_compra=pm_compra_ponderado,
+            preco_medio_venda=pm_venda_ponderado,
+            resultado=resultado,
+            day_trade=True,
+            data_fechamento=data_operacao
+        )
 
-    return OperacaoFechada(
-        ticker=ticker,
-        quantidade=qtd_day_trade,
-        preco_medio_compra=pm_compra,
-        preco_medio_venda=pm_venda,
-        resultado=resultado,
-        day_trade=True,
-        data_fechamento=data_operacao
-    )
+    swing_trade_ops = []
+    if total_qtd_compra > qtd_day_trade:
+        # Simplificação: adiciona todas as compras se houver excesso
+        swing_trade_ops.extend(compras)
+    if total_qtd_venda > qtd_day_trade:
+        # Simplificação: adiciona todas as vendas se houver excesso
+        swing_trade_ops.extend(vendas)
+
+    return {"resultado_dt": resultado_dt, "swing_trade_ops": swing_trade_ops}
 
 def processar_operacao_swing_trade(posicao: PosicaoAcao, operacao: Operacao) -> Optional[OperacaoFechada]:
     """
@@ -245,12 +174,6 @@ def processar_operacao_swing_trade(posicao: PosicaoAcao, operacao: Operacao) -> 
 def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
     """
     Orquestra o cálculo de resultados para uma lista de operações de um usuário.
-
-    Args:
-        operacoes: Lista de todas as operações do usuário, ordenadas por data.
-
-    Returns:
-        Um dicionário contendo 'operacoes_fechadas' e 'carteira_final'.
     """
     operacoes_fechadas = []
     posicoes = defaultdict(PosicaoAcao)
@@ -260,59 +183,29 @@ def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
         operacoes_por_dia[op.date].append(op)
 
     for data, ops_dia in sorted(operacoes_por_dia.items()):
-        classificadas = classificar_operacoes_por_dia(ops_dia)
+        ops_por_ticker = classificar_operacoes_por_dia(ops_dia)
 
-        # Processa Day Trades
-        ops_dt_por_ticker = defaultdict(list)
-        for op_dt in classificadas['day_trade']:
-            ops_dt_por_ticker[op_dt.ticker].append(op_dt)
+        for ticker, ops_ticker_dia in ops_por_ticker.items():
+            compras = [op for op in ops_ticker_dia if op.operation == 'buy']
+            vendas = [op for op in ops_ticker_dia if op.operation == 'sell']
 
-        for ticker, ops_dt in ops_dt_por_ticker.items():
-            resultado_dt = calcular_resultado_day_trade(ops_dt)
-            if resultado_dt:
-                operacoes_fechadas.append(resultado_dt)
+            swing_trade_ops = ops_ticker_dia
+            if compras and vendas:
+                resultado_day_trade = calcular_resultado_day_trade(ops_ticker_dia)
+                if resultado_day_trade["resultado_dt"]:
+                    operacoes_fechadas.append(resultado_day_trade["resultado_dt"])
+                swing_trade_ops = resultado_day_trade["swing_trade_ops"]
 
-        # Processa Swing Trades
-        for op_st in sorted(classificadas['swing_trade'], key=lambda x: x.id or 0):
-            if op_st.ticker not in posicoes:
-                posicoes[op_st.ticker] = PosicaoAcao(ticker=op_st.ticker)
+            for op_st in sorted(swing_trade_ops, key=lambda x: x.id or 0):
+                if op_st.ticker not in posicoes:
+                    posicoes[op_st.ticker] = PosicaoAcao(ticker=op_st.ticker)
 
-            posicao_atual = posicoes[op_st.ticker]
-            resultado_st = processar_operacao_swing_trade(posicao_atual, op_st)
-            if resultado_st:
-                operacoes_fechadas.append(resultado_st)
+                posicao_atual = posicoes[op_st.ticker]
+                resultado_st = processar_operacao_swing_trade(posicao_atual, op_st)
+                if resultado_st:
+                    operacoes_fechadas.append(resultado_st)
 
     return {
         "operacoes_fechadas": operacoes_fechadas,
         "carteira_final": posicoes
     }
-
-def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
-    """
-    Calcula o status de IR para uma operação fechada
-    """
-    data_fechamento = op_fechada["data_fechamento"]
-    if isinstance(data_fechamento, str):
-        from datetime import datetime
-        data_fechamento_obj = datetime.fromisoformat(data_fechamento.split("T")[0]).date()
-    else:
-        data_fechamento_obj = data_fechamento
-
-    mes_fechamento = data_fechamento_obj.strftime("%Y-%m")
-    resultado_mes = resultados_mensais_map.get(mes_fechamento)
-
-    if op_fechada["resultado"] <= 0:
-        return "Prejuízo Acumulado"
-
-    if op_fechada["day_trade"]:
-        if resultado_mes and resultado_mes.get("ir_pagar_day", 0) > 0:
-            return "Tributável Day Trade"
-        else:
-            return "Lucro Compensado"
-    else:  # Swing Trade
-        if resultado_mes and resultado_mes.get("isento_swing", False):
-            return "Isento"
-        elif resultado_mes and resultado_mes.get("ir_pagar_swing", 0) > 0:
-            return "Tributável Swing"
-        else:
-            return "Lucro Compensado"

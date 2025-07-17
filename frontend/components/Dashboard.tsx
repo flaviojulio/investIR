@@ -1173,7 +1173,6 @@ export function Dashboard() {
         operacoes: operacoesRes.data,
         operacoes_fechadas: operacoesFechadasRes.data, // Set closed operations data
       })
-
     } catch (error) {
       toast({
         title: "Erro",

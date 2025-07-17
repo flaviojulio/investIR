@@ -107,22 +107,31 @@ class OperacaoBase(BaseModel):
     @field_validator('price', mode='before')
     @classmethod
     def validate_and_clean_price(cls, v):
-        from decimal import Decimal, InvalidOperation
+        from decimal import Decimal
         if isinstance(v, (float, int, Decimal)):
             if v < 0:
                 raise ValueError("Preço ('Preço') não pode ser negativo.")
             return float(v)
         if isinstance(v, str):
-            price_str = v.replace("R$", "").strip()
-            # Remove pontos de milhar, mas mantém o ponto decimal
-            price_str = price_str.replace('.', '').replace(',', '.')
+            price_str = v.strip()
+            if price_str.lower().startswith('r$'):
+                price_str = price_str[2:].strip()
+
+            # Remove thousands separators (dots in pt-BR)
+            # This regex handles cases like "1.234,56" or "1234,56"
+            # It removes dots that are followed by at least one digit and then a comma or end of string.
+            price_str = re.sub(r'\.(?=\d{3}(?:,|$))', '', price_str)
+
+            # Replace decimal comma with a dot
+            price_str = price_str.replace(',', '.')
+
             try:
                 price_float = float(price_str)
                 if price_float < 0:
                     raise ValueError("Preço ('Preço') não pode ser negativo após o parse.")
                 return price_float
-            except (ValueError, InvalidOperation):
-                raise ValueError("Formato de preço inválido para 'Preço'.")
+            except ValueError:
+                raise ValueError("Formato de preço inválido para 'Preço'. Não foi possível converter para float.")
         raise TypeError("Tipo inválido para 'Preço'. Deve ser string, float, int ou Decimal.")
 
     @field_validator('ticker') # Applied to the field after aliasing
