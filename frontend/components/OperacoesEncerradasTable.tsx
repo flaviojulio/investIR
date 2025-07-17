@@ -167,8 +167,8 @@ interface OperacaoFechada {
   valor_compra?: number;
   valor_venda?: number;
   prejuizo_anterior_acumulado?: number;
-  preco_abertura?: number;      
-  preco_fechamento?: number;    
+  preco_abertura?: number;
+  preco_fechamento?: number;
   // ...outros campos possíveis
 }
 
@@ -178,7 +178,12 @@ interface OperationRowProps {
   isExpanded: boolean;
   toggleRow: (rowKey: string) => void;
   isProfit: boolean;
-  getStatusBadge: (status: string, isProfit: boolean) => JSX.Element;
+  getStatusBadge: (
+    status: string,
+    isProfit: boolean,
+    op: OperacaoFechada,
+    operacoesFechadas: OperacaoFechada[]
+  ) => JSX.Element; // ✅ ATUALIZADA
   getDarfBadge: (
     darfStatus: string | null,
     op: OperacaoFechada
@@ -193,7 +198,6 @@ interface OperationRowProps {
   operacoesFechadas: OperacaoFechada[];
   resultadosMensais: ResultadoMensal[];
 }
-
 // Subcomponent: Filters
 const Filters = ({
   searchTerm,
@@ -336,6 +340,69 @@ const TableHeader = ({
   </div>
 );
 
+// Função utilitária global para compensação de prejuízo
+function getCompensacaoInfo(
+  op: OperacaoFechada,
+  operacoesFechadas: OperacaoFechada[]
+): {
+  temCompensacao: boolean;
+  ehCompensacaoTotal: boolean;
+  ehCompensacaoParcial: boolean;
+  valorCompensado: number;
+  lucroTributavel: number;
+} {
+  // Só verifica compensação para operações com lucro
+  if (!op || op.resultado <= 0) {
+    return {
+      temCompensacao: false,
+      ehCompensacaoTotal: false,
+      ehCompensacaoParcial: false,
+      valorCompensado: 0,
+      lucroTributavel: 0,
+    };
+  }
+
+  const tipoOperacao = op.day_trade ? "day_trade" : "swing_trade";
+  const lucroOperacao = op.resultado;
+
+  // Calcular prejuízo anterior disponível
+  const operacoesAnteriores = operacoesFechadas
+    .filter((opAnt) => {
+      const mesmaTipo =
+        (opAnt.day_trade ? "day_trade" : "swing_trade") === tipoOperacao;
+      const dataAnterior =
+        new Date(opAnt.data_fechamento) < new Date(op.data_fechamento);
+      return mesmaTipo && dataAnterior;
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.data_fechamento).getTime() -
+        new Date(b.data_fechamento).getTime()
+    );
+
+  // Calcular saldo de prejuízo disponível
+  let prejuizoAcumulado = 0;
+  for (const opAnt of operacoesAnteriores) {
+    if (opAnt.resultado < 0) {
+      prejuizoAcumulado += Math.abs(opAnt.resultado);
+    } else if (opAnt.resultado > 0) {
+      const compensacaoUsada = Math.min(prejuizoAcumulado, opAnt.resultado);
+      prejuizoAcumulado -= compensacaoUsada;
+    }
+  }
+
+  const valorCompensado = Math.min(lucroOperacao, prejuizoAcumulado);
+  const lucroTributavel = Math.max(0, lucroOperacao - valorCompensado);
+
+  return {
+    temCompensacao: valorCompensado > 0,
+    ehCompensacaoTotal: valorCompensado > 0 && lucroTributavel === 0,
+    ehCompensacaoParcial: valorCompensado > 0 && lucroTributavel > 0,
+    valorCompensado,
+    lucroTributavel,
+  };
+}
+
 // Subcomponent: OperationRow
 const OperationRow = ({
   op,
@@ -351,6 +418,172 @@ const OperationRow = ({
   operacoesFechadas,
   resultadosMensais, // ✅ Usar apenas a prop da interface oficial
 }: OperationRowProps) => {
+  const calcularPrejuizoAcumuladoAteOperacao = (
+    operacaoAtual: OperacaoFechada,
+    todasOperacoes: OperacaoFechada[]
+  ): {
+    prejuizoAnterior: number;
+    prejuizoAteOperacao: number;
+    operacoesAnteriores: OperacaoFechada[];
+  } => {
+    const tipoOperacao = operacaoAtual.day_trade ? "day_trade" : "swing_trade";
+
+    // Filtrar operações do mesmo tipo até a data/hora da operação atual
+    const operacoesRelevantes = todasOperacoes
+      .filter((op) => {
+        const mesmaTipoOperacao =
+          (op.day_trade ? "day_trade" : "swing_trade") === tipoOperacao;
+
+        // Incluir apenas operações até a data da operação atual (inclusive)
+        const dataOp = new Date(op.data_fechamento);
+        const dataAtual = new Date(operacaoAtual.data_fechamento);
+
+        return mesmaTipoOperacao && dataOp <= dataAtual;
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.data_fechamento).getTime() -
+          new Date(b.data_fechamento).getTime()
+      );
+
+    // Encontrar o índice da operação atual
+    const indiceOperacaoAtual = operacoesRelevantes.findIndex(
+      (op) =>
+        op.ticker === operacaoAtual.ticker &&
+        op.data_fechamento === operacaoAtual.data_fechamento &&
+        op.resultado === operacaoAtual.resultado &&
+        op.quantidade === operacaoAtual.quantidade
+    );
+
+    // Operações anteriores (não incluindo a atual)
+    const operacoesAnteriores = operacoesRelevantes.slice(
+      0,
+      indiceOperacaoAtual
+    );
+
+    // Operações até a atual (incluindo a atual)
+    const operacoesAteAtual = operacoesRelevantes.slice(
+      0,
+      indiceOperacaoAtual + 1
+    );
+
+    // Calcular prejuízo anterior (sem a operação atual)
+    const prejuizoAnterior = operacoesAnteriores
+      .filter((op) => op.resultado < 0)
+      .reduce((acc, op) => acc + Math.abs(op.resultado), 0);
+
+    // Calcular prejuízo até a operação atual (incluindo ela se for prejuízo)
+    const prejuizoAteOperacao = operacoesAteAtual
+      .filter((op) => op.resultado < 0)
+      .reduce((acc, op) => acc + Math.abs(op.resultado), 0);
+
+    return {
+      prejuizoAnterior,
+      prejuizoAteOperacao,
+      operacoesAnteriores,
+    };
+  };
+
+  const calcularDetalhesCompensacao = (
+    operacaoAtual: OperacaoFechada,
+    todasOperacoes: OperacaoFechada[]
+  ): {
+    lucroOperacao: number;
+    prejuizoAnteriorDisponivel: number;
+    valorCompensado: number;
+    prejuizoRestante: number;
+    lucroTributavel: number;
+    operacoesAnteriores: OperacaoFechada[];
+    historicoPrejuizos: Array<{
+      data: string;
+      ticker: string;
+      valor: number;
+      usado: boolean;
+    }>;
+  } => {
+    const tipoOperacao = operacaoAtual.day_trade ? "day_trade" : "swing_trade";
+    const lucroOperacao = operacaoAtual.resultado;
+
+    // Buscar operações anteriores do mesmo tipo, ordenadas cronologicamente
+    const operacoesAnteriores = todasOperacoes
+      .filter((op) => {
+        const mesmaTipo =
+          (op.day_trade ? "day_trade" : "swing_trade") === tipoOperacao;
+        const dataAnterior =
+          new Date(op.data_fechamento) <
+          new Date(operacaoAtual.data_fechamento);
+        return mesmaTipo && dataAnterior;
+      })
+      .sort(
+        (a, b) =>
+          new Date(a.data_fechamento).getTime() -
+          new Date(b.data_fechamento).getTime()
+      );
+
+    // Calcular prejuízos acumulados até esta operação
+    let prejuizoAcumulado = 0;
+    let lucrosJaCompensados = 0;
+    const historicoPrejuizos: Array<{
+      data: string;
+      ticker: string;
+      valor: number;
+      usado: boolean;
+    }> = [];
+
+    // Processar operações anteriores para calcular saldo disponível
+    for (const op of operacoesAnteriores) {
+      if (op.resultado < 0) {
+        // É prejuízo - adiciona ao saldo
+        prejuizoAcumulado += Math.abs(op.resultado);
+        historicoPrejuizos.push({
+          data: op.data_fechamento,
+          ticker: op.ticker,
+          valor: Math.abs(op.resultado),
+          usado: false,
+        });
+      } else if (op.resultado > 0) {
+        // É lucro - pode ter compensado prejuízos anteriores
+        const lucroDisponivel = op.resultado;
+        const prejuizoParaCompensar = Math.min(
+          prejuizoAcumulado,
+          lucroDisponivel
+        );
+
+        if (prejuizoParaCompensar > 0) {
+          prejuizoAcumulado -= prejuizoParaCompensar;
+          lucrosJaCompensados += prejuizoParaCompensar;
+
+          // Marcar prejuízos como usados (FIFO)
+          let valorRestanteParaMarcar = prejuizoParaCompensar;
+          for (const item of historicoPrejuizos) {
+            if (!item.usado && valorRestanteParaMarcar > 0) {
+              const valorAUsar = Math.min(item.valor, valorRestanteParaMarcar);
+              if (valorAUsar === item.valor) {
+                item.usado = true;
+              }
+              valorRestanteParaMarcar -= valorAUsar;
+            }
+          }
+        }
+      }
+    }
+
+    // Calcular compensação da operação atual
+    const prejuizoAnteriorDisponivel = prejuizoAcumulado;
+    const valorCompensado = Math.min(lucroOperacao, prejuizoAnteriorDisponivel);
+    const prejuizoRestante = prejuizoAnteriorDisponivel - valorCompensado;
+    const lucroTributavel = Math.max(0, lucroOperacao - valorCompensado);
+
+    return {
+      lucroOperacao,
+      prejuizoAnteriorDisponivel,
+      valorCompensado,
+      prejuizoRestante,
+      lucroTributavel,
+      operacoesAnteriores,
+      historicoPrejuizos: historicoPrejuizos.filter((item) => !item.usado),
+    };
+  };
   // ✅ Usar a interface oficial
   const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
   if (op.ticker === "VALE3") {
@@ -438,7 +671,12 @@ const OperationRow = ({
 
         <div className="col-span-3 flex items-center justify-start">
           <div className="flex items-center gap-2 min-h-[32px]">
-            {getStatusBadge(op.status_ir || "", isProfit)}
+            {getStatusBadge(
+              op.status_ir || "",
+              isProfit,
+              op,
+              operacoesFechadas
+            )}
             {(op.status_ir === "Tributável Day Trade" ||
               op.status_ir === "Tributável Swing") &&
               getDarfBadge(
@@ -520,8 +758,8 @@ const OperationRow = ({
                           op.preco_abertura && op.preco_abertura > 0
                             ? op.preco_abertura
                             : op.valor_compra && op.quantidade
-                              ? op.valor_compra / op.quantidade
-                              : 0
+                            ? op.valor_compra / op.quantidade
+                            : 0
                         )}
                       </span>
                     </div>
@@ -538,8 +776,8 @@ const OperationRow = ({
                           op.preco_fechamento && op.preco_fechamento > 0
                             ? op.preco_fechamento
                             : op.valor_venda && op.quantidade
-                              ? op.valor_venda / op.quantidade
-                              : 0
+                            ? op.valor_venda / op.quantidade
+                            : 0
                         )}
                       </span>
                     </div>
@@ -627,7 +865,12 @@ const OperationRow = ({
 
                         {/* Badges */}
                         <div className="flex items-center gap-3 mb-3 flex-wrap">
-                          {getStatusBadge(op.status_ir || "", isProfit)}
+                          {getStatusBadge(
+                            op.status_ir || "",
+                            isProfit,
+                            op,
+                            operacoesFechadas
+                          )}
                           {(op.status_ir === "Tributável Day Trade" ||
                             op.status_ir === "Tributável Swing") &&
                             getDarfBadge(
@@ -676,6 +919,20 @@ const OperationRow = ({
                           </div>
                           <div className="text-xs text-orange-700 leading-relaxed space-y-3">
                             {(() => {
+                              const tipoOperacao = op.day_trade
+                                ? "day trade"
+                                : "swing trade";
+
+                              // ✅ NOVO CÁLCULO: Prejuízo acumulado até esta operação
+                              const {
+                                prejuizoAnterior,
+                                prejuizoAteOperacao,
+                                operacoesAnteriores,
+                              } = calcularPrejuizoAcumuladoAteOperacao(
+                                op,
+                                operacoesFechadas
+                              );
+
                               const mesOperacao = op.data_fechamento.substring(
                                 0,
                                 7
@@ -684,23 +941,8 @@ const OperationRow = ({
                                 0,
                                 10
                               );
-                              const tipoOperacao = op.day_trade
-                                ? "day trade"
-                                : "swing trade";
 
-                              const operacoesMesmoTipo =
-                                operacoesFechadas.filter(
-                                  (opMes) =>
-                                    opMes.data_fechamento.substring(0, 7) ===
-                                      mesOperacao &&
-                                    (opMes.day_trade
-                                      ? "day trade"
-                                      : "swing trade") === tipoOperacao &&
-                                    opMes.data_fechamento <=
-                                      op.data_fechamento &&
-                                    opMes !== op
-                                );
-
+                              // Operações do mesmo dia para mostrar fluxo
                               const operacoesMesmoDia = operacoesFechadas
                                 .filter(
                                   (opDia) =>
@@ -716,43 +958,10 @@ const OperationRow = ({
                                   )
                                 );
 
-                              const lucrosJaCompensados = operacoesMesmoTipo
-                                .filter(
-                                  (opMes) =>
-                                    opMes.resultado > 0 &&
-                                    opMes.status_ir === "Lucro Compensado"
-                                )
-                                .reduce(
-                                  (sum, opMes) => sum + opMes.resultado,
-                                  0
-                                );
-
-                              const prejuizoAnteriorOriginal =
-                                op.prejuizo_anterior_acumulado || 0;
-                              const prejuizoAnteriorDisponivel = Math.max(
-                                0,
-                                prejuizoAnteriorOriginal - lucrosJaCompensados
-                              );
-                              const totalPrejuizosMes = operacoesFechadas
-                                .filter(
-                                  (opMes) =>
-                                    opMes.data_fechamento.substring(0, 7) ===
-                                      mesOperacao &&
-                                    (opMes.day_trade
-                                      ? "day trade"
-                                      : "swing trade") === tipoOperacao &&
-                                    opMes.resultado < 0
-                                )
-                                .reduce(
-                                  (sum, opMes) =>
-                                    sum + Math.abs(opMes.resultado),
-                                  0
-                                );
-                              const prejuizoTotalAcumulado =
-                                prejuizoAnteriorDisponivel + totalPrejuizosMes;
                               const isMultiplasOperacoesDia =
                                 operacoesMesmoDia.length > 1;
 
+                              // Fluxo sequencial do dia (se houver múltiplas operações)
                               let fluxoDia = [];
                               if (isMultiplasOperacoesDia) {
                                 const indexOperacaoAtual =
@@ -764,11 +973,12 @@ const OperationRow = ({
                                       opDia.resultado === op.resultado
                                   );
 
-                                let saldoSequencial =
-                                  prejuizoAnteriorDisponivel;
+                                let saldoSequencial = prejuizoAnterior; // ✅ Usar prejuízo anterior correto
                                 fluxoDia = operacoesMesmoDia.map(
                                   (opSeq, idx) => {
                                     const saldoAnterior = saldoSequencial;
+
+                                    // Adicionar prejuízo ou subtrair compensação
                                     if (opSeq.resultado < 0) {
                                       saldoSequencial += Math.abs(
                                         opSeq.resultado
@@ -783,6 +993,7 @@ const OperationRow = ({
                                       );
                                       saldoSequencial -= compensacao;
                                     }
+
                                     return {
                                       operacao: opSeq,
                                       index: idx,
@@ -797,6 +1008,7 @@ const OperationRow = ({
 
                               return (
                                 <>
+                                  {/* Fluxo do dia (se múltiplas operações) */}
                                   {isMultiplasOperacoesDia && (
                                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
                                       <div className="flex items-center gap-2 mb-2">
@@ -877,19 +1089,35 @@ const OperationRow = ({
                                     </div>
                                   )}
 
+                                  {/* ✅ CARD PRINCIPAL CORRIGIDO */}
                                   <div className="bg-white/60 rounded-lg p-3 border border-orange-300/50 mt-4">
                                     <div className="flex items-center justify-center gap-3 mb-2">
                                       <div className="text-center flex-1">
-                                        Prejuízo Total Acumulado
+                                        <div className="text-xs text-orange-600 mb-1">
+                                          Prejuízo Acumulado até esta Operação
+                                        </div>
                                         <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1">
-                                          {formatCurrency(
-                                            prejuizoTotalAcumulado
+                                          {formatCurrency(prejuizoAteOperacao)}
+                                        </div>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                          {operacoesAnteriores.length > 0 ? (
+                                            <>
+                                              Anterior:{" "}
+                                              {formatCurrency(prejuizoAnterior)}{" "}
+                                              + Esta op:{" "}
+                                              {formatCurrency(
+                                                Math.abs(op.resultado)
+                                              )}
+                                            </>
+                                          ) : (
+                                            "Primeira operação com prejuízo"
                                           )}
                                         </div>
                                       </div>
                                     </div>
                                   </div>
 
+                                  {/* Explicação da compensação futura */}
                                   <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                                     <div className="flex items-start gap-2">
                                       <div className="text-green-600 mt-0.5">
@@ -908,7 +1136,7 @@ const OperationRow = ({
                                           , este saldo de{" "}
                                           <span className="font-bold text-red-700">
                                             {formatCurrency(
-                                              prejuizoTotalAcumulado
+                                              prejuizoAteOperacao
                                             )}
                                           </span>{" "}
                                           será automaticamente descontado,
@@ -926,179 +1154,524 @@ const OperationRow = ({
                       )}
 
                       {/* Profit Compensation Card */}
+                      {/* Profit Compensation Card - VERSÃO SUPER DIDÁTICA */}
                       {isProfit &&
-                        (op.prejuizo_anterior_acumulado || 0) > 0 && (
-                          <div className="flex flex-col p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
-                            <div className="flex items-center gap-2 mb-2">
-                              <Info className="h-4 w-4 text-green-600" />
-                              <span className="text-xs font-semibold uppercase tracking-wide text-green-600">
-                                Compensação de Prejuízo
-                              </span>
-                            </div>
-                            <div className="text-xs text-green-700 leading-relaxed">
-                              {(() => {
-                                const prejuizoAnterior =
-                                  op.prejuizo_anterior_acumulado || 0;
-                                const lucroOperacao = op.resultado;
-                                const tipoOperacao = op.day_trade
-                                  ? "day trade"
-                                  : "swing trade";
+                        (op.status_ir === "Lucro Compensado" ||
+                          op.status_ir === "Tributável Day Trade" ||
+                          op.status_ir === "Tributável Swing") &&
+                        (() => {
+                          const compensacaoInfo = getCompensacaoInfo(
+                            op,
+                            operacoesFechadas
+                          );
 
-                                if (prejuizoAnterior > 0) {
-                                  const prejuizoCompensado = Math.min(
-                                    lucroOperacao,
-                                    prejuizoAnterior
-                                  );
-                                  const prejuizoRestante =
-                                    prejuizoAnterior - prejuizoCompensado;
-                                  const lucroTributavel = Math.max(
-                                    0,
-                                    lucroOperacao - prejuizoAnterior
+                          // Só mostra o card se tem compensação (total ou parcial)
+                          if (!compensacaoInfo.temCompensacao) return null;
+
+                          return (
+                            <div className="flex flex-col p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
+                              <div className="flex items-center gap-2 mb-4">
+                                {compensacaoInfo.ehCompensacaoTotal ? (
+                                  <>
+                                    <CheckCircle2 className="h-5 w-5 text-green-600" />
+                                    <span className="text-sm font-bold uppercase tracking-wide text-green-700">
+                                      ✅ Compensação Total de Prejuízo
+                                    </span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Info className="h-5 w-5 text-orange-600" />
+                                    <span className="text-sm font-bold uppercase tracking-wide text-orange-700">
+                                      ⚖️ Compensação Parcial de Prejuízo
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+
+                              <div className="text-xs leading-relaxed space-y-4">
+                                {(() => {
+                                  const tipoOperacao = op.day_trade
+                                    ? "day trade"
+                                    : "swing trade";
+                                  const detalhes = calcularDetalhesCompensacao(
+                                    op,
+                                    operacoesFechadas
                                   );
 
                                   return (
                                     <>
-                                      <div className="mb-2">
-                                        <span className="font-bold">
-                                          Cálculo da Compensação:
-                                        </span>
-                                      </div>
-                                      <div className="space-y-1 mb-3 text-xs">
-                                        <div>
-                                          • Lucro da operação:{" "}
-                                          <span className="font-bold text-green-800">
-                                            {formatCurrency(lucroOperacao)}
+                                      {/* 🎯 SEÇÃO 1: RESUMO VISUAL COM ÍCONES */}
+                                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                                            <span className="text-white text-sm font-bold">
+                                              💰
+                                            </span>
+                                          </div>
+                                          <span className="font-bold text-blue-800 text-sm">
+                                            Resumo da Operação
                                           </span>
                                         </div>
-                                        <div>
-                                          • Prejuízo anterior acumulado:{" "}
-                                          <span className="font-bold text-red-600">
-                                            {formatCurrency(prejuizoAnterior)}
-                                          </span>
-                                        </div>
-                                        <div className="border-t pt-1 mt-1">
-                                          <div>
-                                            • Prejuízo compensado:{" "}
-                                            <span className="font-bold text-orange-600">
+
+                                        <div className="grid grid-cols-3 gap-3">
+                                          <div className="bg-white/80 rounded-lg p-3 text-center border border-blue-200">
+                                            <div className="text-2xl mb-1">
+                                              💵
+                                            </div>
+                                            <div className="text-blue-600 font-medium text-xs">
+                                              Lucro Operação
+                                            </div>
+                                            <div className="font-black text-green-700 text-sm">
                                               {formatCurrency(
-                                                prejuizoCompensado
+                                                detalhes.lucroOperacao
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          <div className="bg-white/80 rounded-lg p-3 text-center border border-blue-200">
+                                            <div className="text-2xl mb-1">
+                                              📉
+                                            </div>
+                                            <div className="text-blue-600 font-medium text-xs">
+                                              Prejuízo Disponível
+                                            </div>
+                                            <div className="font-black text-red-700 text-sm">
+                                              {formatCurrency(
+                                                detalhes.prejuizoAnteriorDisponivel
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          <div className="bg-white/80 rounded-lg p-3 text-center border border-blue-200">
+                                            <div className="text-2xl mb-1">
+                                              ⚖️
+                                            </div>
+                                            <div className="text-blue-600 font-medium text-xs">
+                                              Tipo Operação
+                                            </div>
+                                            <div className="font-black text-blue-700 text-sm capitalize">
+                                              {tipoOperacao}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* 🧮 SEÇÃO 2: CALCULADORA VISUAL */}
+                                      <div className="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-xl p-4 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
+                                            <Calculator className="h-4 w-4 text-white" />
+                                          </div>
+                                          <span className="font-bold text-orange-800 text-sm">
+                                            Calculadora da Compensação
+                                          </span>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          {/* Linha 1: Lucro */}
+                                          <div className="flex items-center justify-between p-3 bg-green-100 rounded-lg border border-green-300">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-green-600 text-lg">
+                                                ➕
+                                              </span>
+                                              <span className="text-green-800 font-medium">
+                                                Lucro da operação
+                                              </span>
+                                            </div>
+                                            <span className="font-black text-green-900 text-sm">
+                                              {formatCurrency(
+                                                detalhes.lucroOperacao
                                               )}
                                             </span>
                                           </div>
-                                          {prejuizoRestante > 0 && (
-                                            <div>
-                                              • Prejuízo restante:{" "}
-                                              <span className="font-bold text-red-600">
+
+                                          {/* Linha 2: Prejuízo */}
+                                          <div className="flex items-center justify-between p-3 bg-red-100 rounded-lg border border-red-300">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-red-600 text-lg">
+                                                ➖
+                                              </span>
+                                              <span className="text-red-800 font-medium">
+                                                Prejuízo disponível para
+                                                compensar
+                                              </span>
+                                            </div>
+                                            <span className="font-black text-red-900 text-sm">
+                                              {formatCurrency(
+                                                detalhes.prejuizoAnteriorDisponivel
+                                              )}
+                                            </span>
+                                          </div>
+
+                                          {/* Linha 3: Resultado */}
+                                          <div className="border-t-2 border-orange-300 pt-2 mt-3">
+                                            <div className="flex items-center justify-between p-3 bg-orange-100 rounded-lg border-2 border-orange-400">
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-orange-600 text-lg">
+                                                  💡
+                                                </span>
+                                                <span className="text-orange-800 font-bold">
+                                                  Valor compensado
+                                                </span>
+                                              </div>
+                                              <span className="font-black text-orange-900 text-lg">
                                                 {formatCurrency(
-                                                  prejuizoRestante
+                                                  detalhes.valorCompensado
                                                 )}
                                               </span>
                                             </div>
-                                          )}
-                                          {lucroTributavel > 0 && (
-                                            <div>
-                                              • Lucro tributável:{" "}
-                                              <span className="font-bold text-green-800">
-                                                {formatCurrency(
-                                                  lucroTributavel
-                                                )}
-                                              </span>
-                                            </div>
-                                          )}
+
+                                            {/* Lucro tributável (se houver) */}
+                                            {detalhes.lucroTributavel > 0 && (
+                                              <div className="flex items-center justify-between p-3 bg-blue-100 rounded-lg border border-blue-300 mt-2">
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-blue-600 text-lg">
+                                                    📊
+                                                  </span>
+                                                  <span className="text-blue-800 font-medium">
+                                                    Lucro tributável restante
+                                                  </span>
+                                                </div>
+                                                <span className="font-black text-blue-900 text-sm">
+                                                  {formatCurrency(
+                                                    detalhes.lucroTributavel
+                                                  )}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
                                         </div>
                                       </div>
-                                      <div className="text-xs">
-                                        {(() => {
-                                          const statusBased = {
-                                            "Lucro Compensado": {
-                                              totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(
-                                                lucroOperacao
-                                              )}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>, resultando em <span class="font-bold">operação isenta de IR</span>.`,
-                                              parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(
-                                                prejuizoCompensado
-                                              )} do lucro foi usado para compensar o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(
-                                                lucroTributavel
-                                              )}) está sujeito a tributação de ${
-                                                op.day_trade ? "20%" : "15%"
-                                              }.`,
-                                            },
-                                            "Tributável Swing": {
-                                              totalText: `<span class="font-semibold text-green-700">Operação Compensada:</span> Todo o lucro de <span class="font-semibold text-green-700">${formatCurrency(
-                                                lucroOperacao
-                                              )}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>. <span class="font-bold">IR = R$ 0,00</span> (isenta por compensação).`,
-                                              parcialText: `<span class="font-semibold text-blue-700">Compensação + Tributação:</span> ${formatCurrency(
-                                                prejuizoCompensado
-                                              )} do lucro compensaram o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(
-                                                lucroTributavel
-                                              )}) está sujeito a <span class="font-bold">IR de 15%</span> = ${formatCurrency(
-                                                lucroTributavel * 0.15
-                                              )}.`,
-                                            },
-                                            "Tributável Day Trade": {
-                                              totalText: `<span class="font-semibold text-green-700">Day Trade Compensado:</span> Todo o lucro de <span class="font-bold">${formatCurrency(
-                                                lucroOperacao
-                                              )}</span> foi descontado de prejuízo anterior de <span class="font-bold">${tipoOperacao}</span>. <span class="font-bold">IR = R$ 0,00</span> (isenta por compensação).`,
-                                              parcialText: `<span class="font-semibold text-blue-700">Compensação + Tributação:</span> ${formatCurrency(
-                                                prejuizoCompensado
-                                              )} do lucro compensou o saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>. O restante (${formatCurrency(
-                                                lucroTributavel
-                                              )}) está sujeito a <span class="font-bold">IR de 20%</span> = ${formatCurrency(
-                                                lucroTributavel * 0.2
-                                              )}.`,
-                                            },
-                                            Isento: {
-                                              totalText: `<span class="font-semibold text-green-700">Isenta com Compensação:</span> Esta operação é isenta de IR e ainda compensou ${formatCurrency(
-                                                prejuizoCompensado
-                                              )} do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
-                                              parcialText: `<span class="font-semibold text-green-700">Isenta com Compensação:</span> Esta operação é isenta de IR e ainda compensou ${formatCurrency(
-                                                prejuizoCompensado
-                                              )} do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
-                                            },
-                                          };
 
-                                          const currentStatus =
-                                            op.status_ir || "Outros";
-                                          const statusConfig = statusBased[
-                                            currentStatus
-                                          ] || {
-                                            totalText: `<span class="font-semibold text-green-700">Compensação Total:</span> Todo o lucro foi descontado de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
-                                            parcialText: `<span class="font-semibold text-orange-700">Compensação Parcial:</span> ${formatCurrency(
-                                              prejuizoCompensado
-                                            )} do lucro foi usado para abater do saldo de prejuízos anteriores de <span class="font-bold">${tipoOperacao}</span>.`,
-                                          };
+                                      {/* 💳 SEÇÃO 3: SALDO RESTANTE COM VISUAL MELHORADO */}
+                                      <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-xl p-4 shadow-sm">
+                                        <div className="flex items-center gap-2 mb-3">
+                                          <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                                            <span className="text-white text-sm">
+                                              💳
+                                            </span>
+                                          </div>
+                                          <span className="font-bold text-purple-800 text-sm">
+                                            Saldo para Futuras Compensações
+                                          </span>
+                                        </div>
 
-                                          const textToShow =
-                                            lucroTributavel > 0
-                                              ? statusConfig.parcialText
-                                              : statusConfig.totalText;
+                                        <div className="text-center bg-white/60 rounded-lg p-4 border border-purple-300">
+                                          <div className="text-purple-600 text-xs mb-2 uppercase font-semibold tracking-wide">
+                                            Prejuízo restante de {tipoOperacao}
+                                          </div>
 
-                                          return (
+                                          <div className="relative">
+                                            <div className="text-3xl font-black text-purple-800 bg-purple-100 rounded-xl py-3 px-4 shadow-inner">
+                                              {formatCurrency(
+                                                detalhes.prejuizoRestante
+                                              )}
+                                            </div>
+                                            {detalhes.prejuizoRestante ===
+                                              0 && (
+                                              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                                                <span className="text-4xl">
+                                                  ✨
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
+
+                                          <div className="text-purple-600 text-xs mt-3 leading-relaxed">
+                                            {detalhes.prejuizoRestante > 0 ? (
+                                              <>
+                                                <div className="font-medium mb-1">
+                                                  💡 Disponível para compensar:
+                                                </div>
+                                                <div>
+                                                  Futuros lucros de{" "}
+                                                  <strong>
+                                                    {tipoOperacao}
+                                                  </strong>{" "}
+                                                  serão automaticamente
+                                                  deduzidos deste saldo,
+                                                  reduzindo o IR devido.
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <div className="font-medium mb-1">
+                                                  🎉 Saldo zerado!
+                                                </div>
+                                                <div>
+                                                  Todo o prejuízo anterior foi
+                                                  utilizado nesta compensação.
+                                                  Próximas operações lucrativas
+                                                  serão totalmente tributáveis.
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* 📋 SEÇÃO 4: HISTÓRICO DE PREJUÍZOS (SE HOUVER) */}
+                                      {detalhes.historicoPrejuizos.length > 0 &&
+                                        detalhes.prejuizoRestante > 0 && (
+                                          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-sm">
+                                            <div className="flex items-center gap-2 mb-3">
+                                              <div className="w-8 h-8 bg-gray-500 rounded-full flex items-center justify-center">
+                                                <span className="text-white text-sm">
+                                                  📋
+                                                </span>
+                                              </div>
+                                              <span className="font-bold text-gray-800 text-sm">
+                                                Prejuízos Ainda Disponíveis (
+                                                {
+                                                  detalhes.historicoPrejuizos
+                                                    .length
+                                                }
+                                                )
+                                              </span>
+                                            </div>
+
+                                            <div className="space-y-2 max-h-28 overflow-y-auto">
+                                              {detalhes.historicoPrejuizos.map(
+                                                (item, idx) => (
+                                                  <div
+                                                    key={idx}
+                                                    className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200 shadow-sm"
+                                                  >
+                                                    <div className="flex items-center gap-3">
+                                                      <span className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center text-xs font-bold text-red-600">
+                                                        {idx + 1}
+                                                      </span>
+                                                      <div>
+                                                        <span className="font-bold text-gray-800">
+                                                          {item.ticker}
+                                                        </span>
+                                                        <div className="text-xs text-gray-500">
+                                                          {new Date(
+                                                            item.data
+                                                          ).toLocaleDateString(
+                                                            "pt-BR"
+                                                          )}
+                                                        </div>
+                                                      </div>
+                                                    </div>
+                                                    <span className="font-bold text-red-600 bg-red-50 px-2 py-1 rounded">
+                                                      {formatCurrency(
+                                                        item.valor
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                )
+                                              )}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                      {/* 🎯 SEÇÃO 5: STATUS FINAL COM DESTAQUE VISUAL */}
+                                      <div
+                                        className={`rounded-xl p-4 border-3 shadow-lg ${
+                                          compensacaoInfo.ehCompensacaoTotal
+                                            ? "bg-gradient-to-r from-green-100 to-emerald-100 border-green-400"
+                                            : "bg-gradient-to-r from-blue-100 to-indigo-100 border-blue-400"
+                                        }`}
+                                      >
+                                        <div className="text-center space-y-3">
+                                          {/* Título com ícone grande */}
+                                          <div className="flex items-center justify-center gap-3 mb-3">
                                             <div
-                                              dangerouslySetInnerHTML={{
-                                                __html: textToShow,
-                                              }}
-                                            />
-                                          );
-                                        })()}
+                                              className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
+                                                compensacaoInfo.ehCompensacaoTotal
+                                                  ? "bg-green-500"
+                                                  : "bg-blue-500"
+                                              }`}
+                                            >
+                                              <span className="text-white">
+                                                {compensacaoInfo.ehCompensacaoTotal
+                                                  ? "✅"
+                                                  : "⚖️"}
+                                              </span>
+                                            </div>
+                                            <div>
+                                              <div
+                                                className={`font-black text-lg ${
+                                                  compensacaoInfo.ehCompensacaoTotal
+                                                    ? "text-green-800"
+                                                    : "text-blue-800"
+                                                }`}
+                                              >
+                                                {compensacaoInfo.ehCompensacaoTotal
+                                                  ? "OPERAÇÃO TOTALMENTE COMPENSADA"
+                                                  : "COMPENSAÇÃO PARCIAL APLICADA"}
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Explicação detalhada */}
+                                          <div
+                                            className={`text-xs leading-relaxed p-3 rounded-lg ${
+                                              compensacaoInfo.ehCompensacaoTotal
+                                                ? "bg-green-50 text-green-800 border border-green-200"
+                                                : "bg-blue-50 text-blue-800 border border-blue-200"
+                                            }`}
+                                          >
+                                            {compensacaoInfo.ehCompensacaoTotal ? (
+                                              <>
+                                                <div className="font-bold mb-2">
+                                                  🎉 Resultado fiscal final:
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <div>
+                                                    • Todo o lucro de{" "}
+                                                    <strong>
+                                                      {formatCurrency(
+                                                        detalhes.lucroOperacao
+                                                      )}
+                                                    </strong>{" "}
+                                                    foi compensado
+                                                  </div>
+                                                  <div>
+                                                    • Prejuízos anteriores de{" "}
+                                                    <strong>
+                                                      {tipoOperacao}
+                                                    </strong>{" "}
+                                                    utilizados:{" "}
+                                                    <strong>
+                                                      {formatCurrency(
+                                                        detalhes.valorCompensado
+                                                      )}
+                                                    </strong>
+                                                  </div>
+                                                  <div>
+                                                    •{" "}
+                                                    <span className="bg-green-200 px-2 py-1 rounded font-bold">
+                                                      Imposto de Renda: R$ 0,00
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              </>
+                                            ) : (
+                                              <>
+                                                <div className="font-bold mb-2">
+                                                  📊 Resultado fiscal final:
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <div>
+                                                    • Compensado:{" "}
+                                                    <strong>
+                                                      {formatCurrency(
+                                                        detalhes.valorCompensado
+                                                      )}
+                                                    </strong>{" "}
+                                                    (prejuízos anteriores)
+                                                  </div>
+                                                  <div>
+                                                    • Tributável:{" "}
+                                                    <strong>
+                                                      {formatCurrency(
+                                                        detalhes.lucroTributavel
+                                                      )}
+                                                    </strong>{" "}
+                                                    (sujeito a IR de{" "}
+                                                    <strong>
+                                                      {op.day_trade
+                                                        ? "20%"
+                                                        : "15%"}
+                                                    </strong>
+                                                    )
+                                                  </div>
+                                                  <div>
+                                                    •{" "}
+                                                    <span className="bg-blue-200 px-2 py-1 rounded font-bold">
+                                                      Imposto devido:{" "}
+                                                      {formatCurrency(
+                                                        detalhes.lucroTributavel *
+                                                          (op.day_trade
+                                                            ? 0.2
+                                                            : 0.15)
+                                                      )}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              </>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* 💡 SEÇÃO 6: DICA EDUCATIVA MELHORADA */}
+                                      <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-200 rounded-xl p-4 shadow-sm">
+                                        <div className="flex items-start gap-3">
+                                          <div className="w-8 h-8 bg-yellow-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                            <span className="text-white text-sm">
+                                              💡
+                                            </span>
+                                          </div>
+                                          <div className="text-yellow-800 text-xs leading-relaxed">
+                                            <div className="font-bold mb-2 text-sm">
+                                              🎓 Como funciona a compensação
+                                              fiscal:
+                                            </div>
+                                            <div className="space-y-2">
+                                              <div className="flex items-start gap-2">
+                                                <span className="text-yellow-600 font-bold">
+                                                  1.
+                                                </span>
+                                                <div>
+                                                  A Receita Federal permite
+                                                  compensar prejuízos com lucros{" "}
+                                                  <strong>do mesmo tipo</strong>{" "}
+                                                  ({tipoOperacao})
+                                                </div>
+                                              </div>
+                                              <div className="flex items-start gap-2">
+                                                <span className="text-yellow-600 font-bold">
+                                                  2.
+                                                </span>
+                                                <div>
+                                                  A compensação é{" "}
+                                                  <strong>automática</strong> e
+                                                  reduz o imposto devido
+                                                </div>
+                                              </div>
+                                              <div className="flex items-start gap-2">
+                                                <span className="text-yellow-600 font-bold">
+                                                  3.
+                                                </span>
+                                                <div>
+                                                  Prejuízos não utilizados ficam
+                                                  disponíveis para{" "}
+                                                  <strong>
+                                                    futuras operações
+                                                  </strong>
+                                                </div>
+                                              </div>
+                                              {detalhes.prejuizoRestante >
+                                                0 && (
+                                                <div className="bg-yellow-100 rounded-lg p-2 mt-2 border border-yellow-300">
+                                                  <strong>
+                                                    💰 Seu saldo atual:
+                                                  </strong>{" "}
+                                                  {formatCurrency(
+                                                    detalhes.prejuizoRestante
+                                                  )}
+                                                  disponível para compensar em
+                                                  futuras operações lucrativas
+                                                  de{" "}
+                                                  <strong>
+                                                    {tipoOperacao}
+                                                  </strong>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
                                       </div>
                                     </>
                                   );
-                                }
-                                return (
-                                  <div className="text-xs">
-                                    Este lucro foi compensado por prejuízos
-                                    acumulados de operações de{" "}
-                                    <span className="font-bold">
-                                      {tipoOperacao}
-                                    </span>
-                                    .
-                                  </div>
-                                );
-                              })()}
+                                })()}
+                              </div>
                             </div>
-                          </div>
-                        )}
-
+                          );
+                        })()}
                       {/* DARF Button */}
                       {(op.status_ir === "Tributável Day Trade" ||
                         op.status_ir === "Tributável Swing") && (
@@ -1303,8 +1876,15 @@ export default function OperacoesEncerradasTable(
   };
 
   // Helper to render status badge
-  // ✅ CORREÇÃO 1: Função getStatusBadge corrigida
-  const getStatusBadge = (status: string, isProfit: boolean) => {
+  const getStatusBadge = (
+    status: string,
+    isProfit: boolean,
+    op: OperacaoFechada,
+    operacoesFechadas: OperacaoFechada[]
+  ) => {
+    const badges = [];
+
+    // Badge principal do status fiscal
     let color = "gray";
     let bg = "bg-gray-100";
     let text = status;
@@ -1316,11 +1896,11 @@ export default function OperacoesEncerradasTable(
     } else if (status === "Tributável Day Trade") {
       color = "orange";
       bg = "bg-orange-100";
-      text = "Tributável"; // ✅ CORRIGIDO: mostra status fiscal, não tipo
+      text = "Tributável";
     } else if (status === "Tributável Swing") {
       color = "blue";
       bg = "bg-blue-100";
-      text = "Tributável"; // ✅ CORRIGIDO: mostra status fiscal, não tipo
+      text = "Tributável";
     } else if (status === "Prejuízo Acumulado") {
       color = "red";
       bg = "bg-red-100";
@@ -1331,13 +1911,36 @@ export default function OperacoesEncerradasTable(
       text = "Compensado";
     }
 
-    return (
+    // Badge principal
+    badges.push(
       <span
+        key="status-principal"
         className={`px-2 py-1 rounded-full text-xs font-semibold border border-${color}-300 ${bg} text-${color}-700`}
       >
         {text}
       </span>
     );
+
+    // ✅ NOVA LÓGICA: Badge adicional para compensação parcial
+    if (
+      isProfit &&
+      (status === "Tributável Day Trade" || status === "Tributável Swing")
+    ) {
+      const compensacaoInfo = getCompensacaoInfo(op, operacoesFechadas);
+
+      if (compensacaoInfo.ehCompensacaoParcial) {
+        badges.push(
+          <span
+            key="compensacao-parcial"
+            className="px-2 py-1 rounded-full text-xs font-semibold border border-purple-300 bg-purple-100 text-purple-700 ml-1"
+          >
+            Compensado Parcial
+          </span>
+        );
+      }
+    }
+
+    return <div className="flex items-center gap-1 flex-wrap">{badges}</div>;
   };
 
   // Expanded rows state and handler
