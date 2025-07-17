@@ -2,8 +2,8 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from backend.models import Operacao
-from backend.calculos import (
+from ..models import Operacao
+from ..calculos import (
     PosicaoAcao,
     classificar_operacoes_por_dia,
     processar_operacao_swing_trade,
