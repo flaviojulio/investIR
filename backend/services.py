@@ -92,6 +92,49 @@ from database import (
     limpar_importacoes_usuario
 )
 
+def _validar_e_zerar_posicao_se_necessario(posicao_dict):
+    """
+    Garante que quando a quantidade for zero, o preço médio e custo também sejam zerados.
+    Previne "lixo" em posições futuras.
+    """
+    if posicao_dict.get("quantidade", 0) == 0:
+        posicao_dict["preco_medio"] = 0.0
+        posicao_dict["custo_total"] = 0.0
+        if "valor_total" in posicao_dict:  # Para posições vendidas
+            posicao_dict["valor_total"] = 0.0
+        logging.debug(f"[VALIDAÇÃO] Posição zerada: PM e custo limpos")
+
+def _calcular_preco_medio_ponderado_global_dia(ops_do_dia, operacao_type):
+    """
+    Calcula o preço médio ponderado global de TODAS as operações de um tipo no dia.
+    
+    Args:
+        ops_do_dia: Lista de operações do dia
+        operacao_type: 'buy' ou 'sell'
+    
+    Returns:
+        tuple: (preco_medio, quantidade_total)
+    """
+    ops_filtradas = [op for op in ops_do_dia if op["operation"] == operacao_type]
+    
+    if not ops_filtradas:
+        return 0.0, 0
+    
+    if operacao_type == "buy":
+        # Para compras: adiciona fees ao custo
+        valor_total = sum(op["quantity"] * op["price"] + op.get("fees", 0.0) for op in ops_filtradas)
+    else:  # sell
+        # Para vendas: subtrai fees do valor
+        valor_bruto = sum(op["quantity"] * op["price"] for op in ops_filtradas)
+        fees_total = sum(op.get("fees", 0.0) for op in ops_filtradas)
+        valor_total = valor_bruto - fees_total
+    
+    quantidade_total = sum(op["quantity"] for op in ops_filtradas)
+    preco_medio = valor_total / quantidade_total if quantidade_total > 0 else 0.0
+    
+    return preco_medio, quantidade_total
+
+
 # --- Função Auxiliar para Transformação de Proventos do DB ---
 def _transformar_provento_db_para_modelo(p_db: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if p_db is None:
@@ -564,15 +607,14 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
 def recalcular_carteira(usuario_id: int) -> None:
     """
     Recalcula a carteira atual de um usuário com base em todas as suas operações.
-    A carteira existente do usuário é limpa antes do recálculo, mas preserva informações de preços editados.
+    CORREÇÃO: Aplica validação de zeramento em todas as posições.
     """
     import logging
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-    # IMPORTANTE: Salvar informações de preços editados ANTES de limpar a carteira
+    # Salvar preços editados ANTES de limpar
     carteira_atual = obter_carteira_atual(usuario_id)
     precos_editados = {}
-
     for item in carteira_atual:
         if item.get('preco_editado_pelo_usuario'):
             ticker = item['ticker']
@@ -580,55 +622,32 @@ def recalcular_carteira(usuario_id: int) -> None:
                 'preco_medio': item['preco_medio'],
                 'editado': True
             }
-            print(f"[recalcular_carteira] Salvando preço editado para {ticker}: R$ {item['preco_medio']:.2f}")
 
-    # Agora limpa a carteira atual do usuário no banco de dados
+    # Limpar carteira atual
     limpar_carteira_usuario_db(usuario_id=usuario_id)
 
-    # Obtém todas as operações do usuário
+    # Obter e processar operações
     operacoes_originais = obter_todas_operacoes(usuario_id=usuario_id)
-
-    # 🔍 DEBUG: Verificar quantas operações foram obtidas
-    logging.info(f"[CARTEIRA-DEBUG] ===== OPERAÇÕES OBTIDAS DO BANCO =====")
-    logging.info(f"[CARTEIRA-DEBUG] Total operações originais para usuário {usuario_id}: {len(operacoes_originais)}")
-    for i, op in enumerate(operacoes_originais):
-        logging.info(f"[CARTEIRA-DEBUG] Op original {i+1}: ID={op.get('id', 'N/A')} | {op['date']} | {op['operation']} | {op['quantity']} {op['ticker']} @{op['price']}")
-
     operacoes_originais.sort(key=lambda x: (x['date'] if isinstance(x['date'], date) else datetime.fromisoformat(x['date']).date(), x.get('id', 0)))
 
-    # 🔍 DEBUG: Verificar após ordenação
-    logging.info(f"[CARTEIRA-DEBUG] ===== OPERAÇÕES APÓS ORDENAÇÃO =====")
-    for i, op in enumerate(operacoes_originais):
-        logging.info(f"[CARTEIRA-DEBUG] Op ordenada {i+1}: ID={op.get('id', 'N/A')} | {op['date']} | {op['operation']} | {op['quantity']} {op['ticker']} @{op['price']}")
-
-    # --- START NEW LOGIC FOR CORPORATE EVENTS ---
+    # Aplicar eventos corporativos (código existente mantido)
     adjusted_operacoes = []
     if operacoes_originais:
-        # 🔍 DEBUG: Verificar operações antes do loop de eventos corporativos
-        logging.info(f"[CARTEIRA-DEBUG] ===== PROCESSANDO EVENTOS CORPORATIVOS =====")
-        logging.info(f"[CARTEIRA-DEBUG] Operações antes eventos: {len(operacoes_originais)}")
-
         today_date = date.today()
         unique_tickers = list(set(op_from_db['ticker'] for op_from_db in operacoes_originais))
-        events_by_ticker: Dict[str, List[EventoCorporativoInfo]] = {}
+        events_by_ticker = {}
 
         for ticker_symbol in unique_tickers:
             id_acao = obter_id_acao_por_ticker(ticker_symbol)
             if id_acao:
-                # Otimização: encontrar a data da primeira operação para este ticker
                 first_op_date = min(
                     op_from_db['date'] if isinstance(op_from_db['date'], date)
                     else datetime.fromisoformat(str(op_from_db['date']).split("T")[0]).date()
                     for op_from_db in operacoes_originais
                     if op_from_db['ticker'] == ticker_symbol
                 )
-
-                # Buscar eventos apenas a partir de um pouco antes da primeira operação
-                search_start_date = first_op_date - timedelta(days=30)  # 30 dias antes
-
+                search_start_date = first_op_date - timedelta(days=30)
                 raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, today_date)
-
-                # Filtrar eventos para manter apenas os relevantes
                 filtered_events_data = [
                     event for event in raw_events_data
                     if event.get('data_ex') and (
@@ -636,100 +655,69 @@ def recalcular_carteira(usuario_id: int) -> None:
                         or isinstance(event['data_ex'], str) and datetime.fromisoformat(event['data_ex']).date() >= search_start_date
                     )
                 ]
-
-                print(f"Eventos para {ticker_symbol} (primeira operação: {first_op_date}, filtro: {search_start_date}): {len(filtered_events_data)} eventos")
-
-                # Event data from DB should have date objects due to [date] alias and converters
                 events_by_ticker[ticker_symbol] = [EventoCorporativoInfo.model_validate(event_data) for event_data in filtered_events_data]
 
         for op_from_db in operacoes_originais:
-            logging.info(f"[CARTEIRA-DEBUG] Processando op ID {op_from_db.get('id', 'N/A')} para eventos...")
             current_op_date = op_from_db['date']
-            # Ensure current_op_date is a date object (should be from obter_todas_operacoes)
             if not isinstance(current_op_date, date):
                 try:
                     current_op_date = datetime.fromisoformat(str(current_op_date).split("T")[0]).date()
                 except ValueError:
-                    logging.error(f"Invalid date format for operation ID {op_from_db.get('id')}: {op_from_db['date']}. Skipping event adjustment for this op.")
                     adjusted_operacoes.append(op_from_db.copy())
                     continue
 
             adj_op_data = op_from_db.copy()
             adj_op_data['date'] = current_op_date
-
             adj_op_data['quantity'] = int(adj_op_data['quantity'])
             adj_op_data['price'] = float(adj_op_data['price'])
 
             ticker_events = events_by_ticker.get(adj_op_data['ticker'], [])
-
-            # Ordenar eventos por data_ex ascendente para aplicar na sequência correta
             for event_info in sorted(ticker_events, key=lambda e: e.data_ex if e.data_ex else date.min):
-                if event_info.data_ex is None:
+                if event_info.data_ex is None or adj_op_data['date'] < event_info.data_ex:
                     continue
 
-                if adj_op_data['date'] >= event_info.data_ex:
-                    if event_info.evento and event_info.evento.lower().startswith("bonific"):
-                        bonus_increase = event_info.get_bonus_quantity_increase(float(adj_op_data['quantity']))
-                        quantidade_antiga = float(adj_op_data['quantity'])
-                        quantidade_nova = quantidade_antiga + bonus_increase
-                        adj_op_data['quantity'] = int(round(quantidade_nova))
-                        if quantidade_nova > 0:
-                            adj_op_data['price'] = float(adj_op_data['price']) * quantidade_antiga / quantidade_nova
-                        continue
-                    factor = event_info.get_adjustment_factor()
-                    if factor == 1.0:
-                        continue
+                if event_info.evento and event_info.evento.lower().startswith("bonific"):
+                    bonus_increase = event_info.get_bonus_quantity_increase(float(adj_op_data['quantity']))
+                    quantidade_antiga = float(adj_op_data['quantity'])
+                    quantidade_nova = quantidade_antiga + bonus_increase
+                    adj_op_data['quantity'] = int(round(quantidade_nova))
+                    if quantidade_nova > 0:
+                        adj_op_data['price'] = float(adj_op_data['price']) * quantidade_antiga / quantidade_nova
+                    continue
 
-                    current_quantity_float = float(adj_op_data['quantity'])
+                factor = event_info.get_adjustment_factor()
+                if factor == 1.0:
+                    continue
+
+                current_quantity_float = float(adj_op_data['quantity']) * factor
+                if factor != 0.0:
+                    current_price_float = float(adj_op_data['price']) / factor
+                else:
                     current_price_float = float(adj_op_data['price'])
 
-                    current_quantity_float = current_quantity_float * factor
-                    if factor != 0.0:
-                        current_price_float = current_price_float / factor
-                    else:
-                        logging.warning(f"Fator zero para evento em {event_info.data_ex}; pulando preço para evitar divisão por zero.")
-
-                    adj_op_data['quantity'] = int(round(current_quantity_float))
-                    adj_op_data['price'] = current_price_float
+                adj_op_data['quantity'] = int(round(current_quantity_float))
+                adj_op_data['price'] = current_price_float
 
             adjusted_operacoes.append(adj_op_data)
-            logging.info(f"[CARTEIRA-DEBUG] Adicionada op ID {adj_op_data.get('id', 'N/A')} à lista ajustada")
-    # No original operations
     else:
         adjusted_operacoes = []
 
-    # 🔍 DEBUG: Verificar operações finais
-    logging.info(f"[CARTEIRA-DEBUG] ===== OPERAÇÕES FINAIS PARA PROCESSAMENTO =====")
-    logging.info(f"[CARTEIRA-DEBUG] Total operações ajustadas: {len(adjusted_operacoes)}")
-    for i, op in enumerate(adjusted_operacoes):
-        logging.info(f"[CARTEIRA-DEBUG] Op final {i+1}: ID={op.get('id', 'N/A')} | {op['date']} | {op['operation']} | {op['quantity']} {op['ticker']} @{op['price']}")
-    # --- END NEW LOGIC FOR CORPORATE EVENTS ---
-
-    # Dicionário para armazenar a carteira atual
+    # Processar operações ajustadas
     carteira_temp = defaultdict(lambda: {"quantidade": 0, "custo_total": 0.0, "preco_medio": 0.0})
 
-    # Processa cada operação ajustada
     for op in adjusted_operacoes:
         ticker = op["ticker"]
-
-        # DEBUG: Log ANTES da operação
-        logging.info(f"[CARTEIRA-DEBUG] ANTES op {op.get('id', 'N/A')}: {ticker} {op['operation']} {op['quantity']}@{op['price']} | Qtd: {carteira_temp[ticker]['quantidade']}, Custo: {carteira_temp[ticker]['custo_total']:.2f}, PM: {carteira_temp[ticker]['preco_medio']:.2f}")
-
         quantidade_op = op["quantity"]
         valor_op_bruto = quantidade_op * op["price"]
         fees_op = op.get("fees", 0.0)
 
-        # Salva o estado ANTES
-        estado_anterior_quantidade = carteira_temp[ticker]["quantidade"]
-        estado_anterior_preco_medio = carteira_temp[ticker]["preco_medio"]
-        estado_anterior_custo_total = carteira_temp[ticker]["custo_total"]
-
         if op["operation"] == "buy":
             custo_da_compra_atual_total = valor_op_bruto + fees_op
 
-            if estado_anterior_quantidade < 0:
-                quantidade_acoes_sendo_cobertas = min(abs(estado_anterior_quantidade), quantidade_op)
+            if carteira_temp[ticker]["quantidade"] < 0:
+                quantidade_acoes_sendo_cobertas = min(abs(carteira_temp[ticker]["quantidade"]), quantidade_op)
                 carteira_temp[ticker]["quantidade"] += quantidade_op
+                
                 if carteira_temp[ticker]["quantidade"] == 0:
                     carteira_temp[ticker]["custo_total"] = 0.0
                 elif carteira_temp[ticker]["quantidade"] > 0:
@@ -737,47 +725,30 @@ def recalcular_carteira(usuario_id: int) -> None:
                     custo_da_parte_excedente = (custo_da_compra_atual_total / quantidade_op) * quantidade_comprada_excedente if quantidade_op != 0 else 0
                     carteira_temp[ticker]["custo_total"] = custo_da_parte_excedente
                 else:
-                    reducao_valor_pos_vendida = estado_anterior_preco_medio * quantidade_acoes_sendo_cobertas
-                    carteira_temp[ticker]["custo_total"] = estado_anterior_custo_total - reducao_valor_pos_vendida
-                    if carteira_temp[ticker]["custo_total"] < 0:
-                        carteira_temp[ticker]["custo_total"] = 0.0
+                    reducao_valor_pos_vendida = carteira_temp[ticker]["preco_medio"] * quantidade_acoes_sendo_cobertas
+                    carteira_temp[ticker]["custo_total"] = max(0, carteira_temp[ticker]["custo_total"] - reducao_valor_pos_vendida)
             else:
                 carteira_temp[ticker]["quantidade"] += quantidade_op
                 carteira_temp[ticker]["custo_total"] += custo_da_compra_atual_total
-        elif op["operation"] == "sell":
-            # DEBUG: Log do estado antes da venda
-            logging.info(f"[CARTEIRA-DEBUG] VENDA {ticker}: Estado anterior -> Qtd: {estado_anterior_quantidade}, PM: {estado_anterior_preco_medio:.2f}")
 
-            if estado_anterior_quantidade > 0:
-                quantidade_vendida_da_posicao_comprada = min(estado_anterior_quantidade, quantidade_op)
-                custo_a_baixar = estado_anterior_preco_medio * quantidade_vendida_da_posicao_comprada
-                logging.info(f"[CARTEIRA-DEBUG] VENDA {ticker}: Vendendo {quantidade_vendida_da_posicao_comprada} da posição comprada, custo a baixar: {custo_a_baixar:.2f}")
+        elif op["operation"] == "sell":
+            if carteira_temp[ticker]["quantidade"] > 0:
+                quantidade_vendida_da_posicao_comprada = min(carteira_temp[ticker]["quantidade"], quantidade_op)
+                custo_a_baixar = carteira_temp[ticker]["preco_medio"] * quantidade_vendida_da_posicao_comprada
                 carteira_temp[ticker]["custo_total"] -= custo_a_baixar
                 carteira_temp[ticker]["quantidade"] -= quantidade_vendida_da_posicao_comprada
 
-                quantidade_op_restante_apos_vender_comprado = quantidade_op - quantidade_vendida_da_posicao_comprada
-                if quantidade_op_restante_apos_vender_comprado > 0:
-                    logging.info(f"[CARTEIRA-DEBUG] VENDA {ticker}: Quantidade restante para venda a descoberto: {quantidade_op_restante_apos_vender_comprado}")
-                    proporcao_restante = quantidade_op_restante_apos_vender_comprado / quantidade_op if quantidade_op else 0
+                quantidade_op_restante = quantidade_op - quantidade_vendida_da_posicao_comprada
+                if quantidade_op_restante > 0:
+                    proporcao_restante = quantidade_op_restante / quantidade_op if quantidade_op else 0
                     valor_venda_descoberto = valor_op_bruto * proporcao_restante
-                    logging.info(f"[CARTEIRA-DEBUG] VENDA {ticker}: Valor venda descoberto: {valor_venda_descoberto:.2f}")
                     carteira_temp[ticker]["custo_total"] += valor_venda_descoberto
-                    carteira_temp[ticker]["quantidade"] -= quantidade_op_restante_apos_vender_comprado
-                    logging.info(f"[CARTEIRA-DEBUG] VENDA {ticker}: Após venda descoberto -> Qtd: {carteira_temp[ticker]['quantidade']}, Custo: {carteira_temp[ticker]['custo_total']:.2f}")
-                if carteira_temp[ticker]["quantidade"] == 0:
-                    carteira_temp[ticker]["custo_total"] = 0.0
+                    carteira_temp[ticker]["quantidade"] -= quantidade_op_restante
             else:
-                logging.info(f"[CARTEIRA-DEBUG] VENDA {ticker}: Posição zero/vendida, fazendo venda a descoberto direta")
                 carteira_temp[ticker]["quantidade"] -= quantidade_op
                 carteira_temp[ticker]["custo_total"] += valor_op_bruto
-                if carteira_temp[ticker]["quantidade"] == 0:
-                    carteira_temp[ticker]["custo_total"] = 0.0
 
-        # DEBUG: Log APÓS da operação
-        logging.info(f"[CARTEIRA-DEBUG] APÓS op {op.get('id', 'N/A')}: {ticker} | Qtd: {carteira_temp[ticker]['quantidade']}, Custo: {carteira_temp[ticker]['custo_total']:.2f}, PM: {carteira_temp[ticker]['preco_medio']:.2f}")
-        logging.info(f"[CARTEIRA-DEBUG] ========================")
-
-        # Recalcula o preço médio final da posição
+        # CORREÇÃO: Calcular preço médio e aplicar validação
         if carteira_temp[ticker]["quantidade"] > 0:
             carteira_temp[ticker]["preco_medio"] = carteira_temp[ticker]["custo_total"] / carteira_temp[ticker]["quantidade"]
         elif carteira_temp[ticker]["quantidade"] < 0:
@@ -791,25 +762,24 @@ def recalcular_carteira(usuario_id: int) -> None:
             carteira_temp[ticker]["preco_medio"] = 0.0
             carteira_temp[ticker]["custo_total"] = 0.0
 
-    # DEBUG: Log do resultado final
-    for ticker, dados in carteira_temp.items():
-        logging.info(f"[CARTEIRA-DEBUG] RESULTADO FINAL {ticker}: Qtd: {dados['quantidade']}, Custo: {dados['custo_total']:.2f}, PM: {dados['preco_medio']:.2f}")
+        # NOVA VALIDAÇÃO: Garantir limpeza completa quando quantidade = 0
+        _validar_e_zerar_posicao_se_necessario(carteira_temp[ticker])
 
-    # Atualiza a carteira no banco de dados para o usuário
+    # Atualizar no banco de dados
     for ticker, dados in carteira_temp.items():
         if dados["quantidade"] == 0:
-            continue  # Não insere/atualiza tickers zerados
+            continue  # Não inserir tickers zerados
+
         if ticker in precos_editados:
             preco_medio_final = precos_editados[ticker]['preco_medio']
             custo_total_final = dados["quantidade"] * preco_medio_final
             preco_editado = True
-            print(f"[recalcular_carteira] Preservando preço editado para {ticker}: PM={preco_medio_final}")
         else:
             preco_medio_final = dados["preco_medio"]
             custo_total_final = dados["custo_total"]
             preco_editado = False
-        atualizar_carteira(ticker, dados["quantidade"], preco_medio_final, custo_total_final, usuario_id=usuario_id, preco_editado_pelo_usuario=preco_editado)
 
+        atualizar_carteira(ticker, dados["quantidade"], preco_medio_final, custo_total_final, usuario_id=usuario_id, preco_editado_pelo_usuario=preco_editado)
 
 def recalcular_resultados(usuario_id: int) -> None:
     """
@@ -2044,104 +2014,87 @@ def _processar_dia_operacoes_fechadas(ops_do_dia, posicao_comprada, posicao_vend
 def _processar_dia_misto_dt_st(ops_do_dia, posicao_comprada, posicao_vendida, operacoes_fechadas,
                               usuario_id, estado_antes_do_dia, ticker, quantidade_day_trade):
     """
-    Processa um dia com mistura de day trade e swing trade
-    CENÁRIO 3: Compra histórica + compra/venda no mesmo dia
+    Processa um dia com mistura de day trade e swing trade.
+    CORREÇÃO: Usa preço médio ponderado global para day trade.
     """
     import logging
 
-    # FASE 1: Identifica e processa swing trades (vendas que fecham posições históricas)
+    # FASE 1: Swing trades (vendas que fecham posições históricas)
     quantidade_swing_processada = 0
-
     for op in [op for op in ops_do_dia if op["operation"] == "sell"]:
         if estado_antes_do_dia["quantidade_comprada"] > quantidade_swing_processada:
-            # Ainda há posição histórica para vender como swing trade
             qtd_swing_desta_venda = min(
                 op["quantity"],
                 estado_antes_do_dia["quantidade_comprada"] - quantidade_swing_processada
             )
 
             if qtd_swing_desta_venda > 0:
-                # Processa como swing trade usando PM histórico
                 _processar_venda_swing_parcial(
                     op, qtd_swing_desta_venda, posicao_comprada, operacoes_fechadas,
                     usuario_id, estado_antes_do_dia, ticker
                 )
                 quantidade_swing_processada += qtd_swing_desta_venda
-                logging.info(f"[ST] {ticker}: Processado {qtd_swing_desta_venda} como swing trade")
 
-    # FASE 2: Processa day trades com split proporcional
+    # FASE 2: Day trades com preço médio GLOBAL
+    if quantidade_day_trade > 0:
+        # CORREÇÃO: Calcular preço médio ponderado global do dia
+        pm_compras_global, _ = _calcular_preco_medio_ponderado_global_dia(ops_do_dia, "buy")
+        pm_vendas_global, _ = _calcular_preco_medio_ponderado_global_dia(ops_do_dia, "sell")
+
+        # Criar operação fechada de day trade
+        op_fechada = _criar_operacao_fechada_detalhada_v2(
+            ticker=ticker,
+            data_abertura=ops_do_dia[0]["date"],
+            data_fechamento=ops_do_dia[0]["date"],
+            quantidade=quantidade_day_trade,
+            preco_abertura=pm_compras_global,  # CORREÇÃO: PM global
+            preco_fechamento=pm_vendas_global,  # CORREÇÃO: PM global
+            tipo="compra-venda",
+            day_trade=True,
+            usuario_id=usuario_id
+        )
+        operacoes_fechadas.append(op_fechada)
+
+    # FASE 3: Atualizar posições em aberto
     total_compras = sum(op["quantity"] for op in ops_do_dia if op["operation"] == "buy")
     total_vendas = sum(op["quantity"] for op in ops_do_dia if op["operation"] == "sell")
-    compras_para_dt = []
-    vendas_para_dt = []
 
-    if total_compras > 0:
-        proporcao_dt_compra = quantidade_day_trade / total_compras
-        for op in [op for op in ops_do_dia if op["operation"] == "buy"]:
-            qtd_dt = int(op["quantity"] * proporcao_dt_compra)
-            compras_para_dt.append({
-                "op": op,
-                "quantidade_dt": qtd_dt,
-                "quantidade_restante": op["quantity"] - qtd_dt
-            })
-        # Ajuste resíduo
-        residuo = quantidade_day_trade - sum(c["quantidade_dt"] for c in compras_para_dt)
-        if residuo > 0 and compras_para_dt:
-            compras_para_dt[-1]["quantidade_dt"] += residuo
-            compras_para_dt[-1]["quantidade_restante"] -= residuo
-
-    if total_vendas > 0:
-        proporcao_dt_venda = quantidade_day_trade / total_vendas
-        quantidade_swing_processada = 0  # De FASE 1
-        for op in [op for op in ops_do_dia if op["operation"] == "sell"]:
-            qtd_ja_usada_swing = min(op["quantity"], max(0, estado_antes_do_dia["quantidade_comprada"] - quantidade_swing_processada))
-            quantidade_swing_processada += qtd_ja_usada_swing
-            qtd_disponivel_dt = op["quantity"] - qtd_ja_usada_swing
-            qtd_dt = int(qtd_disponivel_dt * proporcao_dt_venda) if qtd_disponivel_dt > 0 else 0
-            vendas_para_dt.append({
-                "op": op,
-                "quantidade_dt": qtd_dt,
-                "quantidade_swing": qtd_ja_usada_swing,
-                "quantidade_restante": qtd_disponivel_dt - qtd_dt
-            })
-        # Ajuste resíduo para vendas
-        residuo = quantidade_day_trade - sum(v["quantidade_dt"] for v in vendas_para_dt)
-        if residuo > 0 and vendas_para_dt:
-            vendas_para_dt[-1]["quantidade_dt"] += residuo
-            vendas_para_dt[-1]["quantidade_restante"] -= residuo
-
-    # Executa day trades
-    if compras_para_dt and vendas_para_dt:
-        _executar_day_trades(compras_para_dt, vendas_para_dt, operacoes_fechadas, usuario_id, ticker)
-
-    # FASE 3: Processa o que sobrou (atualiza posições em aberto)
-    for compra_info in compras_para_dt:  # Todas compras agora incluídas
-        if compra_info["quantidade_restante"] > 0:
-            _adicionar_a_posicao_comprada(compra_info["op"], compra_info["quantidade_restante"], posicao_comprada)
-
-    for venda_info in vendas_para_dt:
-        if venda_info["quantidade_restante"] > 0:
-            _adicionar_a_posicao_vendida(venda_info["op"], venda_info["quantidade_restante"], posicao_vendida)
-    # FASE 3: Processa o que sobrou (atualiza posições em aberto)
-    for compra_info in compras_para_dt:
-        if compra_info["quantidade_restante"] > 0:
-            _adicionar_a_posicao_comprada(compra_info["op"], compra_info["quantidade_restante"], posicao_comprada)
-
-    for venda_info in vendas_para_dt:
-        if venda_info["quantidade_restante"] > 0:
-            _adicionar_a_posicao_vendida(venda_info["op"], venda_info["quantidade_restante"], posicao_vendida)
+    for op in ops_do_dia:
+        if op["operation"] == "buy":
+            # Desconta o que foi usado no day trade
+            if total_compras > 0:
+                proporcao_dt = quantidade_day_trade / total_compras
+                qtd_dt_desta_compra = int(op["quantity"] * proporcao_dt)
+                qtd_restante = op["quantity"] - qtd_dt_desta_compra
+                if qtd_restante > 0:
+                    _adicionar_a_posicao_comprada(op, qtd_restante, posicao_comprada)
+        
+        elif op["operation"] == "sell":
+            # Desconta swing trade + day trade
+            qtd_swing_desta_venda = min(op["quantity"], 
+                                      max(0, estado_antes_do_dia["quantidade_comprada"] - quantidade_swing_processada))
+            if total_vendas > 0:
+                proporcao_dt = quantidade_day_trade / total_vendas
+                qtd_dt_desta_venda = int(op["quantity"] * proporcao_dt)
+            else:
+                qtd_dt_desta_venda = 0
+            
+            qtd_restante = op["quantity"] - qtd_swing_desta_venda - qtd_dt_desta_venda
+            if qtd_restante > 0:
+                _adicionar_a_posicao_vendida(op, qtd_restante, posicao_vendida)
 
 
 def _processar_venda_swing_parcial(op, quantidade_swing, posicao_comprada, operacoes_fechadas,
                                   usuario_id, estado_antes_do_dia, ticker):
     """
-    Processa uma venda parcial como swing trade usando PM histórico
+    Processa uma venda parcial como swing trade usando PM histórico.
+    CORREÇÃO: Aplica validação de zeramento.
     """
     preco_venda = op["price"]
     fees_proporcional = (op.get("fees", 0.0) / op["quantity"]) * quantidade_swing if op["quantity"] > 0 else 0.0
     preco_medio_historico = estado_antes_do_dia["preco_medio_comprado"]
 
-    # Cria operação fechada de swing trade
+    # Criar operação fechada de swing trade
     op_fechada = _criar_operacao_fechada_detalhada_v2(
         ticker=ticker,
         data_abertura=_obter_data_aproximada_primeira_compra(ticker, usuario_id),
@@ -2153,63 +2106,75 @@ def _processar_venda_swing_parcial(op, quantidade_swing, posicao_comprada, opera
         day_trade=False,
         usuario_id=usuario_id
     )
-
     operacoes_fechadas.append(op_fechada)
 
-    # Atualiza posição comprada
+    # Atualizar posição comprada
     custo_removido = quantidade_swing * preco_medio_historico
     posicao_comprada["quantidade"] -= quantidade_swing
     posicao_comprada["custo_total"] -= custo_removido
+    
     if posicao_comprada["quantidade"] > 0:
         posicao_comprada["preco_medio"] = posicao_comprada["custo_total"] / posicao_comprada["quantidade"]
     else:
         posicao_comprada["preco_medio"] = 0.0
         posicao_comprada["custo_total"] = 0.0
 
+    # NOVA VALIDAÇÃO: Garantir limpeza quando zerado
+    _validar_e_zerar_posicao_se_necessario(posicao_comprada)
+
 
 def _executar_day_trades(compras_dt, vendas_dt, operacoes_fechadas, usuario_id, ticker):
     """
-    Executa as operações de day trade calculando PM das compras e vendas
+    Executa as operações de day trade calculando PM das compras e vendas.
+    CORREÇÃO: Usa o preço médio ponderado de TODAS as operações do dia.
     """
     if not compras_dt or not vendas_dt:
         return
 
-    # Calcula PM das compras de day trade (com fees adicionado ao custo)
-    valor_total_compras = 0.0
-    quantidade_total_compras = 0
-    for compra_info in compras_dt:
-        op = compra_info["op"]
-        qtd = compra_info["quantidade_dt"]
-        fees_proporcional = (op.get("fees", 0.0) / op["quantity"]) * qtd if op["quantity"] > 0 else 0.0
-        valor_total_compras += qtd * op["price"] + fees_proporcional
-        quantidade_total_compras += qtd
+    # Buscar TODAS as operações do dia para calcular PM global
+    data_operacao = compras_dt[0]["op"]["date"]
+    
+    from database import get_db
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT operation, quantity, price, COALESCE(fees, 0) as fees
+            FROM operacoes
+            WHERE usuario_id = ? AND ticker = ? AND date = ?
+            ORDER BY id
+        ''', (usuario_id, ticker, data_operacao.isoformat()))
+        
+        todas_ops_dia = cursor.fetchall()
+    
+    if not todas_ops_dia:
+        return
 
-    pm_compras_dt = valor_total_compras / quantidade_total_compras if quantidade_total_compras > 0 else 0.0
+    # Converter para formato compatível
+    ops_formatadas = []
+    for op in todas_ops_dia:
+        ops_formatadas.append({
+            "operation": op['operation'],
+            "quantity": op['quantity'],
+            "price": op['price'],
+            "fees": op['fees']
+        })
 
-    # Calcula PM das vendas de day trade (com fees subtraído do valor)
-    valor_total_vendas = 0.0
-    quantidade_total_vendas = 0
-    for venda_info in vendas_dt:
-        op = venda_info["op"]
-        qtd = venda_info["quantidade_dt"]
-        fees_proporcional = (op.get("fees", 0.0) / op["quantity"]) * qtd if op["quantity"] > 0 else 0.0
-        valor_total_vendas += qtd * op["price"] - fees_proporcional
-        quantidade_total_vendas += qtd
-
-    pm_vendas_dt = valor_total_vendas / quantidade_total_vendas if quantidade_total_vendas > 0 else 0.0
+    # CORREÇÃO: Calcular preço médio ponderado global
+    pm_compras_global, total_qtd_compra = _calcular_preco_medio_ponderado_global_dia(ops_formatadas, "buy")
+    pm_vendas_global, total_qtd_venda = _calcular_preco_medio_ponderado_global_dia(ops_formatadas, "sell")
 
     # Quantidade efetiva de day trade
-    quantidade_dt_efetiva = min(quantidade_total_compras, quantidade_total_vendas)
+    quantidade_dt_efetiva = min(total_qtd_compra, total_qtd_venda)
 
     if quantidade_dt_efetiva > 0:
-        # Cria operação fechada de day trade
+        # Criar operação fechada de day trade com PM global
         op_fechada = _criar_operacao_fechada_detalhada_v2(
             ticker=ticker,
-            data_abertura=compras_dt[0]["op"]["date"],
-            data_fechamento=vendas_dt[0]["op"]["date"],
+            data_abertura=data_operacao,
+            data_fechamento=data_operacao,
             quantidade=quantidade_dt_efetiva,
-            preco_abertura=pm_compras_dt,
-            preco_fechamento=pm_vendas_dt,
+            preco_abertura=pm_compras_global,  # CORREÇÃO: PM global
+            preco_fechamento=pm_vendas_global,  # CORREÇÃO: PM global
             tipo="compra-venda",
             day_trade=True,
             usuario_id=usuario_id
