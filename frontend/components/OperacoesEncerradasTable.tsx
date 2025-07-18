@@ -1119,8 +1119,7 @@ const OperationRow = ({
                                                 ➖
                                               </span>
                                               <span className="text-red-800 font-medium">
-                                                Prejuízo disponível (anterior +
-                                                mês)
+                                                Prejuízo disponível (considerando mês atual)
                                               </span>
                                             </div>
                                             <span className="font-black text-red-900 text-sm">
