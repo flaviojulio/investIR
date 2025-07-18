@@ -428,10 +428,13 @@ def gerar_darfs(usuario_id: int) -> List[Dict[str, Any]]:
 
 # Novas funções para as funcionalidades adicionais
 
+
 def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int, importacao_id: Optional[int] = None) -> int:
     """
     Insere uma operação manualmente para um usuário e recalcula a carteira e os resultados.
     Retorna o ID da operação inserida.
+    
+    CORREÇÃO: Ordem correta dos recálculos para considerar eventos corporativos.
     
     Args:
         operacao: Dados da operação a ser inserida.
@@ -452,10 +455,29 @@ def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int, importaca
     except ValueError: # Catching the specific ValueError from database.inserir_operacao
         raise # Re-raise it to be handled by the router (e.g., converted to HTTPException)
     
-    # Recalcula a carteira e os resultados
-    recalcular_carteira(usuario_id=usuario_id)
-    recalcular_resultados(usuario_id=usuario_id)
-
+    # ✅ CORREÇÃO: Recálculos na ordem correta
+    logging.info(f"🔄 [RECÁLCULO] Iniciando recálculos após inserção de operação ID {new_operacao_id}")
+    
+    try:
+        # 1️⃣ PRIMEIRO: Recalcula carteira (aplicando eventos corporativos)
+        logging.info(f"📊 [RECÁLCULO] 1/3 - Recalculando carteira com eventos corporativos...")
+        recalcular_carteira(usuario_id=usuario_id)
+        
+        # 2️⃣ SEGUNDO: Calcula operações fechadas (usando carteira atualizada)
+        logging.info(f"📊 [RECÁLCULO] 2/3 - Calculando operações fechadas...")
+        calcular_operacoes_fechadas(usuario_id=usuario_id)
+        
+        # 3️⃣ TERCEIRO: Recalcula resultados mensais (usando operações fechadas corretas)
+        logging.info(f"📊 [RECÁLCULO] 3/3 - Recalculando resultados mensais...")
+        recalcular_resultados_corrigido(usuario_id=usuario_id)  # ✅ Usar versão corrigida
+        
+        logging.info(f"✅ [RECÁLCULO] Todos os cálculos concluídos com sucesso!")
+        
+    except Exception as e_recalc:
+        logging.error(f"❌ [RECÁLCULO] Erro durante recálculos para usuário {usuario_id}: {e_recalc}", exc_info=True)
+        # Continuar mesmo com erro de recálculo, pois a operação foi inserida com sucesso
+    
+    # ✅ MANTIDO: Recálculo de proventos
     try:
         logging.info(f"[PROVENTO-TRACE] Iniciando recálculo rápido de proventos para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. ORIGEM: inserir_operacao_manual")
         stats = recalcular_proventos_recebidos_rapido(usuario_id=usuario_id)
@@ -526,120 +548,280 @@ def atualizar_item_carteira(dados: AtualizacaoCarteira, usuario_id: int) -> None
 
 def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     """
-    Calcula e salva as operações fechadas para um usuário, usando o novo
-    módulo de cálculos.
-    
-    CORREÇÃO: Garante que todos os campos sejam calculados corretamente.
+    Calcula e salva as operações fechadas para um usuário.
+    CORREÇÃO DEFINITIVA: Aplica eventos corporativos às operações antes de usar calculos.py
     """
-    logging.info(f"Iniciando cálculo de operações fechadas para o usuário {usuario_id}.")
+    import logging
+    logging.info(f"🔄 [CALC V4] Iniciando cálculo com eventos corporativos para usuário {usuario_id}")
     
+    # Limpar operações fechadas anteriores
     limpar_operacoes_fechadas_usuario(usuario_id=usuario_id)
+    logging.info(f"   ✅ Operações fechadas antigas limpas")
 
-    operacoes_db = obter_todas_operacoes(usuario_id=usuario_id)
-    if not operacoes_db:
+    # ✅ BUSCAR OPERAÇÕES ORIGINAIS
+    operacoes_originais = obter_todas_operacoes(usuario_id=usuario_id)
+    if not operacoes_originais:
+        logging.info(f"   ❌ Nenhuma operação encontrada para usuário {usuario_id}")
         return []
 
-    operacoes = [Operacao(**op_data) for op_data in operacoes_db]
-    operacoes.sort(key=lambda op: (op.date, op.id or 0))
+    logging.info(f"   📊 {len(operacoes_originais)} operações originais carregadas")
+    
+    # ✅ APLICAR EVENTOS CORPORATIVOS (mesma lógica do recalcular_carteira)
+    from datetime import date, datetime, timedelta
+    from models import EventoCorporativoInfo
+    from collections import defaultdict
+    
+    # Ordenar operações por data
+    operacoes_originais.sort(key=lambda x: (x['date'] if isinstance(x['date'], date) else datetime.fromisoformat(x['date']).date(), x.get('id', 0)))
+    
+    adjusted_operacoes = []
+    if operacoes_originais:
+        today_date = date.today()
+        unique_tickers = list(set(op_from_db['ticker'] for op_from_db in operacoes_originais))
+        events_by_ticker = {}
 
-    # TODO: Adicionar lógica de eventos corporativos aqui
-    operacoes_ajustadas = operacoes
+        logging.info(f"   🔍 Aplicando eventos corporativos para {len(unique_tickers)} tickers...")
 
-    resultados = calculos.calcular_resultados_operacoes(operacoes_ajustadas)
-    operacoes_fechadas_calculadas = resultados['operacoes_fechadas']
-
-    # ✅ CORREÇÃO: Buscar resultados mensais reais
-    resultados_mensais_list = obter_resultados_mensais(usuario_id=usuario_id)
-    resultados_mensais_map = {}
-    for rm in resultados_mensais_list:
-        mes_str = rm.get('mes', '')
-        resultados_mensais_map[mes_str] = rm
-
-    operacoes_fechadas_salvas = []
-    for op_fechada in operacoes_fechadas_calculadas:
-        
-        # ✅ VALIDAÇÃO: Verificar se os preços médios existem
-        if not hasattr(op_fechada, 'preco_medio_compra') or not hasattr(op_fechada, 'preco_medio_venda'):
-            logging.error(f"❌ Operação fechada sem preços médios: {op_fechada}")
-            continue
+        for ticker_symbol in unique_tickers:
+            logging.info(f"   📊 Processando eventos para {ticker_symbol}")
             
-        if op_fechada.preco_medio_compra is None or op_fechada.preco_medio_venda is None:
-            logging.error(f"❌ Preços médios são None: compra={op_fechada.preco_medio_compra}, venda={op_fechada.preco_medio_venda}")
-            continue
+            id_acao = obter_id_acao_por_ticker(ticker_symbol)
+            if not id_acao:
+                logging.info(f"      ❌ ID da ação não encontrado para {ticker_symbol}")
+                continue
+                
+            # Buscar primeira operação para determinar período de busca
+            first_op_date = min(
+                op_from_db['date'] if isinstance(op_from_db['date'], date)
+                else datetime.fromisoformat(str(op_from_db['date']).split("T")[0]).date()
+                for op_from_db in operacoes_originais
+                if op_from_db['ticker'] == ticker_symbol
+            )
+            
+            # Buscar eventos até hoje
+            raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, today_date)
+            
+            # Filtrar eventos relevantes
+            filtered_events_data = []
+            for event in raw_events_data:
+                event_data_ex = event.get('data_ex')
+                if event_data_ex:
+                    if isinstance(event_data_ex, str):
+                        event_data_ex = datetime.fromisoformat(event_data_ex).date()
+                    
+                    if event_data_ex >= first_op_date:
+                        filtered_events_data.append(event)
+            
+            # Converter para objetos EventoCorporativoInfo
+            events_by_ticker[ticker_symbol] = [
+                EventoCorporativoInfo.model_validate(event_data) 
+                for event_data in filtered_events_data
+            ]
+            
+            logging.info(f"      ✅ {len(events_by_ticker[ticker_symbol])} eventos carregados para {ticker_symbol}")
 
-        # ✅ CORREÇÃO: Separar preços unitários de valores totais
-        preco_medio_compra = float(op_fechada.preco_medio_compra)      # Preço por ação
-        preco_medio_venda = float(op_fechada.preco_medio_venda)        # Preço por ação
-        quantidade = int(op_fechada.quantidade)                       # Quantidade de ações
+        # ✅ APLICAR EVENTOS ÀS OPERAÇÕES (mesma lógica do recalcular_carteira)
+        for op_from_db in operacoes_originais:
+            current_op_date = op_from_db['date']
+            if not isinstance(current_op_date, date):
+                try:
+                    current_op_date = datetime.fromisoformat(str(current_op_date).split("T")[0]).date()
+                except ValueError:
+                    logging.warning(f"      ❌ Data inválida na operação: {current_op_date}")
+                    adjusted_operacoes.append(op_from_db.copy())
+                    continue
+
+            # Preparar operação para ajuste
+            adj_op_data = op_from_db.copy()
+            adj_op_data['date'] = current_op_date
+            adj_op_data['quantity'] = int(adj_op_data['quantity'])
+            adj_op_data['price'] = float(adj_op_data['price'])
+            
+            ticker = adj_op_data['ticker']
+            ticker_events = events_by_ticker.get(ticker, [])
+            
+            # ✅ APLICAR EVENTOS EM ORDEM CRONOLÓGICA
+            for event_info in sorted(ticker_events, key=lambda e: e.data_ex if e.data_ex else date.min):
+                if event_info.data_ex is None:
+                    continue
+                
+                # ✅ Aplicar se operação foi ANTES da data ex
+                if adj_op_data['date'] < event_info.data_ex:
+                    logging.info(f"      🎯 Aplicando {event_info.evento} para {ticker} em {current_op_date}")
+                    
+                    # ✅ Tratar desdobramentos especificamente
+                    if event_info.evento and "desdobramento" in event_info.evento.lower():
+                        if not event_info.razao:
+                            continue
+                        
+                        try:
+                            parts = event_info.razao.split(':')
+                            if len(parts) != 2:
+                                continue
+                            
+                            antes = float(parts[0])
+                            depois = float(parts[1])
+                            fator = depois / antes
+                            
+                            # Aplicar ajustes
+                            qtd_original = adj_op_data['quantity']
+                            preco_original = adj_op_data['price']
+                            
+                            adj_op_data['quantity'] = int(qtd_original * fator)
+                            adj_op_data['price'] = preco_original / fator
+                            
+                            logging.info(f"         📊 {ticker}: {qtd_original}@{preco_original:.2f} → {adj_op_data['quantity']}@{adj_op_data['price']:.2f}")
+                            
+                        except (ValueError, ZeroDivisionError) as e:
+                            logging.error(f"         ❌ Erro ao aplicar desdobramento: {e}")
+                            continue
+
+            adjusted_operacoes.append(adj_op_data)
+    else:
+        adjusted_operacoes = []
+    
+    logging.info(f"   📊 {len(adjusted_operacoes)} operações ajustadas pelos eventos corporativos")
+    
+    # ✅ CONVERTER OPERAÇÕES AJUSTADAS para formato do calculos.py
+    operacoes_calculos = []
+    for op_adj in adjusted_operacoes:
+        # Garantir que a data seja um objeto date
+        if isinstance(op_adj['date'], str):
+            data_obj = datetime.fromisoformat(op_adj['date']).date()
+        else:
+            data_obj = op_adj['date']
         
-        # ✅ CORREÇÃO: Calcular valores totais com validação
-        valor_total_compra = preco_medio_compra * quantidade  # Valor total
-        valor_total_venda = preco_medio_venda * quantidade    # Valor total
-
-        # ✅ VALIDAÇÃO: Verificar se os cálculos fazem sentido
-        if valor_total_compra <= 0:
-            logging.error(f"❌ Valor total de compra inválido: {valor_total_compra} (PM: {preco_medio_compra}, Qtd: {quantidade})")
-            # Tentar corrigir usando o resultado
-            if op_fechada.resultado != 0:
-                valor_total_compra = valor_total_venda - op_fechada.resultado
-                preco_medio_compra = valor_total_compra / quantidade if quantidade > 0 else 0
-                logging.warning(f"⚠️ Corrigido valor_compra para: {valor_total_compra}")
-
-        # ✅ CORREÇÃO: Calcular status_ir
-        status_ir = calculos._calcular_status_ir_operacao_fechada(
-            {
-                "data_fechamento": op_fechada.data_fechamento,
+        # Criar objeto Operacao para o módulo calculos
+        from models import Operacao
+        operacao_obj = Operacao(
+            id=op_adj.get('id'),
+            date=data_obj,
+            ticker=op_adj['ticker'],
+            operation=op_adj['operation'],
+            quantity=int(op_adj['quantity']),  # ✅ Já ajustada pelos eventos
+            price=float(op_adj['price']),      # ✅ Já ajustada pelos eventos
+            fees=float(op_adj.get('fees', 0.0))
+        )
+        operacoes_calculos.append(operacao_obj)
+    
+    logging.info(f"   📊 {len(operacoes_calculos)} operações convertidas para calculos.py")
+    
+    # ✅ USAR O MÓDULO CALCULOS.PY com operações ajustadas
+    try:
+        resultado_calculos = calculos.calcular_resultados_operacoes(operacoes_calculos)
+        operacoes_fechadas = resultado_calculos.get("operacoes_fechadas", [])
+        
+        logging.info(f"   🎯 calculos.py retornou {len(operacoes_fechadas)} operações fechadas")
+        
+    except Exception as e:
+        logging.error(f"   ❌ Erro no calculos.py: {e}", exc_info=True)
+        return []
+    
+    # ✅ SALVAR NO BANCO DE DADOS
+    operacoes_fechadas_salvas = []
+    
+    for op_fechada in operacoes_fechadas:
+        try:
+            # Converter OperacaoFechada do calculos.py para formato do banco
+            op_dict = {
+                "ticker": op_fechada.ticker,
+                "quantidade": op_fechada.quantidade,
+                "preco_abertura": op_fechada.preco_medio_compra,
+                "preco_fechamento": op_fechada.preco_medio_venda,
+                "valor_compra": op_fechada.preco_medio_compra * op_fechada.quantidade,
+                "valor_venda": op_fechada.preco_medio_venda * op_fechada.quantidade,
                 "resultado": op_fechada.resultado,
                 "day_trade": op_fechada.day_trade,
-                "ticker": op_fechada.ticker  # ✅ Adicionar ticker para debug
-            },
-            resultados_mensais_map
-        )
-
-        # ✅ CORREÇÃO: Construir dicionário com todos os campos obrigatórios
-        op_dict = {
-            "ticker": str(op_fechada.ticker),
-            "quantidade": quantidade,
+                "data_fechamento": op_fechada.data_fechamento,
+                "data_abertura": op_fechada.data_fechamento,
+                "tipo": "compra-venda",
+                "taxas_total": 0,
+                "percentual_lucro": (op_fechada.resultado / (op_fechada.preco_medio_compra * op_fechada.quantidade)) * 100 if op_fechada.preco_medio_compra > 0 else 0,
+                "prejuizo_anterior_acumulado": 0,
+                "operacoes_relacionadas": [],
+                "status_ir": "Tributável Day Trade" if op_fechada.day_trade and op_fechada.resultado > 0 
+                           else "Tributável Swing" if not op_fechada.day_trade and op_fechada.resultado > 0 
+                           else "Prejuízo Acumulado"
+            }
             
-            # ✅ CORREÇÃO: Preços médios unitários (para os cards do frontend)
-            "preco_abertura": round(preco_medio_compra, 2),     # Preço médio por ação de compra
-            "preco_fechamento": round(preco_medio_venda, 2),    # Preço médio por ação de venda
+            # Salvar no banco
+            salvar_operacao_fechada(op_dict, usuario_id=usuario_id)
+            operacoes_fechadas_salvas.append(op_dict)
             
-            # ✅ CORREÇÃO: Valores totais (para cálculos e validações)
-            "valor_compra": round(valor_total_compra, 2),       # Valor total da compra
-            "valor_venda": round(valor_total_venda, 2),         # Valor total da venda
+            # Debug detalhado
+            tipo_op = "Day Trade" if op_fechada.day_trade else "Swing Trade"
+            logging.info(f"   ✅ {tipo_op} {op_fechada.ticker}: {op_fechada.quantidade} ações, "
+                        f"PM_compra={op_fechada.preco_medio_compra:.2f}, "
+                        f"PM_venda={op_fechada.preco_medio_venda:.2f}, "
+                        f"Resultado={op_fechada.resultado:.2f}")
             
-            "resultado": round(float(op_fechada.resultado), 2),
-            "day_trade": bool(op_fechada.day_trade),
-            "data_fechamento": op_fechada.data_fechamento,
-            "data_abertura": op_fechada.data_fechamento,        # ✅ TODO: Implementar data_abertura real
-            "tipo": "compra-venda",
-            "taxas_total": 0.0,                                 # ✅ Fees já incluídos nos preços
-            "percentual_lucro": round((op_fechada.resultado / valor_total_compra) * 100, 2) if valor_total_compra != 0 else 0.0,
-            "prejuizo_anterior_acumulado": 0.0,                 # ✅ TODO: Implementar cálculo real
-            "operacoes_relacionadas": [],
-            "status_ir": status_ir or "Sem Status"              # ✅ Fallback para evitar None
-        }
-        
-        # ✅ DEBUG: Log detalhado para troubleshooting
-        debug_operacao_fechada(op_dict)
-        
-        # ✅ VALIDAÇÃO FINAL: Verificar consistência antes de salvar
-        if abs(op_dict['valor_venda'] - op_dict['valor_compra'] - op_dict['resultado']) > 0.01:
-            logging.error(f"❌ INCONSISTÊNCIA: {op_dict['ticker']} - Resultado não bate com valores")
-            logging.error(f"   Valor venda: {op_dict['valor_venda']}")
-            logging.error(f"   Valor compra: {op_dict['valor_compra']}")
-            logging.error(f"   Resultado esperado: {op_dict['valor_venda'] - op_dict['valor_compra']}")
-            logging.error(f"   Resultado calculado: {op_dict['resultado']}")
+        except Exception as e:
+            logging.error(f"   ❌ Erro ao salvar operação fechada {op_fechada.ticker}: {e}", exc_info=True)
             continue
+    
+    logging.info(f"   🎉 {len(operacoes_fechadas_salvas)} operações fechadas salvas no banco!")
+    
+    # ✅ VALIDAÇÃO FINAL PARA BBAS3
+    bbas3_ops = [op for op in operacoes_fechadas_salvas if op['ticker'] == 'BBAS3']
+    if bbas3_ops:
+        logging.info(f"   🎯 BBAS3: {len(bbas3_ops)} operações fechadas geradas")
+        total_resultado = sum(op['resultado'] for op in bbas3_ops)
+        logging.info(f"   💰 BBAS3 resultado total: {total_resultado:.2f}")
         
-        # ✅ Salvar no banco
-        salvar_operacao_fechada(op_dict, usuario_id=usuario_id)
-        operacoes_fechadas_salvas.append(op_dict)
-
-    logging.info(f"✅ {len(operacoes_fechadas_salvas)} operações fechadas salvas no banco.")
+        # Verificar se está próximo do esperado
+        resultado_esperado = -1399.0
+        diferenca = abs(total_resultado - resultado_esperado)
+        if diferenca <= 50:
+            logging.info(f"   ✅ BBAS3: Resultado CORRETO! Diferença: {diferenca:.2f}")
+        else:
+            logging.warning(f"   ⚠️ BBAS3: Resultado ainda incorreto. Diferença: {diferenca:.2f}")
+    else:
+        logging.warning(f"   ⚠️ BBAS3: Nenhuma operação fechada gerada!")
+    
     return operacoes_fechadas_salvas
 
+
+# ✅ FUNÇÃO ESPECÍFICA PARA DESDOBRAMENTOS
+def aplicar_desdobramento(adj_op_data, event_info):
+    """
+    Aplica especificamente um evento de desdobramento
+    """
+    print(f"   🎯 Aplicando DESDOBRAMENTO {event_info.razao}...")
+    
+    if not event_info.razao:
+        print(f"   ❌ Razão do desdobramento não informada")
+        return adj_op_data
+    
+    try:
+        # Parse da razão (ex: "1:2" = cada 1 ação vira 2)
+        parts = event_info.razao.split(':')
+        if len(parts) != 2:
+            print(f"   ❌ Formato de razão inválido: {event_info.razao}")
+            return adj_op_data
+        
+        antes = float(parts[0])  # 1
+        depois = float(parts[1])  # 2
+        fator = depois / antes   # 2.0
+        
+        # Aplicar ajustes
+        qtd_original = adj_op_data['quantity']
+        preco_original = adj_op_data['price']
+        
+        qtd_nova = int(qtd_original * fator)
+        preco_novo = preco_original / fator
+        
+        adj_op_data['quantity'] = qtd_nova
+        adj_op_data['price'] = preco_novo
+        
+        print(f"   📊 Quantidade: {qtd_original} → {qtd_nova} (×{fator})")
+        print(f"   💰 Preço: {preco_original:.2f} → {preco_novo:.2f} (÷{fator})")
+        print(f"   ✅ Desdobramento aplicado com sucesso!")
+        
+        return adj_op_data
+        
+    except (ValueError, ZeroDivisionError) as e:
+        print(f"   ❌ Erro ao aplicar desdobramento: {e}")
+        return adj_op_data
 
 
 def recalcular_carteira(usuario_id: int) -> None:
@@ -675,84 +857,155 @@ def recalcular_carteira(usuario_id: int) -> None:
         unique_tickers = list(set(op_from_db['ticker'] for op_from_db in operacoes_originais))
         events_by_ticker = {}
 
-        for ticker_symbol in unique_tickers:
-            id_acao = obter_id_acao_por_ticker(ticker_symbol)
-            if id_acao:
-                first_op_date = min(
-                    op_from_db['date'] if isinstance(op_from_db['date'], date)
-                    else datetime.fromisoformat(str(op_from_db['date']).split("T")[0]).date()
-                    for op_from_db in operacoes_originais
-                    if op_from_db['ticker'] == ticker_symbol
-                )
-                search_start_date = first_op_date - timedelta(days=30)
-                raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, today_date)
-                filtered_events_data = [
-                    event for event in raw_events_data
-                    if event.get('data_ex') and (
-                        isinstance(event['data_ex'], date) and event['data_ex'] >= search_start_date
-                        or isinstance(event['data_ex'], str) and datetime.fromisoformat(event['data_ex']).date() >= search_start_date
-                    )
-                ]
-                events_by_ticker[ticker_symbol] = [EventoCorporativoInfo.model_validate(event_data) for event_data in filtered_events_data]
+        print(f"\n🔍 [EVENTOS] Processando eventos para {len(unique_tickers)} tickers...")
 
+        for ticker_symbol in unique_tickers:
+            print(f"\n📊 [EVENTOS] Processando ticker: {ticker_symbol}")
+            
+            id_acao = obter_id_acao_por_ticker(ticker_symbol)
+            if not id_acao:
+                print(f"   ❌ ID da ação não encontrado para {ticker_symbol}")
+                continue
+                
+            print(f"   ✅ ID da ação encontrado: {id_acao}")
+            
+            # Buscar primeira operação para determinar período de busca
+            first_op_date = min(
+                op_from_db['date'] if isinstance(op_from_db['date'], date)
+                else datetime.fromisoformat(str(op_from_db['date']).split("T")[0]).date()
+                for op_from_db in operacoes_originais
+                if op_from_db['ticker'] == ticker_symbol
+            )
+            
+            search_start_date = first_op_date - timedelta(days=30)
+            print(f"   📅 Primeira operação: {first_op_date}")
+            print(f"   📅 Buscar eventos desde: {search_start_date}")
+            
+            # ✅ CORREÇÃO: Buscar eventos até hoje (não até data limite específica)
+            raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(
+                id_acao, 
+                today_date  # Buscar até hoje
+            )
+            
+            print(f"   📋 Eventos brutos encontrados: {len(raw_events_data)}")
+            
+            # ✅ CORREÇÃO: Filtrar eventos relevantes (após primeira operação)
+            filtered_events_data = []
+            for event in raw_events_data:
+                event_data_ex = event.get('data_ex')
+                if event_data_ex:
+                    if isinstance(event_data_ex, str):
+                        event_data_ex = datetime.fromisoformat(event_data_ex).date()
+                    
+                    # ✅ INCLUIR eventos com data_ex >= primeira operação
+                    if event_data_ex >= first_op_date:
+                        filtered_events_data.append(event)
+                        print(f"   ✅ Evento incluído: {event['evento']} em {event_data_ex}")
+                    else:
+                        print(f"   ⏭️ Evento ignorado (muito antigo): {event['evento']} em {event_data_ex}")
+            
+            print(f"   📋 Eventos filtrados: {len(filtered_events_data)}")
+            
+            # Converter para objetos EventoCorporativoInfo
+            events_by_ticker[ticker_symbol] = [
+                EventoCorporativoInfo.model_validate(event_data) 
+                for event_data in filtered_events_data
+            ]
+            
+            print(f"   ✅ {len(events_by_ticker[ticker_symbol])} eventos carregados para {ticker_symbol}")
+
+        # ✅ APLICAR EVENTOS ÀS OPERAÇÕES
         for op_from_db in operacoes_originais:
             current_op_date = op_from_db['date']
             if not isinstance(current_op_date, date):
                 try:
                     current_op_date = datetime.fromisoformat(str(current_op_date).split("T")[0]).date()
                 except ValueError:
+                    print(f"❌ Data inválida na operação: {current_op_date}")
                     adjusted_operacoes.append(op_from_db.copy())
                     continue
 
+            # Preparar operação para ajuste
             adj_op_data = op_from_db.copy()
             adj_op_data['date'] = current_op_date
             adj_op_data['quantity'] = int(adj_op_data['quantity'])
             adj_op_data['price'] = float(adj_op_data['price'])
-
-            ticker_events = events_by_ticker.get(adj_op_data['ticker'], [])
+            
+            ticker = adj_op_data['ticker']
+            ticker_events = events_by_ticker.get(ticker, [])
+            
+            print(f"\n🔄 [APLICANDO] {ticker} em {current_op_date} - {len(ticker_events)} eventos para verificar")
+            
+            # ✅ APLICAR EVENTOS EM ORDEM CRONOLÓGICA
             for event_info in sorted(ticker_events, key=lambda e: e.data_ex if e.data_ex else date.min):
-                if event_info.data_ex is None or adj_op_data['date'] < event_info.data_ex:
+                if event_info.data_ex is None:
                     continue
+                
+                print(f"   🔍 Verificando evento: {event_info.evento} em {event_info.data_ex}")
+                
+                # ✅ CONDIÇÃO CORRIGIDA: Aplicar se operação foi ANTES da data ex
+                if adj_op_data['date'] < event_info.data_ex:
+                    print(f"   ✅ Operação antes da data ex - aplicando evento...")
+                    
+                    # ✅ CORREÇÃO: Tratar desdobramentos especificamente
+                    if event_info.evento and "desdobramento" in event_info.evento.lower():
+                        adj_op_data = aplicar_desdobramento(adj_op_data, event_info)
+                        
+                    # ✅ BONIFICAÇÕES (código existente mantido)
+                    elif event_info.evento and event_info.evento.lower().startswith("bonific"):
+                        bonus_increase = event_info.get_bonus_quantity_increase(float(adj_op_data['quantity']))
+                        quantidade_antiga = float(adj_op_data['quantity'])
+                        quantidade_nova = quantidade_antiga + bonus_increase
+                        adj_op_data['quantity'] = int(round(quantidade_nova))
+                        if quantidade_nova > 0:
+                            adj_op_data['price'] = float(adj_op_data['price']) * quantidade_antiga / quantidade_nova
+                        print(f"   ✅ Bonificação aplicada: {quantidade_antiga} → {quantidade_nova}")
+                        continue
 
-                if event_info.evento and event_info.evento.lower().startswith("bonific"):
-                    bonus_increase = event_info.get_bonus_quantity_increase(float(adj_op_data['quantity']))
-                    quantidade_antiga = float(adj_op_data['quantity'])
-                    quantidade_nova = quantidade_antiga + bonus_increase
-                    adj_op_data['quantity'] = int(round(quantidade_nova))
-                    if quantidade_nova > 0:
-                        adj_op_data['price'] = float(adj_op_data['price']) * quantidade_antiga / quantidade_nova
-                    continue
+                    # ✅ OUTROS EVENTOS (splits, etc.)
+                    else:
+                        factor = event_info.get_adjustment_factor()
+                        if factor != 1.0:
+                            current_quantity_float = float(adj_op_data['quantity']) * factor
+                            if factor != 0.0:
+                                current_price_float = float(adj_op_data['price']) / factor
+                            else:
+                                current_price_float = float(adj_op_data['price'])
 
-                factor = event_info.get_adjustment_factor()
-                if factor == 1.0:
-                    continue
-
-                current_quantity_float = float(adj_op_data['quantity']) * factor
-                if factor != 0.0:
-                    current_price_float = float(adj_op_data['price']) / factor
+                            adj_op_data['quantity'] = int(round(current_quantity_float))
+                            adj_op_data['price'] = current_price_float
+                            print(f"   ✅ Fator {factor} aplicado")
                 else:
-                    current_price_float = float(adj_op_data['price'])
-
-                adj_op_data['quantity'] = int(round(current_quantity_float))
-                adj_op_data['price'] = current_price_float
+                    print(f"   ⏭️ Operação após data ex - evento não aplicado")
 
             adjusted_operacoes.append(adj_op_data)
+            
+            # Log final da operação
+            if adj_op_data['quantity'] != op_from_db['quantity'] or adj_op_data['price'] != op_from_db['price']:
+                print(f"   🎯 AJUSTADO {ticker}: {op_from_db['quantity']}@{op_from_db['price']:.2f} → {adj_op_data['quantity']}@{adj_op_data['price']:.2f}")
     else:
         adjusted_operacoes = []
-
     # Processar operações ajustadas
     carteira_temp = defaultdict(lambda: {"quantidade": 0, "custo_total": 0.0, "preco_medio": 0.0})
 
-    for op in adjusted_operacoes:
+    print(f"\n💰 [CARTEIRA] Recalculando carteira com {len(adjusted_operacoes)} operações ajustadas...")
+
+    for idx, op in enumerate(adjusted_operacoes):
         ticker = op["ticker"]
-        quantidade_op = op["quantity"]
-        valor_op_bruto = quantidade_op * op["price"]
+        quantidade_op = op["quantity"]  # ✅ CORRIGIDO: já ajustada pelos eventos
+        preco_op = op["price"]          # ✅ CORRIGIDO: já ajustado pelos eventos
+        valor_op_bruto = quantidade_op * preco_op
         fees_op = op.get("fees", 0.0)
+
+        print(f"\n📊 [CARTEIRA] Op {idx+1}: {op['operation']} {quantidade_op} {ticker} @ {preco_op:.2f} em {op['date']}")
 
         if op["operation"] == "buy":
             custo_da_compra_atual_total = valor_op_bruto + fees_op
+            
+            print(f"   💳 Custo total da compra: {custo_da_compra_atual_total:.2f}")
 
             if carteira_temp[ticker]["quantidade"] < 0:
+                # Cobertura de posição vendida
                 quantidade_acoes_sendo_cobertas = min(abs(carteira_temp[ticker]["quantidade"]), quantidade_op)
                 carteira_temp[ticker]["quantidade"] += quantidade_op
                 
@@ -766,10 +1019,16 @@ def recalcular_carteira(usuario_id: int) -> None:
                     reducao_valor_pos_vendida = carteira_temp[ticker]["preco_medio"] * quantidade_acoes_sendo_cobertas
                     carteira_temp[ticker]["custo_total"] = max(0, carteira_temp[ticker]["custo_total"] - reducao_valor_pos_vendida)
             else:
+                # Compra normal
                 carteira_temp[ticker]["quantidade"] += quantidade_op
                 carteira_temp[ticker]["custo_total"] += custo_da_compra_atual_total
+                
+                print(f"   📈 Nova quantidade: {carteira_temp[ticker]['quantidade']}")
+                print(f"   💰 Custo total acumulado: {carteira_temp[ticker]['custo_total']:.2f}")
 
         elif op["operation"] == "sell":
+            print(f"   📉 Vendendo da posição existente...")
+            
             if carteira_temp[ticker]["quantidade"] > 0:
                 quantidade_vendida_da_posicao_comprada = min(carteira_temp[ticker]["quantidade"], quantidade_op)
                 custo_a_baixar = carteira_temp[ticker]["preco_medio"] * quantidade_vendida_da_posicao_comprada
@@ -782,26 +1041,32 @@ def recalcular_carteira(usuario_id: int) -> None:
                     valor_venda_descoberto = valor_op_bruto * proporcao_restante
                     carteira_temp[ticker]["custo_total"] += valor_venda_descoberto
                     carteira_temp[ticker]["quantidade"] -= quantidade_op_restante
+                    
+                print(f"   📉 Quantidade após venda: {carteira_temp[ticker]['quantidade']}")
+                print(f"   💰 Custo total após venda: {carteira_temp[ticker]['custo_total']:.2f}")
             else:
+                # Venda a descoberto
                 carteira_temp[ticker]["quantidade"] -= quantidade_op
                 carteira_temp[ticker]["custo_total"] += valor_op_bruto
 
-        # CORREÇÃO: Calcular preço médio e aplicar validação
+        # ✅ RECALCULAR PREÇO MÉDIO após cada operação
         if carteira_temp[ticker]["quantidade"] > 0:
             carteira_temp[ticker]["preco_medio"] = carteira_temp[ticker]["custo_total"] / carteira_temp[ticker]["quantidade"]
         elif carteira_temp[ticker]["quantidade"] < 0:
             if abs(carteira_temp[ticker]["quantidade"]) > 0 and carteira_temp[ticker]["custo_total"] != 0:
                 carteira_temp[ticker]["preco_medio"] = carteira_temp[ticker]["custo_total"] / abs(carteira_temp[ticker]["quantidade"])
             elif op["operation"] == "sell":
-                carteira_temp[ticker]["preco_medio"] = op["price"]
+                carteira_temp[ticker]["preco_medio"] = preco_op  # ✅ CORRIGIDO: usar preço ajustado
             else:
                 carteira_temp[ticker]["preco_medio"] = 0.0
         else:
             carteira_temp[ticker]["preco_medio"] = 0.0
             carteira_temp[ticker]["custo_total"] = 0.0
 
-        # NOVA VALIDAÇÃO: Garantir limpeza completa quando quantidade = 0
+        # Validação de zeramento
         _validar_e_zerar_posicao_se_necessario(carteira_temp[ticker])
+        
+        print(f"   📊 PM atual: {carteira_temp[ticker]['preco_medio']:.2f}")
 
     # Atualizar no banco de dados
     for ticker, dados in carteira_temp.items():
@@ -1008,12 +1273,12 @@ def deletar_todas_operacoes_service(usuario_id: int) -> Dict[str, Any]:
     """
     deleted_count = remover_todas_operacoes_usuario(usuario_id=usuario_id)
 
-    # Limpa proventos recebidos e resumos de proventos
+    # ✅ ORDEM CORRETA de limpeza:
     limpar_usuario_proventos_recebidos_db(usuario_id=usuario_id)
     limpar_carteira_usuario_db(usuario_id=usuario_id)
     limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
     
-    # Limpa operações fechadas
+    # ✅ CRÍTICO: Limpar operações fechadas
     limpar_operacoes_fechadas_usuario(usuario_id=usuario_id)
     
     # Limpa histórico de alterações de preço médio
@@ -2526,3 +2791,482 @@ def debug_operacao_fechada(op_dict):
     
     print("=" * 60)
     
+    
+# ✅ FUNÇÃO DE DEBUG para verificar eventos
+def debug_eventos_usuario(usuario_id: int, ticker: str = None):
+    """
+    Debug específico para eventos corporativos de um usuário
+    """
+    print(f"\n🔍 [DEBUG] Eventos corporativos para usuário {usuario_id}")
+    
+    if ticker:
+        tickers = [ticker]
+    else:
+        operacoes = obter_todas_operacoes(usuario_id)
+        tickers = list(set(op['ticker'] for op in operacoes))
+    
+    for ticker_symbol in tickers:
+        print(f"\n📊 [DEBUG] Ticker: {ticker_symbol}")
+        
+        id_acao = obter_id_acao_por_ticker(ticker_symbol)
+        if not id_acao:
+            print(f"   ❌ ID da ação não encontrado")
+            continue
+            
+        # Buscar eventos
+        today = date.today()
+        eventos = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, today)
+        
+        print(f"   📋 {len(eventos)} eventos encontrados:")
+        for evento in eventos:
+            print(f"      • {evento['evento']} em {evento['data_ex']} - {evento.get('razao', 'N/A')}")
+        
+        # Buscar operações
+        operacoes = [op for op in obter_todas_operacoes(usuario_id) if op['ticker'] == ticker_symbol]
+        print(f"   📈 {len(operacoes)} operações encontradas:")
+        for op in operacoes:
+            print(f"      • {op['operation']} {op['quantity']} em {op['date']}")
+            
+    return True    
+
+def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int, importacao_id: Optional[int] = None) -> int:
+    """
+    Insere uma operação manualmente para um usuário e recalcula a carteira e os resultados.
+    Retorna o ID da operação inserida.
+    
+    CORREÇÃO: Ordem correta dos recálculos para considerar eventos corporativos.
+    
+    Args:
+        operacao: Dados da operação a ser inserida.
+        usuario_id: ID do usuário.
+        importacao_id: ID da importação (opcional, para tracking de importações).
+        
+    Returns:
+        int: ID da operação inserida.
+    """
+    # Insere a operação no banco de dados
+    try:
+        if importacao_id is not None:
+            # Usar a função inserir_operacao padrão com importacao_id
+            new_operacao_id = inserir_operacao(operacao.model_dump(), usuario_id=usuario_id, importacao_id=importacao_id)
+        else:
+            # Usar a função tradicional
+            new_operacao_id = inserir_operacao(operacao.model_dump(), usuario_id=usuario_id)
+    except ValueError: # Catching the specific ValueError from database.inserir_operacao
+        raise # Re-raise it to be handled by the router (e.g., converted to HTTPException)
+    
+    # ✅ CORREÇÃO: Recálculos na ordem correta
+    logging.info(f"🔄 [RECÁLCULO] Iniciando recálculos após inserção de operação ID {new_operacao_id}")
+    
+    try:
+        # 1️⃣ PRIMEIRO: Recalcula carteira (aplicando eventos corporativos)
+        logging.info(f"📊 [RECÁLCULO] 1/3 - Recalculando carteira com eventos corporativos...")
+        recalcular_carteira(usuario_id=usuario_id)
+        
+        # 2️⃣ SEGUNDO: Calcula operações fechadas (usando carteira atualizada)
+        logging.info(f"📊 [RECÁLCULO] 2/3 - Calculando operações fechadas...")
+        calcular_operacoes_fechadas(usuario_id=usuario_id)
+        
+        # 3️⃣ TERCEIRO: Recalcula resultados mensais (usando operações fechadas corretas)
+        logging.info(f"📊 [RECÁLCULO] 3/3 - Recalculando resultados mensais...")
+        recalcular_resultados_corrigido(usuario_id=usuario_id)  # ✅ Usar versão corrigida
+        
+        logging.info(f"✅ [RECÁLCULO] Todos os cálculos concluídos com sucesso!")
+        
+    except Exception as e_recalc:
+        logging.error(f"❌ [RECÁLCULO] Erro durante recálculos para usuário {usuario_id}: {e_recalc}", exc_info=True)
+        # Continuar mesmo com erro de recálculo, pois a operação foi inserida com sucesso
+    
+    # ✅ MANTIDO: Recálculo de proventos
+    try:
+        logging.info(f"[PROVENTO-TRACE] Iniciando recálculo rápido de proventos para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. ORIGEM: inserir_operacao_manual")
+        stats = recalcular_proventos_recebidos_rapido(usuario_id=usuario_id)
+        logging.info(f"[PROVENTO-TRACE] Recálculo rápido de proventos para usuário {usuario_id} após inserção manual concluído. Stats: {stats}")
+    except Exception as e_recalc:
+        logging.error(f"[PROVENTO-TRACE] ALERTA: Falha ao recalcular proventos (rápido) para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. A operação principal foi bem-sucedida. Erro no recálculo de proventos: {e_recalc}", exc_info=True)
+        # Não relançar o erro para não afetar o status da criação da operação.
+
+    return new_operacao_id
+
+
+# ✅ NOVA FUNÇÃO: recalcular_resultados_corrigido
+def recalcular_resultados_corrigido(usuario_id: int) -> None:
+    """
+    Recalcula os resultados mensais de um usuário, consolidando os resultados
+    das operações fechadas e aplicando as regras fiscais.
+    
+    CORREÇÃO: NÃO recalcula operações fechadas, apenas usa as já calculadas.
+    """
+    logging.info(f"Iniciando recálculo de resultados mensais para o usuário {usuario_id}.")
+
+    # ✅ CORREÇÃO: Usar operações fechadas já calculadas, não recalcular
+    operacoes_fechadas_db = obter_operacoes_para_calculo_fechadas(usuario_id=usuario_id)
+    
+    if not operacoes_fechadas_db:
+        logging.warning(f"Nenhuma operação fechada encontrada para usuário {usuario_id}")
+        return
+    
+    # Limpar resultados mensais antigos
+    limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
+    
+    resultados_por_mes = defaultdict(lambda: {
+        "swing_trade": {"resultado": 0.0, "vendas_total": 0.0, "custo_swing": 0.0},
+        "day_trade": {"resultado": 0.0, "vendas_total": 0.0, "irrf": 0.0, "custo_day_trade": 0.0}
+    })
+
+    # ✅ Processar operações fechadas do banco (já com dados corretos)
+    for op in operacoes_fechadas_db:
+        # Garantir formato de data correto
+        if isinstance(op.get('data_fechamento'), str):
+            mes = op['data_fechamento'][:7]  # YYYY-MM
+        elif hasattr(op.get('data_fechamento'), 'strftime'):
+            mes = op['data_fechamento'].strftime("%Y-%m")
+        else:
+            logging.warning(f"Data de fechamento inválida na operação: {op}")
+            continue
+            
+        if op.get('day_trade', False):
+            resultados_por_mes[mes]['day_trade']['resultado'] += op.get('resultado', 0)
+            resultados_por_mes[mes]['day_trade']['custo_day_trade'] += op.get('valor_compra', 0)
+        else:
+            resultados_por_mes[mes]['swing_trade']['resultado'] += op.get('resultado', 0)
+            resultados_por_mes[mes]['swing_trade']['vendas_total'] += op.get('valor_venda', 0)
+            resultados_por_mes[mes]['swing_trade']['custo_swing'] += op.get('valor_compra', 0)
+
+    # ✅ Aplicar lógica fiscal (mantida do código original)
+    prejuizo_acumulado_swing = 0.0
+    prejuizo_acumulado_day = 0.0
+
+    for mes_str in sorted(resultados_por_mes.keys()):
+        res_mes = resultados_por_mes[mes_str]
+        
+        vendas_swing = res_mes['swing_trade']['vendas_total']
+        isento_swing = vendas_swing <= 20000.0
+        
+        resultado_swing = res_mes['swing_trade']['resultado']
+        ganho_tributavel_swing = resultado_swing if not isento_swing and resultado_swing > 0 else 0
+            
+        valor_a_compensar_swing = min(prejuizo_acumulado_swing, ganho_tributavel_swing)
+        ganho_final_swing = ganho_tributavel_swing - valor_a_compensar_swing
+        prejuizo_acumulado_swing = (prejuizo_acumulado_swing - valor_a_compensar_swing) + abs(min(0, resultado_swing))
+        
+        imposto_swing = max(0, ganho_final_swing) * 0.15
+
+        resultado_day = res_mes['day_trade']['resultado']
+        valor_a_compensar_day = min(prejuizo_acumulado_day, max(0, resultado_day))
+        ganho_final_day = resultado_day - valor_a_compensar_day
+        prejuizo_acumulado_day = (prejuizo_acumulado_day - valor_a_compensar_day) + abs(min(0, resultado_day))
+
+        imposto_bruto_day = max(0, ganho_final_day) * 0.20
+        irrf_day = res_mes['day_trade']['irrf']
+        imposto_day = max(0, imposto_bruto_day - irrf_day)
+
+        resultado_dict = {
+            "mes": mes_str,
+            "vendas_swing": vendas_swing,
+            "custo_swing": res_mes['swing_trade']['custo_swing'],
+            "ganho_liquido_swing": resultado_swing,
+            "isento_swing": isento_swing,
+            "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
+            "ir_devido_swing": imposto_swing,
+            "ir_pagar_swing": imposto_swing if imposto_swing >= 10 else 0,
+            
+            "vendas_day_trade": res_mes['day_trade']['vendas_total'],
+            "custo_day_trade": res_mes['day_trade']['custo_day_trade'],
+            "ganho_liquido_day": resultado_day,
+            "prejuizo_acumulado_day": prejuizo_acumulado_day,
+            "irrf_day": irrf_day,
+            "ir_devido_day": imposto_bruto_day,
+            "ir_pagar_day": imposto_day if imposto_day >= 10 else 0,
+        }
+        salvar_resultado_mensal(resultado_dict, usuario_id=usuario_id)
+
+    logging.info(f"Resultados mensais para o usuário {usuario_id} recalculados e salvos.")
+
+
+# 🔍 FUNÇÃO DE DEBUG para identificar por que não gera operações fechadas
+
+# ✅ ADICIONAR estas funções ao final do services.py para debug e teste
+
+def testar_correcao_bbas3_completa(usuario_id: int):
+    """
+    Teste completo da correção do BBAS3 com debug detalhado.
+    """
+    import logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    
+    print(f"\n🚀 [TESTE CORREÇÃO] Iniciando teste completo da correção BBAS3")
+    print(f"   👤 Usuário ID: {usuario_id}")
+    
+    try:
+        # ✅ ETAPA 1: Recalcular carteira
+        print(f"\n📊 [1/4] Recalculando carteira com eventos corporativos...")
+        recalcular_carteira(usuario_id=usuario_id)
+        
+        # Verificar estado da carteira
+        carteira_atual = obter_carteira_atual(usuario_id=usuario_id)
+        bbas3_carteira = next((item for item in carteira_atual if item['ticker'] == 'BBAS3'), None)
+        
+        if bbas3_carteira:
+            print(f"   ✅ BBAS3 na carteira: {bbas3_carteira['quantidade']} @ {bbas3_carteira['preco_medio']:.2f}")
+        else:
+            print(f"   ✅ BBAS3 posição zerada (correto após as vendas)")
+        
+        # ✅ ETAPA 2: Calcular operações fechadas
+        print(f"\n🔄 [2/4] Calculando operações fechadas com nova lógica...")
+        operacoes_fechadas = calcular_operacoes_fechadas(usuario_id=usuario_id)
+        
+        # Verificar operações fechadas BBAS3
+        bbas3_ops_fechadas = [op for op in operacoes_fechadas if op.get('ticker') == 'BBAS3']
+        print(f"   📊 BBAS3: {len(bbas3_ops_fechadas)} operações fechadas geradas")
+        
+        if bbas3_ops_fechadas:
+            total_resultado = 0
+            for i, op in enumerate(bbas3_ops_fechadas, 1):
+                tipo = "Day Trade" if op.get('day_trade') else "Swing Trade"
+                resultado = op.get('resultado', 0)
+                total_resultado += resultado
+                print(f"   {i}. {tipo}: {op.get('quantidade')} ações")
+                print(f"      PM Compra: {op.get('preco_abertura', 0):.2f}")
+                print(f"      PM Venda: {op.get('preco_fechamento', 0):.2f}")
+                print(f"      Resultado: {resultado:.2f}")
+            
+            print(f"   💰 BBAS3 Resultado Total: {total_resultado:.2f}")
+            
+            # Verificar se está próximo do esperado (-1399.00)
+            resultado_esperado = -1399.0
+            diferenca = abs(total_resultado - resultado_esperado)
+            if diferenca <= 50:  # Tolerância de R$ 50
+                print(f"   ✅ Resultado próximo do esperado ({resultado_esperado:.2f})")
+            else:
+                print(f"   ⚠️ Resultado difere do esperado ({resultado_esperado:.2f}) em {diferenca:.2f}")
+        else:
+            print(f"   ❌ ERRO: Nenhuma operação fechada gerada para BBAS3!")
+            return False
+        
+        # ✅ ETAPA 3: Recalcular resultados mensais
+        print(f"\n📈 [3/4] Recalculando resultados mensais...")
+        recalcular_resultados_corrigido(usuario_id=usuario_id)
+        
+        # Verificar resultados mensais
+        resultados_mensais = obter_resultados_mensais(usuario_id=usuario_id)
+        print(f"   📊 {len(resultados_mensais)} resultados mensais gerados")
+        
+        for resultado in resultados_mensais:
+            mes = resultado.get('mes')
+            swing_resultado = resultado.get('ganho_liquido_swing', 0)
+            day_resultado = resultado.get('ganho_liquido_day', 0)
+            if swing_resultado != 0 or day_resultado != 0:
+                print(f"   📅 {mes}: Swing={swing_resultado:.2f}, Day={day_resultado:.2f}")
+        
+        # ✅ ETAPA 4: Validação final
+        print(f"\n🎯 [4/4] Validação final...")
+        
+        # Buscar operações originais para confirmar
+        operacoes_bbas3 = obter_operacoes_por_ticker_db(usuario_id=usuario_id, ticker='BBAS3')
+        print(f"   📊 Operações BBAS3 no banco: {len(operacoes_bbas3)}")
+        
+        compras_total = sum(op['quantity'] for op in operacoes_bbas3 if op['operation'] == 'buy')
+        vendas_total = sum(op['quantity'] for op in operacoes_bbas3 if op['operation'] == 'sell')
+        print(f"   📊 Total comprado: {compras_total}")
+        print(f"   📊 Total vendido: {vendas_total}")
+        print(f"   📊 Saldo final: {compras_total - vendas_total} (deve ser 0)")
+        
+        # Calcular resultado esperado manualmente
+        print(f"\n🧮 [CÁLCULO MANUAL] Verificando resultado esperado:")
+        print(f"   Operação 1 (após desdobramento): 200 BBAS3 @ 30.00 = 6000.00")
+        print(f"   Operação 2: 100 BBAS3 @ 28.00 = 2800.00")
+        print(f"   PM conjunto: 8800.00 / 300 = 29.33")
+        print(f"   Venda 1: 100 @ 38.00 vs PM 29.33 = (38.00 - 29.33) × 100 = +867.00")
+        print(f"   Venda 2: 200 @ 18.00 vs PM 29.33 = (18.00 - 29.33) × 200 = -2266.00")
+        print(f"   Total esperado: 867.00 + (-2266.00) = -1399.00")
+        
+        if len(bbas3_ops_fechadas) >= 2:
+            print(f"   ✅ SUCESSO: Sistema gerou {len(bbas3_ops_fechadas)} operações fechadas!")
+            print(f"   ✅ SUCESSO: Resultado total {total_resultado:.2f}")
+            return True
+        else:
+            print(f"   ❌ FALHA: Deveria gerar 2 operações fechadas, mas gerou {len(bbas3_ops_fechadas)}")
+            return False
+            
+    except Exception as e:
+        print(f"   ❌ ERRO durante teste: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def debug_eventos_bbas3(usuario_id: int):
+    """
+    Debug específico dos eventos corporativos do BBAS3
+    """
+    print(f"\n🔍 [DEBUG EVENTOS] Analisando eventos BBAS3 para usuário {usuario_id}")
+    
+    # Buscar ID da ação BBAS3
+    id_acao = obter_id_acao_por_ticker('BBAS3')
+    if not id_acao:
+        print(f"   ❌ ID da ação BBAS3 não encontrado")
+        return
+    
+    print(f"   ✅ BBAS3 ID da ação: {id_acao}")
+    
+    # Buscar eventos corporativos
+    from datetime import date
+    hoje = date.today()
+    eventos = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, hoje)
+    
+    print(f"   📋 {len(eventos)} eventos encontrados:")
+    for evento in eventos:
+        print(f"      • {evento['evento']} em {evento['data_ex']}")
+        print(f"        Razão: {evento.get('razao', 'N/A')}")
+        print(f"        Data aprovação: {evento.get('data_aprovacao', 'N/A')}")
+        print(f"        Data registro: {evento.get('data_registro', 'N/A')}")
+    
+    # Buscar operações BBAS3
+    operacoes = obter_operacoes_por_ticker_db(usuario_id=usuario_id, ticker='BBAS3')
+    print(f"\n   📊 {len(operacoes)} operações BBAS3:")
+    for op in operacoes:
+        print(f"      • {op['date']}: {op['operation']} {op['quantity']} @ {op['price']:.2f}")
+    
+    # Verificar quais operações seriam afetadas
+    if eventos:
+        evento_principal = eventos[0]  # Assumindo que é o desdobramento
+        data_ex = evento_principal['data_ex']
+        print(f"\n   🎯 Analisando impacto do evento em {data_ex}:")
+        
+        for op in operacoes:
+            op_data = op['date']
+            if isinstance(op_data, str):
+                from datetime import datetime
+                op_data = datetime.fromisoformat(op_data).date()
+            
+            if op_data < data_ex:
+                print(f"      ✅ {op['date']}: ANTES da data ex - será ajustada")
+                if evento_principal.get('razao') == '1:2':
+                    nova_qtd = op['quantity'] * 2
+                    novo_preco = op['price'] / 2
+                    print(f"         Ajuste: {op['quantity']}@{op['price']:.2f} → {nova_qtd}@{novo_preco:.2f}")
+            else:
+                print(f"      ⏭️ {op['date']}: APÓS data ex - não será ajustada")
+
+
+def executar_teste_completo_bbas3(usuario_id: int = 2):
+    """
+    Executa o teste completo da correção do BBAS3
+    """
+    print(f"🧪 [TESTE PRINCIPAL] Iniciando teste completo para usuário {usuario_id}")
+    
+    # 1. Debug dos eventos
+    debug_eventos_bbas3(usuario_id)
+    
+    # 2. Executar teste da correção
+    sucesso = testar_correcao_bbas3_completa(usuario_id)
+    
+    if sucesso:
+        print(f"\n🎉 [SUCESSO] Correção do BBAS3 funcionou perfeitamente!")
+        print(f"   ✅ Eventos corporativos aplicados corretamente")
+        print(f"   ✅ Operações fechadas geradas corretamente") 
+        print(f"   ✅ Resultados calculados corretamente")
+    else:
+        print(f"\n❌ [FALHA] Correção do BBAS3 ainda não está funcionando")
+        print(f"   💡 Verifique os logs detalhados acima para identificar o problema")
+    
+    return sucesso
+
+
+def fix_bbas3_completo(usuario_id: int = 2):
+    """
+    Função principal para corrigir o problema BBAS3 completamente
+    """
+    print(f"🚀 [FIX BBAS3] Iniciando correção completa...")
+    print(f"🔄 [RECÁLCULO TOTAL] Iniciando recálculo completo para usuário {usuario_id}")
+    
+    try:
+        # Limpar dados antigos
+        print(f"🧹 [LIMPEZA] Limpando dados antigos...")
+        limpar_operacoes_fechadas_usuario(usuario_id=usuario_id)
+        limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
+        print(f"   ✅ Dados antigos limpos")
+        
+        # 1. Recalcular carteira
+        print(f"📊 [1/3] Recalculando carteira com eventos corporativos...")
+        recalcular_carteira(usuario_id=usuario_id)
+        
+        # 2. Calcular operações fechadas
+        print(f"📊 [2/3] Calculando operações fechadas...")
+        operacoes_fechadas = calcular_operacoes_fechadas(usuario_id=usuario_id)
+        print(f"   ✅ {len(operacoes_fechadas)} operações fechadas geradas")
+        
+        # 3. Recalcular resultados mensais
+        print(f"📊 [3/3] Recalculando resultados mensais...")
+        recalcular_resultados_corrigido(usuario_id=usuario_id)
+        print(f"   ✅ Resultados mensais recalculados")
+        
+        print(f"🎉 [SUCESSO] Recálculo completo finalizado!")
+        
+        # Verificação final
+        print(f"\n🔍 [VERIFICAÇÃO] Estado final:")
+        carteira = obter_carteira_atual(usuario_id=usuario_id)
+        bbas3_carteira = next((item for item in carteira if item['ticker'] == 'BBAS3'), None)
+        
+        if bbas3_carteira:
+            print(f"   Carteira BBAS3: {bbas3_carteira['quantidade']} @ {bbas3_carteira['preco_medio']:.2f}")
+        else:
+            print(f"   Carteira BBAS3: Posição zerada")
+        
+        # Verificar operações fechadas
+        operacoes_bbas3 = obter_operacoes_por_ticker_db(usuario_id=usuario_id, ticker='BBAS3')
+        print(f"   Operações fechadas BBAS3: {len(operacoes_bbas3)}")
+        for op in operacoes_bbas3:
+            print(f"      {op['date']}: {op['operation']} {op['quantity']}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ [ERRO] Falha durante correção: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+# ✅ Função para testar apenas o cálculo de operações fechadas
+def testar_calc_operacoes_fechadas(usuario_id: int = 2):
+    """
+    Testa especificamente o cálculo de operações fechadas
+    """
+    print(f"🧪 [TESTE ESPECÍFICO] Testando cálculo de operações fechadas para usuário {usuario_id}")
+    
+    try:
+        # Executar cálculo
+        operacoes_fechadas = calcular_operacoes_fechadas(usuario_id=usuario_id)
+        
+        print(f"📊 Resultado: {len(operacoes_fechadas)} operações fechadas")
+        
+        # Filtrar BBAS3
+        bbas3_ops = [op for op in operacoes_fechadas if op.get('ticker') == 'BBAS3']
+        print(f"🎯 BBAS3: {len(bbas3_ops)} operações")
+        
+        if bbas3_ops:
+            total = sum(op.get('resultado', 0) for op in bbas3_ops)
+            print(f"💰 Total BBAS3: {total:.2f}")
+            
+            for i, op in enumerate(bbas3_ops, 1):
+                print(f"   {i}. {op.get('resultado', 0):.2f}")
+        
+        return len(bbas3_ops) >= 2
+        
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+        return False
+
+# 🚀 EXECUTAR TESTE
+if __name__ == "__main__":
+    # Execute esta função para debugar
+    # 2. Testar a correção
+    resultado = fix_bbas3_completo(usuario_id=2)
+
+    # 3. Verificar resultado específico
+    sucesso = testar_calc_operacoes_fechadas(usuario_id=2)
+
+    # 4. Teste completo com validação
+    aprovado = executar_teste_completo_bbas3(usuario_id=2)

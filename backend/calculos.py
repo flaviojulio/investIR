@@ -351,50 +351,207 @@ def debug_posicao(posicao: PosicaoAcao, operacao_atual: Operacao):
 def validar_operacao_fechada(op_fechada: OperacaoFechada) -> bool:
     """
     Valida se uma operação fechada tem todos os campos corretos.
-    CORREÇÃO: Permite operações de venda a descoberto.
+    CORREÇÃO: Adiciona debug detalhado para identificar problemas.
     """
-    if not op_fechada:
-        return False
-        
-    # ✅ CORREÇÃO: Para vendas a descoberto, preco_medio_venda vem primeiro
-    # Identificar se é venda a descoberto pelo resultado
-    eh_venda_descoberto = (op_fechada.resultado > 0 and 
-                          op_fechada.preco_medio_venda > op_fechada.preco_medio_compra)
+    import logging
     
-    # Validar preços médios
+    if not op_fechada:
+        logging.warning(f"❌ [VALIDAÇÃO] Operação fechada é None")
+        return False
+    
+    ticker = op_fechada.ticker
+    
+    # ✅ Validar preços médios
     if op_fechada.preco_medio_compra <= 0:
-        print(f"❌ Preço médio de compra inválido: {op_fechada.preco_medio_compra}")
-        if not eh_venda_descoberto:  # Para venda a descoberto, compra pode ser posterior
-            return False
+        logging.warning(f"❌ [VALIDAÇÃO] {ticker}: Preço médio de compra inválido: {op_fechada.preco_medio_compra}")
+        return False
         
     if op_fechada.preco_medio_venda <= 0:
-        print(f"❌ Preço médio de venda inválido: {op_fechada.preco_medio_venda}")
+        logging.warning(f"❌ [VALIDAÇÃO] {ticker}: Preço médio de venda inválido: {op_fechada.preco_medio_venda}")
         return False
         
-    # Validar quantidade
+    # ✅ Validar quantidade
     if op_fechada.quantidade <= 0:
-        print(f"❌ Quantidade inválida: {op_fechada.quantidade}")
+        logging.warning(f"❌ [VALIDAÇÃO] {ticker}: Quantidade inválida: {op_fechada.quantidade}")
         return False
-        
-    # ✅ CORREÇÃO: Validação do resultado considerando venda a descoberto
-    if eh_venda_descoberto:
-        # Para venda a descoberto: resultado = (preço_venda - preço_compra) * quantidade
-        resultado_calculado = (op_fechada.preco_medio_venda - op_fechada.preco_medio_compra) * op_fechada.quantidade
-    else:
-        # Para operação normal: resultado = (preço_venda - preço_compra) * quantidade
-        resultado_calculado = (op_fechada.preco_medio_venda - op_fechada.preco_medio_compra) * op_fechada.quantidade
     
+    # ✅ Validar resultado
+    resultado_calculado = (op_fechada.preco_medio_venda - op_fechada.preco_medio_compra) * op_fechada.quantidade
     if abs(resultado_calculado - op_fechada.resultado) > 0.01:
-        print(f"❌ Resultado inconsistente: calculado={resultado_calculado}, salvo={op_fechada.resultado}")
-        print(f"   Tipo: {'Venda a descoberto' if eh_venda_descoberto else 'Operação normal'}")
+        logging.warning(f"❌ [VALIDAÇÃO] {ticker}: Resultado inconsistente: "
+                       f"calculado={resultado_calculado:.2f}, salvo={op_fechada.resultado:.2f}")
         return False
-        
+    
+    # ✅ Se chegou até aqui, a operação é válida
+    logging.debug(f"✅ [VALIDAÇÃO] {ticker}: Operação fechada válida - {op_fechada.resultado:.2f}")
     return True
 
 
+
 # ✅ MODIFICAÇÃO na função calcular_resultados_operacoes
-# ✅ CORREÇÃO na função principal
 def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
+    """
+    CORREÇÃO: Melhora debug e validações para identificar problemas.
+    """
+    import logging
+    logging.info(f"🔄 [CALCULOS.PY] Iniciando cálculo com {len(operacoes)} operações")
+    
+    operacoes_fechadas = []
+    posicoes = defaultdict(lambda: PosicaoAcao(ticker=""))
+
+    # Agrupar operações por dia
+    operacoes_por_dia = defaultdict(list)
+    for op in operacoes:
+        operacoes_por_dia[op.date].append(op)
+
+    logging.info(f"🔄 [CALCULOS.PY] Operações agrupadas em {len(operacoes_por_dia)} dias")
+
+    for data, ops_dia in sorted(operacoes_por_dia.items()):
+        logging.info(f"\n📅 [CALCULOS.PY] Processando {data} com {len(ops_dia)} operações")
+        
+        # Verificar se há day trade neste dia
+        ops_por_ticker = defaultdict(lambda: {'compras': [], 'vendas': []})
+        for op in ops_dia:
+            if op.operation == 'buy':
+                ops_por_ticker[op.ticker]['compras'].append(op)
+            else:
+                ops_por_ticker[op.ticker]['vendas'].append(op)
+
+        for ticker, trades in ops_por_ticker.items():
+            compras = trades['compras']
+            vendas = trades['vendas']
+            
+            if ticker not in posicoes:
+                posicoes[ticker] = PosicaoAcao(ticker=ticker)
+            
+            # ✅ DEBUG da posição antes do processamento
+            pos_antes = posicoes[ticker]
+            logging.info(f"🎯 [ANTES] {ticker}: Long={pos_antes.quantidade}@{pos_antes.preco_medio:.2f}, "
+                        f"Short={pos_antes.quantidade_vendida}@{pos_antes.preco_medio_venda:.2f}")
+            
+            if compras and vendas:
+                # ✅ DIA DE DAY TRADE - usar PM global
+                ops_do_ticker = compras + vendas
+                logging.info(f"🔄 [DAY TRADE] {ticker}: {len(compras)} compras + {len(vendas)} vendas")
+                
+                resultado_dt = calcular_resultado_day_trade(ops_do_ticker)
+                
+                if resultado_dt and validar_operacao_fechada(resultado_dt):
+                    operacoes_fechadas.append(resultado_dt)
+                    logging.info(f"✅ Day Trade adicionado: {ticker} - Resultado: {resultado_dt.resultado:.2f}")
+                elif resultado_dt:
+                    logging.warning(f"❌ Day trade inválido descartado: {ticker} em {data}")
+                    # Debug detalhado do por que foi descartado
+                    logging.info(f"   Debug: PM_compra={resultado_dt.preco_medio_compra:.2f}, "
+                               f"PM_venda={resultado_dt.preco_medio_venda:.2f}, "
+                               f"Quantidade={resultado_dt.quantidade}, "
+                               f"Resultado={resultado_dt.resultado:.2f}")
+                
+                # ✅ PROCESSAR SOBRAS COMO SWING TRADE
+                total_comprado = sum(op.quantity for op in compras)
+                total_vendido = sum(op.quantity for op in vendas)
+                qtd_day_trade = min(total_comprado, total_vendido)
+                
+                logging.info(f"📊 [SOBRAS] {ticker}: Comprado={total_comprado}, Vendido={total_vendido}, DT={qtd_day_trade}")
+                
+                sobra_venda = total_vendido - qtd_day_trade
+                if sobra_venda > 0 and posicoes[ticker].tem_posicao_comprada():
+                    qtd_swing = min(sobra_venda, posicoes[ticker].quantidade)
+                    if qtd_swing > 0 and posicoes[ticker].preco_medio > 0:
+                        
+                        # ✅ PM vendas (usar média ponderada do dia)
+                        valor_bruto_vendas = sum(op.quantity * op.price for op in vendas)
+                        fees_vendas = sum(op.fees for op in vendas)
+                        valor_liquido_vendas = valor_bruto_vendas - fees_vendas
+                        pm_vendas_swing = valor_liquido_vendas / total_vendido
+                        
+                        resultado_swing = (pm_vendas_swing - posicoes[ticker].preco_medio) * qtd_swing
+                        
+                        op_swing = OperacaoFechada(
+                            ticker=ticker,
+                            quantidade=qtd_swing,
+                            preco_medio_compra=posicoes[ticker].preco_medio,  # ✅ PM da posição
+                            preco_medio_venda=pm_vendas_swing,
+                            resultado=resultado_swing,
+                            day_trade=False,
+                            data_fechamento=data
+                        )
+                        
+                        if validar_operacao_fechada(op_swing):
+                            operacoes_fechadas.append(op_swing)
+                            logging.info(f"✅ Swing Trade sobra adicionado: {ticker} - Resultado: {resultado_swing:.2f}")
+                        else:
+                            logging.warning(f"❌ Swing trade sobra inválido: {ticker}")
+                
+                # ✅ ATUALIZAR POSIÇÕES após day trade
+                for op in compras:
+                    resultado_st = processar_operacao_swing_trade(posicoes[ticker], op)
+                    if resultado_st and validar_operacao_fechada(resultado_st):
+                        # Esta seria uma operação adicional (cobertura de short, etc.)
+                        operacoes_fechadas.append(resultado_st)
+                        logging.info(f"✅ Operação adicional (compra): {ticker}")
+                
+                # Processar vendas restantes (vendas a descoberto)
+                for op in vendas:
+                    # Só processar se sobrou algo após day trade e swing trade
+                    sobra_desta_venda = op.quantity - (op.quantity * qtd_day_trade / total_vendido if total_vendido > 0 else 0)
+                    if sobra_desta_venda > qtd_swing:
+                        resultado_st = processar_operacao_swing_trade(posicoes[ticker], op)
+                        if resultado_st and validar_operacao_fechada(resultado_st):
+                            operacoes_fechadas.append(resultado_st)
+                            logging.info(f"✅ Operação adicional (venda): {ticker}")
+            
+            else:
+                # ✅ DIA DE SWING TRADE APENAS
+                logging.info(f"🔄 [SWING ONLY] {ticker}: {len(compras)} compras + {len(vendas)} vendas")
+                
+                for op in compras + vendas:
+                    resultado_st = processar_operacao_swing_trade(posicoes[ticker], op)
+                    
+                    if resultado_st and validar_operacao_fechada(resultado_st):
+                        operacoes_fechadas.append(resultado_st)
+                        tipo_op = "Cobertura" if op.operation == 'buy' and posicoes[ticker].tem_posicao_vendida() else "Venda Normal"
+                        logging.info(f"✅ {tipo_op} adicionado: {ticker} - Resultado: {resultado_st.resultado:.2f}")
+                    elif resultado_st:
+                        logging.warning(f"❌ Swing trade inválido descartado: {ticker} em {data}")
+                        # Debug detalhado
+                        logging.info(f"   Debug: PM_compra={resultado_st.preco_medio_compra:.2f}, "
+                                   f"PM_venda={resultado_st.preco_medio_venda:.2f}, "
+                                   f"Quantidade={resultado_st.quantidade}, "
+                                   f"Resultado={resultado_st.resultado:.2f}")
+            
+            # ✅ DEBUG da posição depois do processamento
+            pos_depois = posicoes[ticker]
+            logging.info(f"🎯 [DEPOIS] {ticker}: Long={pos_depois.quantidade}@{pos_depois.preco_medio:.2f}, "
+                        f"Short={pos_depois.quantidade_vendida}@{pos_depois.preco_medio_venda:.2f}")
+
+    logging.info(f"✅ [CALCULOS.PY] Total de operações fechadas válidas: {len(operacoes_fechadas)}")
+    
+    # ✅ DEBUG ESPECÍFICO PARA BBAS3
+    bbas3_ops = [op for op in operacoes_fechadas if op.ticker == 'BBAS3']
+    if bbas3_ops:
+        logging.info(f"🎯 [BBAS3 RESULTADO] {len(bbas3_ops)} operações fechadas:")
+        for i, op in enumerate(bbas3_ops, 1):
+            logging.info(f"   {i}. {op.data_fechamento}: {op.quantidade} ações, "
+                        f"PM_compra={op.preco_medio_compra:.2f}, "
+                        f"PM_venda={op.preco_medio_venda:.2f}, "
+                        f"Resultado={op.resultado:.2f}")
+    else:
+        logging.warning(f"⚠️ [BBAS3] Nenhuma operação fechada gerada!")
+        
+        # Verificar se há operações BBAS3
+        bbas3_operacoes = [op for op in operacoes if op.ticker == 'BBAS3']
+        if bbas3_operacoes:
+            logging.info(f"🔍 [BBAS3 DEBUG] {len(bbas3_operacoes)} operações BBAS3 processadas:")
+            for op in bbas3_operacoes:
+                logging.info(f"   {op.date}: {op.operation} {op.quantity} @ {op.price:.2f}")
+    
+    return {
+        "operacoes_fechadas": operacoes_fechadas,
+        "carteira_final": posicoes
+    }
+
+
     """
     CORREÇÃO: Trata adequadamente vendas a descoberto em todas as situações.
     """
