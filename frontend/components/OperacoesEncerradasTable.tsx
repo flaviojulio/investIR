@@ -4,6 +4,9 @@ import {
   getCompensacaoInfo,
   calcularPrejuizoAcumuladoAteOperacao,
   calcularDetalhesCompensacao,
+  useOperacoesComStatusCorrigido, // ✅ NOVA
+  deveGerarDarf, // ✅ NOVA
+  debugLogicaFiscal, // ✅ NOVA (opcional)
   type CompensacaoInfo,
   type DetalhesCompensacao,
   type PrejuizoAcumuladoInfo,
@@ -126,9 +129,24 @@ const getMonthName = (dateString: string): string => {
 const getDarfStatusForOperation = (
   op: OperacaoFechada,
   darfStatusMap?: Map<string, string>,
-  resultadosMensais?: ResultadoMensal[] // ✅ ADICIONAR este parâmetro
+  resultadosMensais?: ResultadoMensal[]
 ): string | null => {
-  // Só mostra DARF para operações tributáveis
+  // ✅ NOVA VERIFICAÇÃO: Só mostra DARF se realmente deve gerar
+  const mesOperacao = op.data_fechamento.substring(0, 7);
+  const resultadoMensal = resultadosMensais?.find(
+    (rm) => rm.mes === mesOperacao
+  );
+
+  if (!deveGerarDarf(op, resultadoMensal)) {
+    console.log(`🚫 [DARF] ${op.ticker}: Não deve gerar DARF`, {
+      valorTributavel: op.day_trade
+        ? resultadoMensal?.ir_devido_day || 0
+        : resultadoMensal?.ir_devido_swing || 0,
+    });
+    return null; // Não deve mostrar badge de DARF
+  }
+
+  // Só mostra DARF para operações que realmente devem tributar
   if (
     op.status_ir !== "Tributável Day Trade" &&
     op.status_ir !== "Tributável Swing"
@@ -146,26 +164,19 @@ const getDarfStatusForOperation = (
   }
 
   // ✅ PRIORIDADE 2: Status do backend
-  if (resultadosMensais && Array.isArray(resultadosMensais)) {
-    const mesOperacao = op.data_fechamento.substring(0, 7);
-    const resultadoMensal = resultadosMensais.find(
-      (rm) => rm.mes === mesOperacao
-    );
+  if (resultadoMensal) {
+    const statusBackend = op.day_trade
+      ? resultadoMensal.status_darf_day_trade
+      : resultadoMensal.status_darf_swing_trade;
 
-    if (resultadoMensal) {
-      const statusBackend = op.day_trade
-        ? resultadoMensal.status_darf_day_trade
-        : resultadoMensal.status_darf_swing_trade;
+    console.log("🎯 [DARF STATUS] Status do backend:", {
+      mesOperacao,
+      isDayTrade: op.day_trade,
+      statusBackend,
+    });
 
-      console.log("🎯 [DARF STATUS] Status do backend:", {
-        mesOperacao,
-        isDayTrade: op.day_trade,
-        statusBackend,
-      });
-
-      if (statusBackend) {
-        return statusBackend.toLowerCase(); // "Pago" → "pago"
-      }
+    if (statusBackend) {
+      return statusBackend.toLowerCase(); // "Pago" → "pago"
     }
   }
 
@@ -1673,28 +1684,48 @@ export default function OperacoesEncerradasTable(
   ) => {
     const badges = [];
 
+    // ✅ NOVA VERIFICAÇÃO: Confirmar se realmente deve ser tributável
+    let statusFinal = status;
+    if (
+      isProfit &&
+      (status === "Tributável Day Trade" || status === "Tributável Swing")
+    ) {
+      // Verificar com o resultado mensal se realmente deve tributar
+      const mesOperacao = op.data_fechamento.substring(0, 7);
+      const resultadoMensal = resultadosMensais.find(
+        (rm) => rm.mes === mesOperacao
+      );
+
+      if (resultadoMensal && !deveGerarDarf(op, resultadoMensal)) {
+        statusFinal = "Lucro Compensado";
+        console.log(
+          `🔄 [BADGE CORRIGIDO] ${op.ticker}: ${status} → ${statusFinal}`
+        );
+      }
+    }
+
     // Badge principal do status fiscal
     let color = "gray";
     let bg = "bg-gray-100";
-    let text = status;
+    let text = statusFinal;
 
-    if (status === "Isento") {
+    if (statusFinal === "Isento") {
       color = "green";
       bg = "bg-green-100";
       text = "Isento";
-    } else if (status === "Tributável Day Trade") {
+    } else if (statusFinal === "Tributável Day Trade") {
       color = "orange";
       bg = "bg-orange-100";
       text = "Tributável";
-    } else if (status === "Tributável Swing") {
+    } else if (statusFinal === "Tributável Swing") {
       color = "blue";
       bg = "bg-blue-100";
       text = "Tributável";
-    } else if (status === "Prejuízo Acumulado") {
+    } else if (statusFinal === "Prejuízo Acumulado") {
       color = "red";
       bg = "bg-red-100";
       text = "Prejuízo";
-    } else if (status === "Lucro Compensado") {
+    } else if (statusFinal === "Lucro Compensado") {
       color = "emerald";
       bg = "bg-emerald-100";
       text = "Compensado";
@@ -1713,7 +1744,8 @@ export default function OperacoesEncerradasTable(
     // ✅ NOVA LÓGICA: Badge adicional para compensação parcial
     if (
       isProfit &&
-      (status === "Tributável Day Trade" || status === "Tributável Swing")
+      (statusFinal === "Tributável Day Trade" ||
+        statusFinal === "Tributável Swing")
     ) {
       const compensacaoInfo = getCompensacaoInfo(op, operacoesFechadas);
 
@@ -1753,6 +1785,11 @@ export default function OperacoesEncerradasTable(
     onUpdateDashboard = () => {},
   } = props;
 
+  const operacoesComStatusCorrigido = useOperacoesComStatusCorrigido(
+    operacoesFechadas,
+    resultadosMensais
+  );
+
   // States and memos...
   // (The rest of the state declarations, useEffects, and helpers remain the same as in the original code, but now we use subcomponents in the render.)
 
@@ -1765,22 +1802,24 @@ export default function OperacoesEncerradasTable(
 
   // Unique months and statuses for filters
   const uniqueMonths = useMemo(() => {
-    const months = operacoesFechadas.map((op) =>
+    const months = operacoesComStatusCorrigido.map((op) =>
       op.data_fechamento.substring(0, 7)
     );
     return Array.from(new Set(months));
-  }, [operacoesFechadas]);
+  }, [operacoesComStatusCorrigido]);
 
   const uniqueStatuses = useMemo(() => {
-    const statuses = operacoesFechadas
+    const statuses = operacoesComStatusCorrigido
       .map((op) => op.status_ir || "")
       .filter((status) => status !== "");
     return Array.from(new Set(statuses));
-  }, [operacoesFechadas]);
+  }, [operacoesComStatusCorrigido]);
 
   // Main processedOperacoes memo
   const processedOperacoes = useMemo(() => {
-    let ops = operacoesFechadas ? [...operacoesFechadas] : [];
+    let ops = operacoesComStatusCorrigido
+      ? [...operacoesComStatusCorrigido]
+      : [];
 
     if (filterType !== "all") {
       ops = ops.filter((op) =>
@@ -1809,7 +1848,13 @@ export default function OperacoesEncerradasTable(
       );
     }
     return ops;
-  }, [operacoesFechadas, filterType, filterMonth, filterStatus, searchTerm]);
+  }, [
+    operacoesComStatusCorrigido,
+    filterType,
+    filterMonth,
+    filterStatus,
+    searchTerm,
+  ]);
 
   // Sorting state and logic
   const [sortConfig, setSortConfig] = useState<{
@@ -2044,7 +2089,7 @@ export default function OperacoesEncerradasTable(
                 getDarfStatusForOperation={getDarfStatusForOperation}
                 darfStatusMap={darfStatusMap}
                 handleOpenDarfModal={handleOpenDarfModal}
-                operacoesFechadas={operacoesFechadas}
+                operacoesFechadas={operacoesComStatusCorrigido}
                 resultadosMensais={resultadosMensais} // ✅ Apenas uma vez
               />
             ))}
@@ -2061,7 +2106,7 @@ export default function OperacoesEncerradasTable(
           tipoDarf={selectedOpForDarf.day_trade ? "daytrade" : "swing"}
           onUpdateDashboard={handleUpdateDashboard}
           onDarfStatusChange={handleDarfStatusChange}
-          operacoesFechadas={operacoesFechadas}
+          operacoesFechadas={operacoesComStatusCorrigido}
         />
       )}
     </>
