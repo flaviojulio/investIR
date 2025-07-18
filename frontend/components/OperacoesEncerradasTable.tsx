@@ -62,6 +62,20 @@ import {
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { DarfDetailsModal } from "@/components/DarfDetailsModal";
 
+const calcularPrecoMedioCompra = (op: OperacaoFechada): number => {
+  if (!op.valor_compra || !op.quantidade || op.quantidade <= 0) {
+    return 0;
+  }
+  return op.valor_compra / op.quantidade;
+};
+
+const calcularPrecoMedioVenda = (op: OperacaoFechada): number => {
+  if (!op.valor_venda || !op.quantidade || op.quantidade <= 0) {
+    return 0;
+  }
+  return op.valor_venda / op.quantidade;
+};
+
 // Formatting helpers
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -165,21 +179,7 @@ interface OperacoesEncerradasTableProps {
   onUpdateDashboard?: () => void;
 }
 
-interface OperacaoFechada {
-  ticker: string;
-  quantidade: number;
-  resultado: number;
-  day_trade: boolean;
-  data_fechamento: string;
-  data_abertura?: string;
-  status_ir?: string;
-  valor_compra?: number;
-  valor_venda?: number;
-  prejuizo_anterior_acumulado?: number;
-  preco_abertura?: number;
-  preco_fechamento?: number;
-  // ...outros campos possíveis
-}
+// Removido: interface OperacaoFechada
 
 interface OperationRowProps {
   op: OperacaoFechada;
@@ -526,6 +526,7 @@ const OperationRow = ({
                         {formatNumber(op.quantidade)}
                       </span>
                     </div>
+                    {/* Card de Preço de Compra */}
                     <div className="flex flex-col p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
                       <div className="flex items-center gap-1 mb-1">
                         <TrendingUp className="h-3 w-3 text-green-600" />
@@ -534,36 +535,25 @@ const OperationRow = ({
                         </span>
                       </div>
                       <span className="text-sm font-bold text-green-800">
-                        {formatCurrency(
-                          op.preco_abertura && op.preco_abertura > 0
-                            ? op.preco_abertura
-                            : op.valor_compra && op.quantidade
-                            ? op.valor_compra / op.quantidade
-                            : 0
-                        )}
+                        {formatCurrency(calcularPrecoMedioCompra(op))}
                       </span>
                     </div>
 
+                    {/* Card de Preço de Venda */}
                     <div className="flex flex-col p-3 bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg border border-cyan-200">
                       <div className="flex items-center gap-1 mb-1">
                         <TrendingDown className="h-3 w-3 text-cyan-600" />
                         <span className="text-xs font-semibold uppercase tracking-wide text-cyan-600">
-                          Preço de Venda
+                          Preço Médio de Venda
                         </span>
                       </div>
                       <span className="text-sm font-bold text-cyan-800">
-                        {formatCurrency(
-                          op.preco_fechamento && op.preco_fechamento > 0
-                            ? op.preco_fechamento
-                            : op.valor_venda && op.quantidade
-                            ? op.valor_venda / op.quantidade
-                            : 0
-                        )}
+                        {formatCurrency(calcularPrecoMedioVenda(op))}
                       </span>
                     </div>
                   </div>
 
-                  {/* Resultado Final */}
+                  {/* ✅ RESULTADO FINAL COM PERCENTUAL CORRIGIDO */}
                   <div className="mt-4">
                     <div
                       className={`flex flex-col rounded-xl border-2 shadow-lg ${
@@ -602,27 +592,23 @@ const OperationRow = ({
                         >
                           {isProfit ? "+" : "-"}
                           {formatCurrency(Math.abs(op.resultado)) + " "}
-                          {/* ✅ ADICIONAR apenas estas linhas: */}
+                          {/* ✅ PERCENTUAL COM LÓGICA CORRIGIDA */}
                           {(() => {
-                            const valorInvestido =
-                              op.valor_compra ||
-                              (op.preco_abertura && op.preco_abertura > 0
-                                ? op.preco_abertura * op.quantidade
-                                : 0);
+                            const valorInvestido = op.valor_compra || 0;
                             const percentual =
                               valorInvestido > 0
                                 ? (op.resultado / valorInvestido) * 100
                                 : 0;
 
                             return valorInvestido > 0 ? (
-                                <span
-                                  className={`text-xs font-semibold ${
-                                    isProfit ? "text-green-700" : "text-red-700"
-                                  }`}
-                                >
-                                  ({isProfit ? "+" : ""}
-                                  {percentual.toFixed(2)}%)
-                                </span>
+                              <span
+                                className={`text-xs font-semibold ${
+                                  isProfit ? "text-green-700" : "text-red-700"
+                                }`}
+                              >
+                                ({isProfit ? "+" : ""}
+                                {percentual.toFixed(2)}%)
+                              </span>
                             ) : null;
                           })()}
                         </span>

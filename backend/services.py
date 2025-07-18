@@ -528,6 +528,8 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     """
     Calcula e salva as operações fechadas para um usuário, usando o novo
     módulo de cálculos.
+    
+    CORREÇÃO: Garante que todos os campos sejam calculados corretamente.
     """
     logging.info(f"Iniciando cálculo de operações fechadas para o usuário {usuario_id}.")
     
@@ -555,53 +557,89 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
 
     operacoes_fechadas_salvas = []
     for op_fechada in operacoes_fechadas_calculadas:
-        # ✅ VALORES CORRETOS: Separar preços unitários de valores totais
-        preco_medio_compra = op_fechada.preco_medio_compra      # Preço por ação
-        preco_medio_venda = op_fechada.preco_medio_venda        # Preço por ação
-        valor_total_compra = preco_medio_compra * op_fechada.quantidade  # Valor total
-        valor_total_venda = preco_medio_venda * op_fechada.quantidade    # Valor total
+        
+        # ✅ VALIDAÇÃO: Verificar se os preços médios existem
+        if not hasattr(op_fechada, 'preco_medio_compra') or not hasattr(op_fechada, 'preco_medio_venda'):
+            logging.error(f"❌ Operação fechada sem preços médios: {op_fechada}")
+            continue
+            
+        if op_fechada.preco_medio_compra is None or op_fechada.preco_medio_venda is None:
+            logging.error(f"❌ Preços médios são None: compra={op_fechada.preco_medio_compra}, venda={op_fechada.preco_medio_venda}")
+            continue
+
+        # ✅ CORREÇÃO: Separar preços unitários de valores totais
+        preco_medio_compra = float(op_fechada.preco_medio_compra)      # Preço por ação
+        preco_medio_venda = float(op_fechada.preco_medio_venda)        # Preço por ação
+        quantidade = int(op_fechada.quantidade)                       # Quantidade de ações
+        
+        # ✅ CORREÇÃO: Calcular valores totais com validação
+        valor_total_compra = preco_medio_compra * quantidade  # Valor total
+        valor_total_venda = preco_medio_venda * quantidade    # Valor total
+
+        # ✅ VALIDAÇÃO: Verificar se os cálculos fazem sentido
+        if valor_total_compra <= 0:
+            logging.error(f"❌ Valor total de compra inválido: {valor_total_compra} (PM: {preco_medio_compra}, Qtd: {quantidade})")
+            # Tentar corrigir usando o resultado
+            if op_fechada.resultado != 0:
+                valor_total_compra = valor_total_venda - op_fechada.resultado
+                preco_medio_compra = valor_total_compra / quantidade if quantidade > 0 else 0
+                logging.warning(f"⚠️ Corrigido valor_compra para: {valor_total_compra}")
 
         # ✅ CORREÇÃO: Calcular status_ir
         status_ir = calculos._calcular_status_ir_operacao_fechada(
             {
                 "data_fechamento": op_fechada.data_fechamento,
                 "resultado": op_fechada.resultado,
-                "day_trade": op_fechada.day_trade
+                "day_trade": op_fechada.day_trade,
+                "ticker": op_fechada.ticker  # ✅ Adicionar ticker para debug
             },
             resultados_mensais_map
         )
 
+        # ✅ CORREÇÃO: Construir dicionário com todos os campos obrigatórios
         op_dict = {
-            "ticker": op_fechada.ticker,
-            "quantidade": op_fechada.quantidade,
+            "ticker": str(op_fechada.ticker),
+            "quantidade": quantidade,
             
-            # ✅ CORREÇÃO: Preços médios unitários (para os cards)
-            "preco_abertura": preco_medio_compra,           # Preço médio por ação de compra
-            "preco_fechamento": preco_medio_venda,          # Preço médio por ação de venda
+            # ✅ CORREÇÃO: Preços médios unitários (para os cards do frontend)
+            "preco_abertura": round(preco_medio_compra, 2),     # Preço médio por ação de compra
+            "preco_fechamento": round(preco_medio_venda, 2),    # Preço médio por ação de venda
             
-            # ✅ CORREÇÃO: Valores totais (para cálculos)
-            "valor_compra": valor_total_compra,             # Valor total da compra
-            "valor_venda": valor_total_venda,               # Valor total da venda
+            # ✅ CORREÇÃO: Valores totais (para cálculos e validações)
+            "valor_compra": round(valor_total_compra, 2),       # Valor total da compra
+            "valor_venda": round(valor_total_venda, 2),         # Valor total da venda
             
-            "resultado": op_fechada.resultado,
-            "day_trade": op_fechada.day_trade,
+            "resultado": round(float(op_fechada.resultado), 2),
+            "day_trade": bool(op_fechada.day_trade),
             "data_fechamento": op_fechada.data_fechamento,
-            "data_abertura": op_fechada.data_fechamento,    # ✅ TODO: Implementar data_abertura real
+            "data_abertura": op_fechada.data_fechamento,        # ✅ TODO: Implementar data_abertura real
             "tipo": "compra-venda",
-            "taxas_total": 0,
-            "percentual_lucro": (op_fechada.resultado / valor_total_compra) * 100 if valor_total_compra != 0 else 0,
-            "prejuizo_anterior_acumulado": 0,               # ✅ TODO: Implementar cálculo real
+            "taxas_total": 0.0,                                 # ✅ Fees já incluídos nos preços
+            "percentual_lucro": round((op_fechada.resultado / valor_total_compra) * 100, 2) if valor_total_compra != 0 else 0.0,
+            "prejuizo_anterior_acumulado": 0.0,                 # ✅ TODO: Implementar cálculo real
             "operacoes_relacionadas": [],
-            "status_ir": status_ir
+            "status_ir": status_ir or "Sem Status"              # ✅ Fallback para evitar None
         }
         
+        # ✅ DEBUG: Log detalhado para troubleshooting
         debug_operacao_fechada(op_dict)
         
+        # ✅ VALIDAÇÃO FINAL: Verificar consistência antes de salvar
+        if abs(op_dict['valor_venda'] - op_dict['valor_compra'] - op_dict['resultado']) > 0.01:
+            logging.error(f"❌ INCONSISTÊNCIA: {op_dict['ticker']} - Resultado não bate com valores")
+            logging.error(f"   Valor venda: {op_dict['valor_venda']}")
+            logging.error(f"   Valor compra: {op_dict['valor_compra']}")
+            logging.error(f"   Resultado esperado: {op_dict['valor_venda'] - op_dict['valor_compra']}")
+            logging.error(f"   Resultado calculado: {op_dict['resultado']}")
+            continue
+        
+        # ✅ Salvar no banco
         salvar_operacao_fechada(op_dict, usuario_id=usuario_id)
         operacoes_fechadas_salvas.append(op_dict)
 
-    logging.info(f"{len(operacoes_fechadas_salvas)} operações fechadas salvas no banco.")
+    logging.info(f"✅ {len(operacoes_fechadas_salvas)} operações fechadas salvas no banco.")
     return operacoes_fechadas_salvas
+
 
 
 def recalcular_carteira(usuario_id: int) -> None:
@@ -2448,69 +2486,43 @@ def debug_operacao_fechada(op_dict):
     """
     Função para debugar os valores calculados de uma operação fechada.
     
-    Esta função serve para verificar se os cálculos estão corretos
-    antes de salvar no banco de dados.
-    
-    Args:
-        op_dict (dict): Dicionário com os dados da operação fechada
+    CORREÇÃO: Adiciona mais validações e logs coloridos.
     """
-    print("🔍 [DEBUG OPERAÇÃO FECHADA]")
-    print(f"Ticker: {op_dict['ticker']}")
-    print(f"Quantidade: {op_dict['quantidade']}")
-    print(f"Preço médio compra (unitário): R$ {op_dict['preco_abertura']:.2f}")
-    print(f"Preço médio venda (unitário): R$ {op_dict['preco_fechamento']:.2f}")
-    print(f"Valor total compra: R$ {op_dict['valor_compra']:.2f}")
-    print(f"Valor total venda: R$ {op_dict['valor_venda']:.2f}")
-    print(f"Resultado: R$ {op_dict['resultado']:.2f}")
-    print(f"Verificação: {op_dict['valor_venda']} - {op_dict['valor_compra']} = {op_dict['valor_venda'] - op_dict['valor_compra']}")
-    print("=" * 50)
-
-# INSTRUÇÕES DE IMPLEMENTAÇÃO FINAL:
-
-"""
-PASSOS PARA CORRIGIR SEU services.py:
-
-1. SUBSTITUA a função calcular_operacoes_fechadas existente (que está incompleta no seu arquivo)
-   pela versão calcular_operacoes_fechadas acima
-
-2. SUBSTITUA a função _calcular_resultado_dia existente
-   pela versão _calcular_resultado_dia acima
-
-3. SUBSTITUA a função _calcular_preco_medio_antes_operacao existente
-   pela versão _calcular_preco_medio_antes_operacao acima
-
-4. ADICIONE todas as novas funções auxiliares:
-   - _processar_dia_operacoes_fechadas
-   - _processar_dia_misto_dt_st
-   - _processar_venda_swing_parcial
-   - _executar_day_trades
-   - _processar_compra_swing_trade
-   - _processar_venda_swing_trade
-   - _adicionar_a_posicao_comprada
-   - _adicionar_a_posicao_vendida
-   - _criar_operacao_fechada_detalhada_v2
-   - _calcular_status_ir_operacao_fechada
-   - _obter_data_aproximada_primeira_compra
-   - _obter_data_aproximada_primeira_venda_descoberto
-
-5. REMOVA a função _criar_operacao_fechada_detalhada existente se houver conflito
-   (a nova versão é _criar_operacao_fechada_detalhada_v2)
-
-APÓS AS ALTERAÇÕES, SEU CÓDIGO TERÁ:
-✅ Separação correta de day trade vs swing trade no mesmo dia
-✅ Suporte completo a vendas a descoberto
-✅ Fees tratados corretamente (adicionados ao custo na compra, subtraídos na venda)
-✅ IRRF calculado conforme legislação (1% sobre ganhos DT, 0.005% sobre vendas ST)
-✅ Preço médio histórico preservado para swing trades
-✅ Logs detalhados para troubleshooting
-
-RESULTADOS ESPERADOS POR CENÁRIO:
-- Cenário 1 (DT puro): 1 operação DT com PM correto
-- Cenário 2 (ST puro): 1 operação ST com PM histórico
-- Cenário 3 (misto): 2 operações separadas (1 ST + 1 DT)
-- Cenário 4 (venda descoberto): 1 operação venda-compra
-- Cenário 5 (com fees): Fees incluídos nos cálculos
-
-Para testar: Execute operações que correspondam aos cenários e verifique
-se os resultados batem com o esperado.
-"""
+    ticker = op_dict['ticker']
+    quantidade = op_dict['quantidade']
+    preco_compra = op_dict['preco_abertura']
+    preco_venda = op_dict['preco_fechamento']
+    valor_compra = op_dict['valor_compra']
+    valor_venda = op_dict['valor_venda']
+    resultado = op_dict['resultado']
+    
+    print(f"🔍 [DEBUG OPERAÇÃO FECHADA] {ticker}")
+    print(f"   Quantidade: {quantidade}")
+    print(f"   Preço médio compra (unitário): R$ {preco_compra:.2f}")
+    print(f"   Preço médio venda (unitário): R$ {preco_venda:.2f}")
+    print(f"   Valor total compra: R$ {valor_compra:.2f}")
+    print(f"   Valor total venda: R$ {valor_venda:.2f}")
+    print(f"   Resultado: R$ {resultado:.2f}")
+    
+    # ✅ VALIDAÇÕES
+    resultado_calculado = valor_venda - valor_compra
+    valor_compra_calculado = quantidade * preco_compra
+    valor_venda_calculado = quantidade * preco_venda
+    
+    print(f"   ✅ Verificações:")
+    print(f"      Valor compra: {quantidade} × {preco_compra} = {valor_compra_calculado} (salvo: {valor_compra})")
+    print(f"      Valor venda: {quantidade} × {preco_venda} = {valor_venda_calculado} (salvo: {valor_venda})")
+    print(f"      Resultado: {valor_venda} - {valor_compra} = {resultado_calculado} (salvo: {resultado})")
+    
+    # ✅ ALERTAS
+    if abs(valor_compra - valor_compra_calculado) > 0.01:
+        print(f"   ⚠️ ALERTA: Valor compra inconsistente!")
+    if abs(valor_venda - valor_venda_calculado) > 0.01:
+        print(f"   ⚠️ ALERTA: Valor venda inconsistente!")
+    if abs(resultado - resultado_calculado) > 0.01:
+        print(f"   ⚠️ ALERTA: Resultado inconsistente!")
+    if valor_compra <= 0:
+        print(f"   🚨 ERRO: Valor compra é zero ou negativo!")
+    
+    print("=" * 60)
+    
