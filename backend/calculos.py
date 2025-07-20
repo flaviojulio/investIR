@@ -1,3 +1,4 @@
+from utils import extrair_mes_data_seguro
 """
 Este módulo contém toda a lógica de negócio para cálculos relacionados a
 operações de ações, incluindo preço médio, resultados de operações,
@@ -9,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import List, Dict, Any, Optional
 
-from models import Operacao
+from models import Operacao, OperacaoFechada
 
 @dataclass
 class PosicaoAcao:
@@ -33,13 +34,97 @@ class PosicaoAcao:
         return self.quantidade > 0
 
 
+def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[OperacaoFechada]:
+    """
+    CORREÇÃO: Calcula o resultado de day trade usando preço médio ponderado global.
+    Adiciona validações para evitar preços médios zerados e debug detalhado.
+    """
+    if not operacoes:
+        print(f"❌ [DAY TRADE] Lista de operações vazia")
+        return None
+
+    ticker = operacoes[0].ticker
+    data_operacao = operacoes[0].date
+
+    compras = [op for op in operacoes if op.operation == 'buy']
+    vendas = [op for op in operacoes if op.operation == 'sell']
+
+    print(f"🔄 [DAY TRADE DEBUG] {ticker} em {data_operacao}")
+    print(f"   📊 Total operações: {len(operacoes)}")
+    print(f"   🟢 Compras: {len(compras)} operações")
+    print(f"   🔴 Vendas: {len(vendas)} operações")
+
+    if not compras or not vendas:
+        print(f"   ❌ Não é day trade completo: compras={len(compras)}, vendas={len(vendas)}")
+        return None  # Não é day trade completo
+
+    # ✅ CORREÇÃO: Calcular preço médio ponderado global de TODAS as compras
+    total_custo_compra = sum(op.quantity * op.price + op.fees for op in compras)
+    total_qtd_compra = sum(op.quantity for op in compras)
+    
+    print(f"   💰 Compras: {total_qtd_compra} ações por R$ {total_custo_compra:.2f}")
+    
+    # ✅ VALIDAÇÃO: Verificar se há quantidade de compra
+    if total_qtd_compra <= 0:
+        print(f"❌ ERRO: Quantidade total de compra é zero para {ticker}")
+        return None
+    
+    # ✅ CORREÇÃO: Calcular preço médio ponderado global de TODAS as vendas
+    total_valor_venda_bruto = sum(op.quantity * op.price for op in vendas)
+    total_fees_venda = sum(op.fees for op in vendas)
+    total_valor_venda_liquido = total_valor_venda_bruto - total_fees_venda
+    total_qtd_venda = sum(op.quantity for op in vendas)
+
+    print(f"   💰 Vendas: {total_qtd_venda} ações por R$ {total_valor_venda_liquido:.2f} (bruto: R$ {total_valor_venda_bruto:.2f})")
+
+    # ✅ VALIDAÇÃO: Verificar se há quantidade de venda
+    if total_qtd_venda <= 0:
+        print(f"❌ ERRO: Quantidade total de venda é zero para {ticker}")
+        return None
+
+    # ✅ CORREÇÃO: Preço médio ponderado global com validação
+    pm_compra = total_custo_compra / total_qtd_compra
+    pm_venda = total_valor_venda_liquido / total_qtd_venda
+
+    print(f"   📊 PM Compra: R$ {pm_compra:.2f}")
+    print(f"   📊 PM Venda: R$ {pm_venda:.2f}")
+
+    # ✅ VALIDAÇÕES CRÍTICAS
+    if pm_compra <= 0:
+        print(f"❌ ERRO: Preço médio de compra é zero ou negativo: {pm_compra}")
+        print(f"   Detalhes: custo_total={total_custo_compra}, qtd_total={total_qtd_compra}")
+        return None
+        
+    if pm_venda <= 0:
+        print(f"❌ ERRO: Preço médio de venda é zero ou negativo: {pm_venda}")
+        print(f"   Detalhes: valor_liquido={total_valor_venda_liquido}, qtd_total={total_qtd_venda}")
+        return None
+
+    # Day trade é a menor quantidade entre compras e vendas
+    qtd_day_trade = min(total_qtd_compra, total_qtd_venda)
+
+    print(f"   🎯 Quantidade Day Trade: {qtd_day_trade} ações")
+
+    # ✅ CORREÇÃO: Resultado baseado no preço médio ponderado global
+    resultado = (pm_venda - pm_compra) * qtd_day_trade
+
+    print(f"   💰 Resultado: ({pm_venda:.2f} - {pm_compra:.2f}) × {qtd_day_trade} = R$ {resultado:.2f}")
+    print(f"✅ Day Trade {ticker}: PM_compra={pm_compra:.2f}, PM_venda={pm_venda:.2f}, Qtd={qtd_day_trade}, Resultado={resultado:.2f}")
+
+    return OperacaoFechada(
+        ticker=ticker,
+        quantidade=qtd_day_trade,
+        preco_medio_compra=pm_compra,
+        preco_medio_venda=pm_venda,
+        resultado=resultado,
+        day_trade=True,  # ✅ CRÍTICO: Marcar como day trade
+        data_fechamento=data_operacao
+    )
+
+
 def classificar_operacoes_por_dia(operacoes_do_dia: List[Operacao]) -> Dict[str, List[Operacao]]:
     """
-    CORREÇÃO: Não separa mais operações por DT/ST.
-    Apenas identifica se é um dia de day trade ou não.
-    
-    Para day trade: usa preço médio ponderado global
-    Para swing trade: usa preço médio histórico
+    CORREÇÃO: Melhor debug para identificar day trades.
     """
     ops_por_ticker = defaultdict(lambda: {'compras': [], 'vendas': []})
     for op in operacoes_do_dia:
@@ -50,22 +135,36 @@ def classificar_operacoes_por_dia(operacoes_do_dia: List[Operacao]) -> Dict[str,
 
     # Verificar se há day trade (compra E venda no mesmo dia)
     day_trade_tickers = []
+    print(f"\n🔍 [CLASSIFICAÇÃO] Analisando {len(operacoes_do_dia)} operações do dia")
+    
     for ticker, trades in ops_por_ticker.items():
         compras = trades['compras']
         vendas = trades['vendas']
         
+        qtd_compras = sum(op.quantity for op in compras)
+        qtd_vendas = sum(op.quantity for op in vendas)
+        
+        print(f"   📊 {ticker}: {len(compras)} compras ({qtd_compras} ações), {len(vendas)} vendas ({qtd_vendas} ações)")
+        
         if compras and vendas:  # Há compra E venda = day trade
             day_trade_tickers.append(ticker)
+            print(f"   ✅ {ticker}: IDENTIFICADO COMO DAY TRADE")
+        else:
+            print(f"   ➡️ {ticker}: Swing trade apenas")
+
+    print(f"🎯 [CLASSIFICAÇÃO] Day trade tickers: {day_trade_tickers}")
 
     # NOVA LÓGICA: Não separa operações, apenas marca como DT ou ST
     if day_trade_tickers:
         # É um dia de day trade - retorna TODAS as operações como day_trade
+        print(f"✅ [CLASSIFICAÇÃO] Dia com DAY TRADE - {len(operacoes_do_dia)} operações classificadas como DT")
         return {
             'day_trade': operacoes_do_dia,
             'swing_trade': []
         }
     else:
         # É um dia de swing trade apenas
+        print(f"➡️ [CLASSIFICAÇÃO] Dia SWING TRADE apenas - {len(operacoes_do_dia)} operações classificadas como ST")
         return {
             'day_trade': [],
             'swing_trade': operacoes_do_dia
@@ -95,7 +194,7 @@ def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
     else:
         data_fechamento_obj = data_fechamento
 
-    mes_fechamento = data_fechamento_obj.strftime("%Y-%m")
+    mes_fechamento = extrair_mes_data_seguro(data_fechamento_obj)
     resultado_mes = resultados_mensais_map.get(mes_fechamento)
 
     # ✅ CORREÇÃO com debug temporário
@@ -136,9 +235,10 @@ def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
 def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[OperacaoFechada]:
     """
     CORREÇÃO: Calcula o resultado de day trade usando preço médio ponderado global.
-    Adiciona validações para evitar preços médios zerados.
+    Adiciona validações para evitar preços médios zerados e debug detalhado.
     """
     if not operacoes:
+        print(f"❌ [DAY TRADE] Lista de operações vazia")
         return None
 
     ticker = operacoes[0].ticker
@@ -147,12 +247,20 @@ def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[Operacao
     compras = [op for op in operacoes if op.operation == 'buy']
     vendas = [op for op in operacoes if op.operation == 'sell']
 
+    print(f"🔄 [DAY TRADE DEBUG] {ticker} em {data_operacao}")
+    print(f"   📊 Total operações: {len(operacoes)}")
+    print(f"   🟢 Compras: {len(compras)} operações")
+    print(f"   🔴 Vendas: {len(vendas)} operações")
+
     if not compras or not vendas:
+        print(f"   ❌ Não é day trade completo: compras={len(compras)}, vendas={len(vendas)}")
         return None  # Não é day trade completo
 
     # ✅ CORREÇÃO: Calcular preço médio ponderado global de TODAS as compras
     total_custo_compra = sum(op.quantity * op.price + op.fees for op in compras)
     total_qtd_compra = sum(op.quantity for op in compras)
+    
+    print(f"   💰 Compras: {total_qtd_compra} ações por R$ {total_custo_compra:.2f}")
     
     # ✅ VALIDAÇÃO: Verificar se há quantidade de compra
     if total_qtd_compra <= 0:
@@ -165,6 +273,8 @@ def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[Operacao
     total_valor_venda_liquido = total_valor_venda_bruto - total_fees_venda
     total_qtd_venda = sum(op.quantity for op in vendas)
 
+    print(f"   💰 Vendas: {total_qtd_venda} ações por R$ {total_valor_venda_liquido:.2f} (bruto: R$ {total_valor_venda_bruto:.2f})")
+
     # ✅ VALIDAÇÃO: Verificar se há quantidade de venda
     if total_qtd_venda <= 0:
         print(f"❌ ERRO: Quantidade total de venda é zero para {ticker}")
@@ -173,6 +283,9 @@ def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[Operacao
     # ✅ CORREÇÃO: Preço médio ponderado global com validação
     pm_compra = total_custo_compra / total_qtd_compra
     pm_venda = total_valor_venda_liquido / total_qtd_venda
+
+    print(f"   📊 PM Compra: R$ {pm_compra:.2f}")
+    print(f"   📊 PM Venda: R$ {pm_venda:.2f}")
 
     # ✅ VALIDAÇÕES CRÍTICAS
     if pm_compra <= 0:
@@ -188,9 +301,12 @@ def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[Operacao
     # Day trade é a menor quantidade entre compras e vendas
     qtd_day_trade = min(total_qtd_compra, total_qtd_venda)
 
+    print(f"   🎯 Quantidade Day Trade: {qtd_day_trade} ações")
+
     # ✅ CORREÇÃO: Resultado baseado no preço médio ponderado global
     resultado = (pm_venda - pm_compra) * qtd_day_trade
 
+    print(f"   💰 Resultado: ({pm_venda:.2f} - {pm_compra:.2f}) × {qtd_day_trade} = R$ {resultado:.2f}")
     print(f"✅ Day Trade {ticker}: PM_compra={pm_compra:.2f}, PM_venda={pm_venda:.2f}, Qtd={qtd_day_trade}, Resultado={resultado:.2f}")
 
     return OperacaoFechada(
@@ -199,10 +315,9 @@ def calcular_resultado_day_trade(operacoes: List[Operacao]) -> Optional[Operacao
         preco_medio_compra=pm_compra,
         preco_medio_venda=pm_venda,
         resultado=resultado,
-        day_trade=True,
+        day_trade=True,  # ✅ CRÍTICO: Marcar como day trade
         data_fechamento=data_operacao
     )
-
 
 def processar_operacao_swing_trade(posicao: PosicaoAcao, operacao: Operacao) -> Optional[OperacaoFechada]:
     """
@@ -391,6 +506,162 @@ def validar_operacao_fechada(op_fechada: OperacaoFechada) -> bool:
 # ✅ MODIFICAÇÃO na função calcular_resultados_operacoes
 def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
     """
+    CORREÇÃO: Melhora debug e validações para identificar day trades corretamente.
+    """
+    import logging
+    logging.info(f"🔄 [CALCULOS.PY] Iniciando cálculo com {len(operacoes)} operações")
+    
+    operacoes_fechadas = []
+    posicoes = defaultdict(lambda: PosicaoAcao(ticker=""))
+
+    # Agrupar operações por dia
+    operacoes_por_dia = defaultdict(list)
+    for op in operacoes:
+        operacoes_por_dia[op.date].append(op)
+
+    logging.info(f"🔄 [CALCULOS.PY] Operações agrupadas em {len(operacoes_por_dia)} dias")
+
+    for data, ops_dia in sorted(operacoes_por_dia.items()):
+        print(f"\n📅 [PROCESSANDO] {data} com {len(ops_dia)} operações")
+        
+        # ✅ CORREÇÃO: Debug detalhado das operações do dia
+        for i, op in enumerate(ops_dia):
+            print(f"   Op {i+1}: {op.operation} {op.quantity} {op.ticker} @ {op.price:.2f}")
+        
+        # Verificar se há day trade neste dia
+        ops_por_ticker = defaultdict(lambda: {'compras': [], 'vendas': []})
+        for op in ops_dia:
+            if op.operation == 'buy':
+                ops_por_ticker[op.ticker]['compras'].append(op)
+            else:
+                ops_por_ticker[op.ticker]['vendas'].append(op)
+
+        for ticker, trades in ops_por_ticker.items():
+            compras = trades['compras']
+            vendas = trades['vendas']
+            
+            if ticker not in posicoes:
+                posicoes[ticker] = PosicaoAcao(ticker=ticker)
+            
+            # ✅ DEBUG da posição antes do processamento
+            pos_antes = posicoes[ticker]
+            print(f"🎯 [ANTES] {ticker}: Long={pos_antes.quantidade}@{pos_antes.preco_medio:.2f}, "
+                        f"Short={pos_antes.quantidade_vendida}@{pos_antes.preco_medio_venda:.2f}")
+            
+            # ✅ CORREÇÃO: Verificar day trade com debug
+            total_comprado = sum(op.quantity for op in compras)
+            total_vendido = sum(op.quantity for op in vendas)
+            
+            print(f"📊 [ANÁLISE DT] {ticker}: Comprado={total_comprado}, Vendido={total_vendido}")
+            
+            if compras and vendas:
+                # ✅ DIA DE DAY TRADE - usar PM global
+                ops_do_ticker = compras + vendas
+                print(f"🔄 [DAY TRADE] {ticker}: {len(compras)} compras + {len(vendas)} vendas")
+                print(f"   📊 Enviando {len(ops_do_ticker)} operações para calcular_resultado_day_trade")
+                
+                resultado_dt = calcular_resultado_day_trade(ops_do_ticker)
+                
+                if resultado_dt and validar_operacao_fechada(resultado_dt):
+                    operacoes_fechadas.append(resultado_dt)
+                    print(f"✅ Day Trade adicionado: {ticker} - Resultado: {resultado_dt.resultado:.2f}")
+                elif resultado_dt:
+                    print(f"❌ Day trade inválido descartado: {ticker} em {data}")
+                    # Debug detalhado do por que foi descartado
+                    print(f"   Debug: PM_compra={resultado_dt.preco_medio_compra:.2f}, "
+                               f"PM_venda={resultado_dt.preco_medio_venda:.2f}, "
+                               f"Quantidade={resultado_dt.quantidade}, "
+                               f"Resultado={resultado_dt.resultado:.2f}")
+                else:
+                    print(f"❌ calcular_resultado_day_trade retornou None para {ticker}")
+                
+                # ✅ PROCESSAR SOBRAS COMO SWING TRADE
+                qtd_day_trade = min(total_comprado, total_vendido)
+                
+                print(f"📊 [SOBRAS] {ticker}: Comprado={total_comprado}, Vendido={total_vendido}, DT={qtd_day_trade}")
+                
+                # Processar sobras se houver
+                sobra_compra = total_comprado - qtd_day_trade
+                sobra_venda = total_vendido - qtd_day_trade
+                
+                if sobra_compra > 0:
+                    print(f"   🔄 Processando {sobra_compra} ações de sobra de compra como swing trade")
+                    # Adicionar à posição
+                    pm_compra_global = sum(op.quantity * op.price + op.fees for op in compras) / total_comprado
+                    posicoes[ticker].quantidade += sobra_compra
+                    posicoes[ticker].custo_total += sobra_compra * pm_compra_global
+                    if posicoes[ticker].quantidade > 0:
+                        posicoes[ticker].preco_medio = posicoes[ticker].custo_total / posicoes[ticker].quantidade
+                
+                elif sobra_venda > 0:
+                    print(f"   🔄 Processando {sobra_venda} ações de sobra de venda como swing trade")
+                    # Vender da posição ou criar short
+                    if posicoes[ticker].tem_posicao_comprada():
+                        qtd_venda_normal = min(sobra_venda, posicoes[ticker].quantidade)
+                        if qtd_venda_normal > 0 and posicoes[ticker].preco_medio > 0:
+                            
+                            pm_vendas_global = (sum(op.quantity * op.price for op in vendas) - sum(op.fees for op in vendas)) / total_vendido
+                            resultado_swing = (pm_vendas_global - posicoes[ticker].preco_medio) * qtd_venda_normal
+                            
+                            op_swing = OperacaoFechada(
+                                ticker=ticker,
+                                quantidade=qtd_venda_normal,
+                                preco_medio_compra=posicoes[ticker].preco_medio,
+                                preco_medio_venda=pm_vendas_global,
+                                resultado=resultado_swing,
+                                day_trade=False,  # ✅ SWING TRADE
+                                data_fechamento=data
+                            )
+                            
+                            if validar_operacao_fechada(op_swing):
+                                operacoes_fechadas.append(op_swing)
+                                print(f"✅ Swing Trade sobra adicionado: {ticker} - Resultado: {resultado_swing:.2f}")
+                            
+                            # Atualizar posição
+                            posicoes[ticker].quantidade -= qtd_venda_normal
+                            posicoes[ticker].custo_total -= qtd_venda_normal * posicoes[ticker].preco_medio
+                            if posicoes[ticker].quantidade == 0:
+                                posicoes[ticker].preco_medio = 0.0
+                                posicoes[ticker].custo_total = 0.0
+            
+            else:
+                # ✅ DIA DE SWING TRADE APENAS
+                print(f"🔄 [SWING ONLY] {ticker}: {len(compras)} compras + {len(vendas)} vendas")
+                
+                for op in compras + vendas:
+                    resultado_st = processar_operacao_swing_trade(posicoes[ticker], op)
+                    
+                    if resultado_st and validar_operacao_fechada(resultado_st):
+                        operacoes_fechadas.append(resultado_st)
+                        tipo_op = "Cobertura" if op.operation == 'buy' and posicoes[ticker].tem_posicao_vendida() else "Venda Normal"
+                        print(f"✅ {tipo_op} adicionado: {ticker} - Resultado: {resultado_st.resultado:.2f}")
+                    elif resultado_st:
+                        print(f"❌ Swing trade inválido descartado: {ticker} em {data}")
+            
+            # ✅ DEBUG da posição depois do processamento
+            pos_depois = posicoes[ticker]
+            print(f"🎯 [DEPOIS] {ticker}: Long={pos_depois.quantidade}@{pos_depois.preco_medio:.2f}, "
+                        f"Short={pos_depois.quantidade_vendida}@{pos_depois.preco_medio_venda:.2f}")
+
+    print(f"\n✅ [CALCULOS.PY] Total de operações fechadas válidas: {len(operacoes_fechadas)}")
+    
+    # ✅ DEBUG ESPECÍFICO PARA DAY TRADES
+    day_trades = [op for op in operacoes_fechadas if op.day_trade]
+    swing_trades = [op for op in operacoes_fechadas if not op.day_trade]
+    
+    print(f"🎯 [RESUMO] Day Trades: {len(day_trades)}, Swing Trades: {len(swing_trades)}")
+    
+    for i, op in enumerate(day_trades, 1):
+        print(f"   DT {i}: {op.ticker} em {op.data_fechamento}: {op.quantidade} ações, Resultado={op.resultado:.2f}")
+    
+    for i, op in enumerate(swing_trades[:3], 1):
+        print(f"   ST {i}: {op.ticker} em {op.data_fechamento}: {op.quantidade} ações, Resultado={op.resultado:.2f}")
+    
+    return {
+        "operacoes_fechadas": operacoes_fechadas,
+        "carteira_final": posicoes
+    }
+    """
     CORREÇÃO: Melhora debug e validações para identificar problemas.
     """
     import logging
@@ -453,6 +724,8 @@ def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
                 qtd_day_trade = min(total_comprado, total_vendido)
                 
                 logging.info(f"📊 [SOBRAS] {ticker}: Comprado={total_comprado}, Vendido={total_vendido}, DT={qtd_day_trade}")
+                
+                qtd_swing = 0
                 
                 sobra_venda = total_vendido - qtd_day_trade
                 if sobra_venda > 0 and posicoes[ticker].tem_posicao_comprada():
@@ -526,25 +799,6 @@ def calcular_resultados_operacoes(operacoes: List[Operacao]) -> Dict[str, Any]:
                         f"Short={pos_depois.quantidade_vendida}@{pos_depois.preco_medio_venda:.2f}")
 
     logging.info(f"✅ [CALCULOS.PY] Total de operações fechadas válidas: {len(operacoes_fechadas)}")
-    
-    # ✅ DEBUG ESPECÍFICO PARA BBAS3
-    bbas3_ops = [op for op in operacoes_fechadas if op.ticker == 'BBAS3']
-    if bbas3_ops:
-        logging.info(f"🎯 [BBAS3 RESULTADO] {len(bbas3_ops)} operações fechadas:")
-        for i, op in enumerate(bbas3_ops, 1):
-            logging.info(f"   {i}. {op.data_fechamento}: {op.quantidade} ações, "
-                        f"PM_compra={op.preco_medio_compra:.2f}, "
-                        f"PM_venda={op.preco_medio_venda:.2f}, "
-                        f"Resultado={op.resultado:.2f}")
-    else:
-        logging.warning(f"⚠️ [BBAS3] Nenhuma operação fechada gerada!")
-        
-        # Verificar se há operações BBAS3
-        bbas3_operacoes = [op for op in operacoes if op.ticker == 'BBAS3']
-        if bbas3_operacoes:
-            logging.info(f"🔍 [BBAS3 DEBUG] {len(bbas3_operacoes)} operações BBAS3 processadas:")
-            for op in bbas3_operacoes:
-                logging.info(f"   {op.date}: {op.operation} {op.quantity} @ {op.price:.2f}")
     
     return {
         "operacoes_fechadas": operacoes_fechadas,

@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 import uvicorn
 import logging # Added logging import
 from datetime import datetime, date # Added for date handling
+from utils import extrair_mes_data_seguro
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
 
@@ -16,7 +17,6 @@ from models import (
     UsuarioProventoRecebidoDB, UsuarioCreate, UsuarioUpdate, UsuarioResponse,
     LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     Corretora, # Added Corretora model
-    ResultadoImportacao, ImportacaoResumo, ImportacaoResponse  # NOVA LINHA
 )
 from pydantic import BaseModel
 
@@ -806,20 +806,82 @@ async def upload_operacoes(
 @app.get("/api/resultados", response_model=List[ResultadoMensal])
 async def obter_resultados(mes: str = None, usuario: UsuarioResponse = Depends(get_current_user)):
     """
-    Retorna os resultados mensais de apuração de imposto de renda.
-    Se o parâmetro 'mes' for fornecido, retorna apenas o resultado daquele mês.
+    Retorna os resultados mensais com todos os dados necessários para o frontend.
+    CORREÇÃO: Garante que todos os meses com operações tenham resultados.
     """
     try:
-        print(f"[API] /api/resultados chamado por usuario_id={usuario.id} | mes={mes}")
-        resultados = calcular_resultados_mensais(usuario_id=usuario.id)
+        logging.info(f"[API] /api/resultados chamado por usuario_id={usuario.id} | mes={mes}")
+        
+        # ✅ 1. VERIFICAR SE HÁ RESULTADOS MENSAIS
+        resultados_existentes = services.obter_resultados_mensais(usuario_id=usuario.id)
+        
+        # ✅ 2. SE NÃO HÁ RESULTADOS, FORÇAR RECÁLCULO COMPLETO
+        if not resultados_existentes:
+            logging.info(f"[API] Nenhum resultado mensal encontrado, forçando recálculo completo...")
+            services.recalcular_carteira(usuario_id=usuario.id)
+            services.calcular_operacoes_fechadas(usuario_id=usuario.id)
+            services.recalcular_resultados_corrigido(usuario_id=usuario.id)
+            resultados_existentes = services.obter_resultados_mensais(usuario_id=usuario.id)
+        
+        # ✅ 3. FILTRAR POR MÊS SE SOLICITADO
+        resultados = resultados_existentes
         if mes:
             resultados = [r for r in resultados if r["mes"] == mes]
-        print(f"[API] /api/resultados usuario_id={usuario.id} | mes={mes} | resultados retornados={len(resultados)}")
-        return resultados
+        
+        # ✅ 4. ENRIQUECER RESULTADOS PARA FRONTEND
+        resultados_enriquecidos = []
+        for resultado in resultados:
+            try:
+                mes_resultado = resultado.get("mes", "")
+                
+                # ✅ GARANTIR CAMPOS OBRIGATÓRIOS
+                resultado_enriquecido = {
+                    # Dados básicos
+                    "mes": mes_resultado,
+                    "mes_formatado": _formatar_mes_para_exibicao(mes_resultado),
+                    
+                    # Swing Trade
+                    "vendas_swing": resultado.get("vendas_swing", 0),
+                    "custo_swing": resultado.get("custo_swing", 0),
+                    "ganho_liquido_swing": resultado.get("ganho_liquido_swing", 0),
+                    "isento_swing": resultado.get("isento_swing", False),
+                    "prejuizo_acumulado_swing": resultado.get("prejuizo_acumulado_swing", 0),
+                    "ir_devido_swing": resultado.get("ir_devido_swing", 0),
+                    "ir_pagar_swing": resultado.get("ir_pagar_swing", 0),
+                    
+                    # Day Trade
+                    "vendas_day_trade": resultado.get("vendas_day_trade", 0),
+                    "custo_day_trade": resultado.get("custo_day_trade", 0),
+                    "ganho_liquido_day": resultado.get("ganho_liquido_day", 0),
+                    "prejuizo_acumulado_day": resultado.get("prejuizo_acumulado_day", 0),
+                    "irrf_day": resultado.get("irrf_day", 0),
+                    "ir_devido_day": resultado.get("ir_devido_day", 0),
+                    "ir_pagar_day": resultado.get("ir_pagar_day", 0),
+                    
+                    # ✅ STATUS DARF GARANTIDOS
+                    "status_darf_swing_trade": _garantir_status_darf_swing(resultado),
+                    "status_darf_day_trade": _garantir_status_darf_day(resultado),
+                    
+                    # ✅ CAMPOS AUXILIARES PARA FRONTEND
+                    "tem_ir_swing": resultado.get("ir_pagar_swing", 0) > 0,
+                    "tem_ir_day": resultado.get("ir_pagar_day", 0) > 0,
+                    "tem_darf_pendente": _tem_darf_pendente(resultado),
+                    "valor_total_ir": resultado.get("ir_pagar_swing", 0) + resultado.get("ir_pagar_day", 0),
+                }
+                
+                resultados_enriquecidos.append(resultado_enriquecido)
+                
+            except Exception as e:
+                logging.error(f"Erro ao processar resultado do mês {resultado.get('mes', 'N/A')}: {e}")
+                continue
+        
+        logging.info(f"[API] Retornando {len(resultados_enriquecidos)} resultados mensais enriquecidos")
+        return resultados_enriquecidos
+        
     except Exception as e:
-        user_id_for_log = usuario.id if usuario else "Unknown"
-        print(f"Error in /api/resultados for user {user_id_for_log}: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error in /api/resultados. Check logs.")
+        logging.error(f"Erro em /api/resultados para usuário {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
 
 @app.get("/api/resultados/ticker/{ticker}", response_model=ResultadoTicker)
 async def listar_resultados_por_ticker(
@@ -985,19 +1047,150 @@ async def deletar_item_carteira(
         # Log the exception e for detailed debugging
         raise HTTPException(status_code=500, detail=f"Erro ao remover ação da carteira: {str(e)}")
 
-@app.get("/api/operacoes/fechadas", response_model=List[OperacaoFechada])
+# 🔍 DEBUG: Identificar diferença entre API e Script
+
+# 1️⃣ ADICIONAR DEBUG no main.py no endpoint /api/operacoes/fechadas
+@app.get("/api/operacoes/fechadas", response_model=List[Dict[str, Any]])
 async def obter_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_current_user)):
     """
-    Retorna as operações fechadas (compra seguida de venda ou vice-versa).
-    Inclui detalhes como data de abertura e fechamento, preços, quantidade e resultado.
+    DEBUG: Adicionar logs para identificar o problema
     """
     try:
-        operacoes_fechadas = calcular_operacoes_fechadas(usuario_id=usuario.id)
-        return operacoes_fechadas
+        logging.info(f"🔍 [API DEBUG] /api/operacoes/fechadas chamado por usuario_id={usuario.id}")
+        
+        # 🔍 VERIFICAR: Dados existentes no banco ANTES do recálculo
+        from database import get_db
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT ticker, data_fechamento, data_abertura, resultado
+                FROM operacoes_fechadas 
+                WHERE usuario_id = ? 
+                ORDER BY data_fechamento DESC 
+                LIMIT 5
+            ''', (usuario.id,))
+            
+            dados_existentes = cursor.fetchall()
+            logging.info(f"🔍 [API DEBUG] Dados existentes no banco ANTES do recálculo:")
+            for row in dados_existentes:
+                logging.info(f"   - {dict(row)}")
+        
+        # ✅ 1. GARANTIR RECÁLCULO COMPLETO SE NECESSÁRIO
+        # Verificar se há operações fechadas no banco
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) as count FROM operacoes_fechadas WHERE usuario_id = ?", (usuario.id,))
+            count_result = cursor.fetchone()
+            
+        if not count_result or count_result['count'] == 0:
+            logging.info(f"🔍 [API DEBUG] Nenhuma operação fechada encontrada, recalculando...")
+            services.recalcular_carteira(usuario_id=usuario.id)
+            services.calcular_operacoes_fechadas(usuario_id=usuario.id)  # ← AQUI ESTÁ O PROBLEMA
+            services.recalcular_resultados_corrigido(usuario_id=usuario.id)
+        
+        # 🔍 VERIFICAR: Dados DEPOIS do recálculo
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT ticker, data_fechamento, data_abertura, resultado
+                FROM operacoes_fechadas 
+                WHERE usuario_id = ? 
+                ORDER BY data_fechamento DESC 
+                LIMIT 5
+            ''', (usuario.id,))
+            
+            dados_depois = cursor.fetchall()
+            logging.info(f"🔍 [API DEBUG] Dados DEPOIS do recálculo:")
+            for row in dados_depois:
+                logging.info(f"   - {dict(row)}")
+        
+        # ✅ 2. BUSCAR OPERAÇÕES FECHADAS DO BANCO
+        operacoes_fechadas_db = services.obter_operacoes_para_calculo_fechadas(usuario_id=usuario.id)
+        
+        # 🔍 VERIFICAR: O que services.obter_operacoes_para_calculo_fechadas está retornando
+        logging.info(f"🔍 [API DEBUG] services.obter_operacoes_para_calculo_fechadas retornou {len(operacoes_fechadas_db)} operações:")
+        for i, op in enumerate(operacoes_fechadas_db[:3]):  # Primeiras 3
+            logging.info(f"   - Op {i+1}: {op.get('ticker', 'N/A')} | data_fechamento: {op.get('data_fechamento', 'N/A')}")
+            
+        # ✅ 3. BUSCAR RESULTADOS MENSAIS
+        resultados_mensais = services.obter_resultados_mensais(usuario_id=usuario.id)
+        resultados_map = {rm["mes"]: rm for rm in resultados_mensais}
+        
+        logging.info(f"[API] Encontrados {len(operacoes_fechadas_db)} operações fechadas e {len(resultados_mensais)} resultados mensais")
+        
+        # ✅ 4. ENRIQUECER DADOS PARA FRONTEND
+        operacoes_enriquecidas = []
+        
+        for op in operacoes_fechadas_db:
+            try:
+                # Determinar mês da operação
+                data_fechamento = op.get('data_fechamento')
+                if isinstance(data_fechamento, str):
+                    mes_operacao = data_fechamento[:7]  # YYYY-MM
+                elif hasattr(data_fechamento, 'strftime'):
+                    mes_operacao = extrair_mes_data_seguro(data_fechamento)
+                else:
+                    logging.warning(f"Data de fechamento inválida: {data_fechamento}")
+                    continue
+                
+                # Buscar resultado mensal correspondente
+                resultado_mensal = resultados_map.get(mes_operacao)
+                
+                # ✅ CALCULAR STATUS_IR CORRIGIDO
+                status_ir = _calcular_status_ir_para_frontend(op, resultado_mensal)
+                
+                # ✅ VERIFICAR SE DEVE GERAR DARF
+                deve_gerar_darf = _deve_gerar_darf_para_frontend(op, resultado_mensal)
+                status_darf = _obter_status_darf_para_frontend(op, resultado_mensal) if deve_gerar_darf else None
+                
+                # ✅ CONSTRUIR OPERAÇÃO ENRIQUECIDA
+                op_enriquecida = {
+                    # Dados básicos da operação
+                    "id": op.get("id"),
+                    "ticker": op.get("ticker"),
+                    "quantidade": op.get("quantidade", 0),
+                    "data_abertura": op.get("data_abertura", data_fechamento),
+                    "data_fechamento": data_fechamento,
+                    "preco_medio_compra": op.get("preco_medio_compra", 0),
+                    "preco_medio_venda": op.get("preco_medio_venda", 0),
+                    "valor_compra": op.get("valor_compra", 0),
+                    "valor_venda": op.get("valor_venda", 0),
+                    "resultado": op.get("resultado", 0),
+                    "day_trade": op.get("day_trade", False),
+                    "tipo": op.get("tipo", "compra-venda"),
+                    
+                    # ✅ STATUS FISCAL CORRIGIDO
+                    "status_ir": status_ir,
+                    
+                    # ✅ DADOS PARA MODAL DARF
+                    "mes_operacao": mes_operacao,
+                    "resultado_mensal_encontrado": resultado_mensal is not None,
+                    "deve_gerar_darf": deve_gerar_darf,
+                    "status_darf": status_darf,
+                    
+                    # ✅ DADOS PARA COMPENSAÇÃO
+                    "prejuizo_anterior_disponivel": _obter_prejuizo_anterior(resultado_mensal, op.get("day_trade", False)),
+                    "valor_ir_devido": _calcular_valor_ir_devido(op, resultado_mensal),
+                    "valor_ir_pagar": _calcular_valor_ir_pagar(op, resultado_mensal),
+                    
+                    # ✅ METADADOS ÚTEIS
+                    "percentual_lucro": op.get("percentual_lucro", 0),
+                    "taxas_total": op.get("taxas_total", 0),
+                    "operacoes_relacionadas": op.get("operacoes_relacionadas", []),
+                }
+                
+                operacoes_enriquecidas.append(op_enriquecida)
+                
+            except Exception as e:
+                logging.error(f"Erro ao processar operação {op.get('id', 'N/A')}: {e}")
+                continue
+        
+        logging.info(f"[API] Retornando {len(operacoes_enriquecidas)} operações enriquecidas")
+        return operacoes_enriquecidas
+        
     except Exception as e:
-        user_id_for_log = usuario.id if usuario else "Unknown"
-        logging.error(f"Error in /api/operacoes/fechadas for user {user_id_for_log}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes/fechadas. Check logs.")
+        logging.error(f"🔍 [API DEBUG] Erro em /api/operacoes/fechadas para usuário {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @app.get("/api/operacoes/fechadas/resumo", response_model=Dict[str, Any])
 async def obter_resumo_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_current_user)):
@@ -1364,5 +1557,270 @@ def preprocess_imported_operation(op: dict) -> dict:
     print(f"✅ [PREPROCESS] Operação final: {new_op}")
     return new_op
 
+def _calcular_status_ir_para_frontend(op, resultado_mensal):
+    """
+    Calcula o status de IR correto para exibição no frontend
+    """
+    resultado = op.get("resultado", 0)
+    
+    # Casos simples
+    if resultado == 0:
+        return "Isento"
+    
+    if resultado < 0:
+        return "Prejuízo Acumulado"
+    
+    # Para operações com lucro
+    if op.get("day_trade", False):
+        # Day Trade
+        if resultado_mensal and resultado_mensal.get("ir_pagar_day", 0) > 0:
+            return "Tributável Day Trade"
+        else:
+            return "Lucro Compensado"
+    else:
+        # Swing Trade
+        if resultado_mensal and resultado_mensal.get("isento_swing", False):
+            return "Isento"
+        elif resultado_mensal and resultado_mensal.get("ir_pagar_swing", 0) > 0:
+            return "Tributável Swing"
+        else:
+            return "Lucro Compensado"
+
+
+def _deve_gerar_darf_para_frontend(op, resultado_mensal):
+    """
+    Verifica se a operação deve gerar DARF
+    """
+    # Só gera DARF para operações com lucro
+    if op.get("resultado", 0) <= 0:
+        return False
+    
+    # Deve ter resultado mensal
+    if not resultado_mensal:
+        return False
+    
+    # Verificar por tipo de operação
+    if op.get("day_trade", False):
+        return resultado_mensal.get("ir_pagar_day", 0) > 0
+    else:
+        # Swing trade: não isento E há IR a pagar
+        isento = resultado_mensal.get("isento_swing", False)
+        ir_pagar = resultado_mensal.get("ir_pagar_swing", 0)
+        return not isento and ir_pagar > 0
+
+
+def _obter_status_darf_para_frontend(op, resultado_mensal):
+    """
+    Obtém o status DARF para uma operação
+    """
+    if not resultado_mensal:
+        return "Pendente"
+    
+    if op.get("day_trade", False):
+        return resultado_mensal.get("status_darf_day_trade", "Pendente")
+    else:
+        return resultado_mensal.get("status_darf_swing_trade", "Pendente")
+
+
+def _obter_prejuizo_anterior(resultado_mensal, is_day_trade):
+    """
+    Obtém o prejuízo anterior disponível para compensação
+    """
+    if not resultado_mensal:
+        return 0
+    
+    if is_day_trade:
+        return resultado_mensal.get("prejuizo_acumulado_day", 0)
+    else:
+        return resultado_mensal.get("prejuizo_acumulado_swing", 0)
+
+
+def _calcular_valor_ir_devido(op, resultado_mensal):
+    """
+    Calcula o valor de IR devido para uma operação
+    """
+    if not _deve_gerar_darf_para_frontend(op, resultado_mensal):
+        return 0
+    
+    if not resultado_mensal:
+        return 0
+    
+    if op.get("day_trade", False):
+        return resultado_mensal.get("ir_devido_day", 0)
+    else:
+        return resultado_mensal.get("ir_devido_swing", 0)
+
+
+def _calcular_valor_ir_pagar(op, resultado_mensal):
+    """
+    Calcula o valor de IR a pagar para uma operação
+    """
+    if not _deve_gerar_darf_para_frontend(op, resultado_mensal):
+        return 0
+    
+    if not resultado_mensal:
+        return 0
+    
+    if op.get("day_trade", False):
+        return resultado_mensal.get("ir_pagar_day", 0)
+    else:
+        return resultado_mensal.get("ir_pagar_swing", 0)
+
+
+def _formatar_mes_para_exibicao(mes_str):
+    """
+    Formata mês do formato YYYY-MM para exibição
+    """
+    if not mes_str or len(mes_str) != 7:
+        return mes_str
+    
+    try:
+        ano, mes = mes_str.split('-')
+        meses = {
+            "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
+            "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
+            "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro"
+        }
+        return f"{meses.get(mes, mes)}/{ano}"
+    except:
+        return mes_str
+
+
+def _garantir_status_darf_swing(resultado):
+    """
+    Garante que o status DARF swing esteja definido
+    """
+    status_existente = resultado.get("status_darf_swing_trade")
+    
+    if status_existente:
+        return status_existente
+    
+    # Se há IR a pagar, status é Pendente
+    if resultado.get("ir_pagar_swing", 0) > 0:
+        return "Pendente"
+    
+    return None
+
+
+def _garantir_status_darf_day(resultado):
+    """
+    Garante que o status DARF day trade esteja definido
+    """
+    status_existente = resultado.get("status_darf_day_trade")
+    
+    if status_existente:
+        return status_existente
+    
+    # Se há IR a pagar, status é Pendente
+    if resultado.get("ir_pagar_day", 0) > 0:
+        return "Pendente"
+    
+    return None
+
+
+def _tem_darf_pendente(resultado):
+    """
+    Verifica se há algum DARF pendente no resultado mensal
+    """
+    swing_pendente = (
+        resultado.get("ir_pagar_swing", 0) > 0 and 
+        resultado.get("status_darf_swing_trade", "Pendente") == "Pendente"
+    )
+    
+    day_pendente = (
+        resultado.get("ir_pagar_day", 0) > 0 and 
+        resultado.get("status_darf_day_trade", "Pendente") == "Pendente"
+    )
+    
+    return swing_pendente or day_pendente
+
+@app.get("/api/debug/operacoes-fechadas/{usuario_id}")
+async def debug_operacoes_fechadas(usuario_id: int, admin: UsuarioResponse = Depends(get_admin_user)):
+    """
+    Endpoint de debug para verificar o estado das operações fechadas
+    """
+    try:
+        from database import get_db
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Contar operações fechadas
+            cursor.execute("SELECT COUNT(*) as count FROM operacoes_fechadas WHERE usuario_id = ?", (usuario_id,))
+            count_op_fechadas = cursor.fetchone()['count']
+            
+            # Contar resultados mensais
+            cursor.execute("SELECT COUNT(*) as count FROM resultados_mensais WHERE usuario_id = ?", (usuario_id,))
+            count_resultados = cursor.fetchone()['count']
+            
+            # Buscar últimas operações fechadas
+            cursor.execute("""
+                SELECT ticker, data_fechamento, resultado, day_trade, status_ir 
+                FROM operacoes_fechadas 
+                WHERE usuario_id = ? 
+                ORDER BY data_fechamento DESC 
+                LIMIT 10
+            """, (usuario_id,))
+            ultimas_operacoes = cursor.fetchall()
+            
+            # Buscar resultados mensais
+            cursor.execute("""
+                SELECT mes, ir_pagar_swing, ir_pagar_day, status_darf_swing_trade, status_darf_day_trade
+                FROM resultados_mensais 
+                WHERE usuario_id = ? 
+                ORDER BY mes DESC
+            """, (usuario_id,))
+            resultados_mensais = cursor.fetchall()
+        
+        return {
+            "usuario_id": usuario_id,
+            "operacoes_fechadas_count": count_op_fechadas,
+            "resultados_mensais_count": count_resultados,
+            "ultimas_operacoes": [dict(row) for row in ultimas_operacoes],
+            "resultados_mensais": [dict(row) for row in resultados_mensais],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro no debug: {str(e)}")
+
+
+# ✅ ENDPOINT PARA FORÇAR RECÁLCULO COMPLETO
+@app.post("/api/admin/recalcular-completo/{usuario_id}")
+async def forcar_recalculo_completo(usuario_id: int, admin: UsuarioResponse = Depends(get_admin_user)):
+    """
+    Força um recálculo completo para um usuário específico
+    """
+    try:
+        logging.info(f"[ADMIN] Iniciando recálculo completo para usuário {usuario_id}")
+        
+        # 1. Limpar dados antigos
+        services.limpar_operacoes_fechadas_usuario(usuario_id=usuario_id)
+        services.limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
+        
+        # 2. Recalcular tudo
+        services.recalcular_carteira(usuario_id=usuario_id)
+        operacoes_fechadas = services.calcular_operacoes_fechadas(usuario_id=usuario_id)
+        services.recalcular_resultados_corrigido(usuario_id=usuario_id)
+        
+        # 3. Buscar dados finais
+        resultados_mensais = services.obter_resultados_mensais(usuario_id=usuario_id)
+        
+        logging.info(f"[ADMIN] Recálculo completo finalizado para usuário {usuario_id}")
+        
+        return {
+            "message": "Recálculo completo realizado com sucesso",
+            "usuario_id": usuario_id,
+            "operacoes_fechadas_geradas": len(operacoes_fechadas),
+            "resultados_mensais_gerados": len(resultados_mensais),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logging.error(f"Erro no recálculo completo para usuário {usuario_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro no recálculo: {str(e)}")
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    
+    

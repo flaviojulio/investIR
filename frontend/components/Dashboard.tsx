@@ -1105,14 +1105,14 @@ function mapProventoRecebidoBackendToFrontend(p: any): ProventoRecebidoUsuario {
   return {
     id: p.id,
     id_acao: p.id_acao,
-    tipo: p.tipo_provento, // backend: tipo_provento, frontend: tipo
+    tipo: p.tipo_provento || p.tipo, // ✅ Compatibilidade com ambos os campos
     valor_unitario_provento: p.valor_unitario_provento,
     data_registro: p.data_registro || '',
     data_ex: p.data_ex || '',
     dt_pagamento: p.dt_pagamento || null,
     ticker_acao: p.ticker_acao,
     nome_acao: p.nome_acao,
-    quantidade_na_data_ex: p.quantidade_possuida_na_data_ex, // backend: quantidade_possuida_na_data_ex
+    quantidade_na_data_ex: p.quantidade_possuida_na_data_ex || p.quantidade_na_data_ex, // ✅ Backend vs Frontend
     valor_total_recebido: p.valor_total_recebido,
   };
 }

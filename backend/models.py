@@ -1,8 +1,11 @@
+from pydantic import BaseModel
+from datetime import date
+from typing import Optional, List, Dict, Any
+
 from datetime import date, datetime
 import re # Added
-from enum import Enum
-from pydantic import BaseModel, Field, field_validator, ConfigDict, EmailStr # Updated for Pydantic 2.x
-from typing import Optional, Any, List, Dict, Union # Ensured Any, List, Dict, Union
+from pydantic import BaseModel, Field, field_validator, ConfigDict, EmailStr # Ensured ConfigDict and added field_validator
+from typing import Optional, Any, List, Dict # Ensured Any, List, Dict
 
 # Modelos para autenticação
 
@@ -30,9 +33,7 @@ class UsuarioResponse(BaseModel):
     data_criacao: Optional[datetime] = None
     data_atualizacao: Optional[datetime] = None
     ativo: Optional[bool] = True    
-    
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class LoginRequest(BaseModel):
     username_ou_email: str
@@ -107,23 +108,31 @@ class OperacaoBase(BaseModel):
     @field_validator('price', mode='before')
     @classmethod
     def validate_and_clean_price(cls, v):
-        from decimal import Decimal, InvalidOperation
-        if isinstance(v, (float, int, Decimal)):
+        if isinstance(v, (float, int)):
             if v < 0:
                 raise ValueError("Preço ('Preço') não pode ser negativo.")
             return float(v)
         if isinstance(v, str):
-            price_str = v.replace("R$", "").strip()
-            # Remove pontos de milhar, mas mantém o ponto decimal
-            price_str = price_str.replace('.', '').replace(',', '.')
+            price_str = v.strip()
+            if price_str.lower().startswith('r$'):
+                price_str = price_str[2:].strip()
+
+            # Remove thousands separators (dots in pt-BR)
+            # This regex handles cases like "1.234,56" or "1234,56"
+            # It removes dots that are followed by at least one digit and then a comma or end of string.
+            price_str = re.sub(r'\.(?=\d{3}(?:,|$))', '', price_str)
+
+            # Replace decimal comma with a dot
+            price_str = price_str.replace(',', '.')
+
             try:
                 price_float = float(price_str)
                 if price_float < 0:
                     raise ValueError("Preço ('Preço') não pode ser negativo após o parse.")
                 return price_float
-            except (ValueError, InvalidOperation):
-                raise ValueError("Formato de preço inválido para 'Preço'.")
-        raise TypeError("Tipo inválido para 'Preço'. Deve ser string, float, int ou Decimal.")
+            except ValueError:
+                raise ValueError("Formato de preço inválido para 'Preço'. Não foi possível converter para float.")
+        raise TypeError("Tipo inválido para 'Preço'. Deve ser string, float ou int.")
 
     @field_validator('ticker') # Applied to the field after aliasing
     @classmethod
@@ -160,9 +169,6 @@ class Operacao(OperacaoBase):
     id: int
     usuario_id: Optional[int] = None
     corretora_nome: Optional[str] = None  # Nome da corretora para exibição
-    importacao_id: Optional[int] = None  # NOVA LINHA ADICIONADA
-    data_importacao: Optional[datetime] = None  # Data da importação
-    nome_arquivo_original: Optional[str] = None  # Nome original do arquivo
 
 class ResultadoMensal(BaseModel):
     mes: str  # Formato: YYYY-MM
@@ -208,7 +214,6 @@ class CarteiraAtual(BaseModel):
     quantidade: int
     custo_total: float
     preco_medio: float
-    preco_editado_pelo_usuario: Optional[bool] = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -279,26 +284,32 @@ class OperacaoDetalhe(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class OperacaoFechada(BaseModel):
-    """
-    Modelo para uma operação fechada (compra seguida de venda ou vice-versa).
-    """
     ticker: str
-    data_abertura: date
+    data_abertura: Optional[date] = None  # ✅ Permitir None com fallback
     data_fechamento: date
-    tipo: str  # "compra-venda" ou "venda-compra" (venda a descoberto)
+    tipo: str
     quantidade: int
-    valor_compra: float     # Changed from preco_abertura
-    valor_venda: float      # Changed from preco_fechamento
-    taxas_total: float
-    resultado: float  # Lucro ou prejuízo
-    percentual_lucro: float # Ensured this field is present
-    operacoes_relacionadas: List[OperacaoDetalhe]
-    day_trade: bool  # Indica se é day trade
-    status_ir: Optional[str] = None # e.g., "Isenta Swing", "Tributável Swing", "Tributável Day Trade"
-    prejuizo_anterior_acumulado: Optional[float] = 0.0  # Prejuízo acumulado disponível para compensação
-
-    model_config = ConfigDict(from_attributes=True)
-
+    valor_compra: float
+    valor_venda: float
+    taxas_total: float = 0.0
+    resultado: float
+    percentual_lucro: float = 0.0
+    operacoes_relacionadas: List[str] = []
+    day_trade: bool = False
+    status_ir: Optional[str] = None
+    
+    # Campos extras para compatibilidade com o frontend
+    preco_medio_compra: Optional[float] = None
+    preco_medio_venda: Optional[float] = None
+    
+    class Config:
+        from_attributes = True
+        
+    def model_post_init(self, __context):
+        """Pós-processamento para garantir data_abertura válida"""
+        if self.data_abertura is None:
+            self.data_abertura = self.data_fechamento  # Fallback para data_fechamento se não fornecido
+                
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
@@ -522,65 +533,113 @@ class Corretora(BaseModel):
     cnpj: str | None = None  # Agora opcional
     model_config = ConfigDict(from_attributes=True)
 
-# Novos modelos para importações
-
-class StatusImportacao(str, Enum):
-    EM_ANDAMENTO = "em_andamento"
-    CONCLUIDA = "concluida"
-    ERRO = "erro"
-    CANCELADA = "cancelada"
-
-class ImportacaoCreate(BaseModel):
-    nome_arquivo: str
-    nome_arquivo_original: Optional[str] = None
-    tamanho_arquivo: Optional[int] = None
-    total_operacoes_arquivo: int
-    hash_arquivo: Optional[str] = None
-
-class ImportacaoResponse(BaseModel):
-    id: int
-    usuario_id: int
-    nome_arquivo: str
-    nome_arquivo_original: Optional[str] = None
-    tamanho_arquivo: Optional[int] = None
-    data_importacao: datetime
-    total_operacoes_arquivo: int
-    total_operacoes_importadas: int
-    total_operacoes_duplicadas: int
-    total_operacoes_erro: int
-    status: StatusImportacao
-    hash_arquivo: Optional[str] = None
-    observacoes: Optional[str] = None
-    tempo_processamento_ms: Optional[int] = None
-
-    class Config:
-        from_attributes = True
-
-class ImportacaoResumo(BaseModel):
-    """Resumo de uma importação para listagens"""
-    id: int
-    nome_arquivo: str
-    data_importacao: datetime
-    total_operacoes_importadas: int
-    total_operacoes_duplicadas: int
-    status: StatusImportacao
-    observacoes: Optional[str] = None
-
-class OperacaoDuplicada(BaseModel):
-    """Detalhes de uma operação duplicada detectada"""
-    linha_arquivo: int
-    data: str
+class OperacaoCreate(BaseModel):
+    date: date
     ticker: str
-    operacao: str
-    quantidade: int
-    preco: float
-    motivo_duplicacao: str
-    operacao_existente_id: Optional[int] = None
+    operation: str
+    quantity: int
+    price: float
+    fees: Optional[float] = 0.0
 
-class ResultadoImportacao(BaseModel):
-    """Resultado completo de uma importação"""
-    importacao: ImportacaoResponse
-    operacoes_duplicadas: List[OperacaoDuplicada] = []
-    erros_processamento: List[str] = []
-    sucesso: bool
-    mensagem: str
+class AtualizacaoCarteira(BaseModel):
+    ticker: str
+    preco_medio: float
+    observacao: Optional[str] = None
+
+class OperacaoUpdate(BaseModel):
+    date: Optional[date] = None
+    ticker: Optional[str] = None
+    operation: Optional[str] = None
+    quantity: Optional[int] = None
+    price: Optional[float] = None
+    fees: Optional[float] = None
+
+class ResultadoMensal(BaseModel):
+    mes: str
+    vendas_swing: float = 0.0
+    custo_swing: float = 0.0
+    ganho_liquido_swing: float = 0.0
+    isento_swing: bool = False
+    ir_devido_swing: float = 0.0
+    ir_pagar_swing: float = 0.0
+
+class OperacaoFechada(BaseModel):
+    id: Optional[int] = None
+    data_abertura: date
+    data_fechamento: date
+    ticker: str
+    quantidade: int
+    valor_compra: float
+    valor_venda: float
+    resultado: float
+    percentual_lucro: float
+    day_trade: bool = False
+    status_ir: Optional[str] = None
+
+class ItemCarteira(BaseModel):
+    ticker: str
+    quantidade: int
+    custo_total: float
+    preco_medio: float
+    nome: Optional[str] = None
+
+class Operacao(BaseModel):
+    id: Optional[int] = None
+    date: date
+    ticker: str
+    operation: str
+    quantity: int
+    price: float
+    fees: float = 0.0
+    usuario_id: Optional[int] = None
+    corretora_id: Optional[int] = None
+    importacao_id: Optional[int] = None
+
+class CarteiraAtual(BaseModel):
+    ticker: str
+    quantidade: int
+    custo_total: float
+    preco_medio: float
+    nome: Optional[str] = None
+    preco_editado_pelo_usuario: bool = False
+
+
+# Classe CarteiraAtual (mesmo que ItemCarteira, mas com nome diferente)
+CarteiraAtual = ItemCarteira
+
+# Outras classes que podem estar sendo importadas
+class StatusDarf(BaseModel):
+    mes: str
+    tipo: str  # "swing" ou "daytrade"
+    status: str
+    valor: float = 0.0
+
+class ImportacaoResult(BaseModel):
+    success: bool
+    message: str
+    total_operacoes: int = 0
+    operacoes_importadas: int = 0
+    operacoes_duplicadas: int = 0
+    operacoes_erro: int = 0
+
+class AnaliseOperacao(BaseModel):
+    ticker: str
+    total_operacoes: int
+    lucro_total: float
+    prejuizo_total: float
+    resultado_liquido: float
+
+class ResumoIR(BaseModel):
+    mes: str
+    ir_swing: float = 0.0
+    ir_day_trade: float = 0.0
+    total_ir: float = 0.0
+    isento_swing: bool = False
+
+class ConfiguracaoUsuario(BaseModel):
+    usuario_id: int
+    configuracoes: Dict[str, Any] = {}
+
+# Mais aliases comuns
+Acao = Operacao  # Caso seja usado em algum lugar
+Stock = Operacao  # Alias em inglês

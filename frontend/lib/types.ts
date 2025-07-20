@@ -1,170 +1,105 @@
-// In lib/types.ts
-export interface Operacao {
-  id: number;
-  date: string; // YYYY-MM-DD
-  ticker: string;
-  operation: 'buy' | 'sell';
-  quantity: number;
-  price: number;
-  fees: number;
-  usuario_id?: number;
-  corretora_id?: number | null;
-  corretora_nome?: string | null; // Adicionado para refletir o backend
-  importacao_id?: number | null; // ID da importação de origem
-  data_importacao?: string | null; // Data da importação
-  nome_arquivo_original?: string | null; // Nome original do arquivo importado
-}
+// lib/types.ts - Tipos atualizados para compatibilidade com backend
 
-export interface CarteiraItem {
+export interface OperacaoFechada {
+  id?: number;
   ticker: string;
-  nome?: string; // Nome da ação, para exibição
   quantidade: number;
-  preco_medio: number;
-  custo_total: number;
-  preco_editado_pelo_usuario?: boolean; // Flag para indicar se foi editado manualmente
+  data_abertura: string; // ISO string
+  data_fechamento: string; // ISO string
+  preco_medio_compra: number; // ✅ NOVO: Vem do backend
+  preco_medio_venda: number; // ✅ NOVO: Vem do backend
+  valor_compra: number;
+  valor_venda: number;
+  resultado: number;
+  day_trade: boolean;
+  tipo: string; // "compra-venda" ou "venda-compra"
+  taxas_total: number;
+  percentual_lucro: number;
+  prejuizo_anterior_acumulado: number;
+  operacoes_relacionadas: any[];
+  status_ir: string;
+
+  
+  // Campos para modal DARF (opcionais, calculados no frontend)
+  mes_operacao?: string;
+  resultado_mensal_encontrado?: boolean;
+  deve_gerar_darf?: boolean;
+  status_darf?: string;
+  prejuizo_anterior_disponivel?: number;
+  valor_ir_devido?: number;
+  valor_ir_pagar?: number;
 }
 
 export interface ResultadoMensal {
   mes: string; // YYYY-MM
-
+  mes_formatado?: string; // Frontend calculated
+  
   // Swing Trade
   vendas_swing: number;
-  custo_swing: number; // Adicionado
+  custo_swing: number;
   ganho_liquido_swing: number;
   isento_swing: boolean;
-  ir_devido_swing: number; // Adicionado
-  ir_pagar_swing: number;  // Adicionado
-  darf_codigo_swing?: string | null;
-  darf_competencia_swing?: string | null; // Adicionado
-  darf_valor_swing?: number | null; // Nome padronizado (era darf_swing_trade_valor)
-  darf_vencimento_swing?: string | null; // Adicionado (ou Date)
-  status_darf_swing_trade?: string | null;
-
-  // Day Trade
-  vendas_day_trade: number; // Garantir que seja number, não opcional se sempre presente
-  custo_day_trade: number; // Adicionado
-  ganho_liquido_day: number;
-  ir_devido_day: number;
-  irrf_day: number; // Adicionado
-  ir_pagar_day: number;
-  darf_codigo_day?: string | null; // Adicionado
-  darf_competencia_day?: string | null; // Adicionado
-  darf_valor_day?: number | null; // Nome padronizado (era darf_day_trade_valor)
-  darf_vencimento_day?: string | null; // Adicionado (ou Date)
-  status_darf_day_trade?: string | null;
-
-  // Accumulated Losses
-  prejuizo_acumulado_swing: number; // Adicionado
-  prejuizo_acumulado_day: number;   // Adicionado
+  prejuizo_acumulado_swing: number;
+  ir_devido_swing: number;
+  ir_pagar_swing: number;
+  status_darf_swing_trade?: string;
   
-  // Prejuízo anterior e compensação aplicada (para cálculo DARF)
-  prejuizo_anterior_swing?: number; // Prejuízo dos meses anteriores
-  compensacao_swing_aplicada?: number; // Compensação aplicada este mês
-  prejuizo_anterior_day?: number; // Prejuízo dos meses anteriores
-  compensacao_day_aplicada?: number; // Compensação aplicada este mês
+  // Day Trade
+  vendas_day_trade: number;
+  custo_day_trade: number;
+  ganho_liquido_day: number;
+  prejuizo_acumulado_day: number;
+  irrf_day: number;
+  ir_devido_day: number;
+  ir_pagar_day: number;
+  status_darf_day_trade?: string;
+  
+  // Campos calculados no frontend
+  tem_ir_swing?: boolean;
+  tem_ir_day?: boolean;
+  tem_darf_pendente?: boolean;
+  valor_total_ir?: number;
 }
 
-export interface ResultadoTicker {
+export interface CarteiraItem {
   ticker: string;
-  quantidade_atual?: number;
-  preco_medio_atual?: number;
-  custo_total_atual?: number;
-  total_investido_historico: number;
-  total_vendido_historico: number;
-  lucro_prejuizo_realizado_total: number;
-  operacoes_compra_total_quantidade: number;
-  operacoes_venda_total_quantidade: number;
+  nome_acao?: string;
+  quantidade: number;
+  preco_medio: number;
+  custo_total: number;
+  valor_atual?: number;
+  variacao_percentual?: number;
+  lucro_prejuizo?: number;
+  preco_editado_pelo_usuario?: boolean;
 }
 
-// Added OperacaoDetalhe and OperacaoFechada
-export interface OperacaoDetalhe {
-  id?: number; 
-  date: string;
-  operation: 'buy' | 'sell';
+export interface Operacao {
+  id?: number;
+  date: string; // ISO string
+  ticker: string;
+  operation: "buy" | "sell";
   quantity: number;
   price: number;
   fees: number;
-  valor_total: number;
+  corretora_id?: number;
+  corretora_nome?: string;
+  importacao_id?: number;
+  usuario_id?: number;
 }
 
-export interface OperacaoFechada {
-  ticker: string;
-  data_abertura: string; 
-  data_fechamento: string; 
-  tipo: string; 
-  quantidade: number;
-  valor_compra: number; 
-  valor_venda: number;  
-  taxas_total: number;
-  resultado: number;
-  percentual_lucro?: number; 
-  operacoes_relacionadas: OperacaoDetalhe[]; 
-  day_trade: boolean;
-  status_ir?: string; 
-  prejuizo_anterior_acumulado?: number; // Prejuízo acumulado disponível para compensação
-}
-
-// Types for Portfolio Equity History
-export interface EquityDataPoint {
-  date: string; // "YYYY-MM-DD" or "YYYY-MM" from API
-  value: number;
-}
-
-export interface ProfitabilityDetails {
-  absolute: number;
-  percentage: number;
-  initial_portfolio_value: number;
-  final_portfolio_value: number;
-  cash_invested_in_period: number;
-  cash_returned_in_period: number;
-  net_investment_change: number;
-  // Note: The backend service might return 'capital_gain_loss' as 'absolute'.
-  // If the API response uses 'capital_gain_loss', this interface should match.
-  // Based on the backend router and schema, it uses 'absolute'.
-}
-
-export interface PortfolioHistoryResponse {
-  equity_curve: EquityDataPoint[];
-  profitability: ProfitabilityDetails;
-}
-
-export interface AcaoInfo {
-  ticker: string;
-  nome?: string;
-  razao_social?: string;
-  cnpj?: string;
-  ri?: string;
-  classificacao?: string;
-  isin?: string;
-}
-
-// Interfaces para Proventos do Usuário e Resumos
-
+// ✅ TIPOS PARA PROVENTOS (já corretos)
 export interface ProventoRecebidoUsuario {
   id: number;
   id_acao: number;
-  tipo: string;
-  valor_unitario_provento: number; // Valor unitário do provento
-  data_registro: string; // YYYY-MM-DD
-  data_ex: string;       // YYYY-MM-DD
-  dt_pagamento: string | null;  // YYYY-MM-DD or null
+  tipo: string; // Frontend usa 'tipo', backend retorna 'tipo_provento'
+  valor_unitario_provento: number;
+  data_registro: string;
+  data_ex: string;
+  dt_pagamento: string | null;
   ticker_acao: string;
   nome_acao?: string;
-  quantidade_na_data_ex: number;
+  quantidade_na_data_ex: number; // Frontend usa este, backend retorna 'quantidade_possuida_na_data_ex'
   valor_total_recebido: number;
-}
-
-export interface DetalheTipoProventoAPI {
-  tipo: string;
-  valor_total_tipo: number;
-}
-
-export interface AcaoDetalhadaResumoProventoAPI {
-  ticker: string;
-  nome_acao: string; // No backend é opcional, mas nos resumos anuais/mensais parece ser sempre preenchido. Confirmar se pode ser opcional.
-                      // Por ora, mantendo como string obrigatória conforme o uso em ResumoProventoAnual/Mensal.
-  total_recebido_na_acao: number;
-  detalhes_por_tipo: DetalheTipoProventoAPI[];
 }
 
 export interface ResumoProventoAnualAPI {
@@ -177,7 +112,7 @@ export interface ResumoProventoAnualAPI {
 }
 
 export interface ResumoProventoMensalAPI {
-  mes: string; // "YYYY-MM"
+  mes: string; // YYYY-MM
   total_dividendos: number;
   total_jcp: number;
   total_outros: number;
@@ -185,41 +120,68 @@ export interface ResumoProventoMensalAPI {
   acoes_detalhadas: AcaoDetalhadaResumoProventoAPI[];
 }
 
-export interface ResumoProventoPorAcaoAPI {
-  ticker_acao: string;
-  nome_acao?: string;
-  total_recebido_geral_acao: number;
-  detalhes_por_tipo: DetalheTipoProventoAPI[];
-}
-
-export interface Corretora {
-  id: number;
-  nome: string;
-  cnpj: string;
-}
-
-export interface MonthlyEarnings {
-  month: string; // Format: YYYY-MM
-  total_earnings: number;
-}
-
-export interface BemDireitoAcao {
+export interface AcaoDetalhadaResumoProventoAPI {
   ticker: string;
-  nome_empresa?: string | null;
-  cnpj?: string | null;
-  quantidade: number;
-  preco_medio: number;
-  valor_total_data_base: number;
-  valor_total_ano_anterior?: number; // Novo campo: valor total em 31/12 do ano anterior
+  nome_acao?: string;
+  total_recebido_na_acao: number;
+  detalhes_por_tipo: DetalheTipoProvento[];
 }
 
-// Tipos para Eventos Corporativos
+export interface DetalheTipoProvento {
+  tipo: string;
+  valor_total_tipo: number;
+}
+
+// Outros tipos existentes...
+export interface DARF {
+  codigo: string;
+  competencia: string;
+  valor: number;
+  vencimento: string;
+}
+
+export interface AcaoInfo {
+  id: number;
+  ticker: string;
+  nome?: string;
+}
+
+export interface ProventoInfo {
+  id: number;
+  id_acao: number;
+  tipo: string;
+  valor: number;
+  data_registro: string;
+  data_ex: string;
+  dt_pagamento?: string;
+}
+
 export interface EventoCorporativoInfo {
   id: number;
   id_acao: number;
   evento: string;
-  data_aprovacao?: string | null; // ISO date string or null
-  data_registro?: string | null;
-  data_ex?: string | null;
-  razao?: string | null;
+  razao?: string;
+  data_aprovacao?: string;
+  data_registro?: string;
+  data_ex?: string;
+}
+
+export interface UsuarioResponse {
+  id: number;
+  username: string;
+  email: string;
+  nome_completo?: string;
+  funcoes: string[];
+  ativo: boolean;
+  data_criacao: string;
+}
+
+export interface LoginResponse {
+  access_token: string;
+  token_type: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
 }

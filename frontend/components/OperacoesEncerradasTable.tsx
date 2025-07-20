@@ -67,20 +67,43 @@ import {
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
 import { DarfDetailsModal } from "@/components/DarfDetailsModal";
 
-const calcularPrecoMedioCompra = (op: OperacaoFechada): number => {
-  if (!op.valor_compra || !op.quantidade || op.quantidade <= 0) {
-    return 0;
+const getPrecoMedioCompra = (op: OperacaoFechada): number => {
+  // Primeiro tenta usar o campo direto do backend
+  if (op.preco_medio_compra && op.preco_medio_compra > 0) {
+    return op.preco_medio_compra;
   }
-  return op.valor_compra / op.quantidade;
+
+  // Fallback: usar preco_medio_compra se disponível
+  if (op.preco_medio_compra && op.preco_medio_compra > 0) {
+    return op.preco_medio_compra;
+  }
+
+  // Último fallback: calcular manualmente
+  if (op.valor_compra && op.quantidade && op.quantidade > 0) {
+    return op.valor_compra / op.quantidade;
+  }
+
+  return 0;
 };
 
-const calcularPrecoMedioVenda = (op: OperacaoFechada): number => {
-  if (!op.valor_venda || !op.quantidade || op.quantidade <= 0) {
-    return 0;
+const getPrecoMedioVenda = (op: OperacaoFechada): number => {
+  // Primeiro tenta usar o campo direto do backend
+  if (op.preco_medio_venda && op.preco_medio_venda > 0) {
+    return op.preco_medio_venda;
   }
-  return op.valor_venda / op.quantidade;
-};
 
+  // Fallback: usar preco_medio_venda se disponível
+  if (op.preco_medio_venda && op.preco_medio_venda > 0) {
+    return op.preco_medio_venda;
+  }
+
+  // Último fallback: calcular manualmente
+  if (op.valor_venda && op.quantidade && op.quantidade > 0) {
+    return op.valor_venda / op.quantidade;
+  }
+
+  return 0;
+};
 // Formatting helpers
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -379,21 +402,15 @@ const OperationRow = ({
 }: OperationRowProps) => {
   // ✅ Usar a interface oficial
   const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
-  if (op.ticker === "VALE3") {
-    console.log("🔍 [CARDS DEBUG] Dados da operação VALE3:", {
-      ticker: op.ticker,
-      quantidade: op.quantidade,
-      preco_abertura: op.preco_abertura, // ✅ Existe
-      preco_fechamento: op.preco_fechamento, // ✅ Existe
-      valor_compra: op.valor_compra,
-      valor_venda: op.valor_venda,
-      resultado: op.resultado,
-      // Campos extras para diagnóstico
-      day_trade: op.day_trade,
-      data_fechamento: op.data_fechamento,
-      status_ir: op.status_ir,
-    });
-  }
+  console.log("🔍 [DEBUG] Campos da operação:", {
+    // Campos diretos do backend
+    preco_medio_compra: op.preco_medio_compra,
+    preco_medio_venda: op.preco_medio_venda,
+    // Campos calculados
+    getPrecoMedioCompra: getPrecoMedioCompra(op),
+    getPrecoMedioVenda: getPrecoMedioVenda(op),
+  });
+
   return (
     <div
       key={rowKey}
@@ -548,7 +565,7 @@ const OperationRow = ({
                         </span>
                       </div>
                       <span className="text-sm font-bold text-green-800">
-                        {formatCurrency(calcularPrecoMedioCompra(op))}
+                        {formatCurrency(getPrecoMedioCompra(op))}
                       </span>
                     </div>
 
@@ -561,7 +578,7 @@ const OperationRow = ({
                         </span>
                       </div>
                       <span className="text-sm font-bold text-cyan-800">
-                        {formatCurrency(calcularPrecoMedioVenda(op))}
+                        {formatCurrency(getPrecoMedioVenda(op))}
                       </span>
                     </div>
                   </div>
@@ -1119,7 +1136,8 @@ const OperationRow = ({
                                                 ➖
                                               </span>
                                               <span className="text-red-800 font-medium">
-                                                Prejuízo disponível (considerando mês atual)
+                                                Prejuízo disponível
+                                                (considerando mês atual)
                                               </span>
                                             </div>
                                             <span className="font-black text-red-900 text-sm">
@@ -1316,7 +1334,10 @@ const OperationRow = ({
                         op.status_ir === "Tributável Swing") && (
                         <div className="flex items-center justify-center mt-2">
                           <Button
-                            onClick={() => handleOpenDarfModal(op)}
+                            onClick={(e) => {
+                              e.stopPropagation(); // ✅ Prevenir chamadas duplicadas por bubbling
+                              handleOpenDarfModal(op);
+                            }}
                             className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
                           >
                             <FileText className="h-4 w-4 mr-2" />
@@ -1464,6 +1485,14 @@ export default function OperacoesEncerradasTable(
         resultadoMensal: resultadoMensal ? "encontrado" : "não encontrado",
         resultadoMensalData: resultadoMensal,
       });
+
+      if (!resultadoMensal) {
+        console.warn(
+          `[DARF MODAL] Resultado mensal não encontrado para ${mesAno}. Usando fallback.`
+        );
+        // Opcional: Crie um mock temporário para testes
+        // setSelectedResultadoMensalForDarf({ mes: mesAno, /* campos mock, ex: ir_devido_day: 0 */ });
+      }
 
       setSelectedResultadoMensalForDarf(resultadoMensal || null);
     } else {
@@ -1756,6 +1785,15 @@ export default function OperacoesEncerradasTable(
 
   const hasOriginalData = operacoesFechadas.length > 0;
   const hasFilteredResults = processedOperacoes.length > 0;
+
+  // ✅ Adicionar useEffect para debug de estado do modal
+  useEffect(() => {
+    console.log("[DEBUG] Modal state:", {
+      isOpen: isDarfModalOpen,
+      op: selectedOpForDarf,
+      mensal: selectedResultadoMensalForDarf,
+    });
+  }, [isDarfModalOpen, selectedOpForDarf, selectedResultadoMensalForDarf]);
 
   if (!hasOriginalData) {
     return (
