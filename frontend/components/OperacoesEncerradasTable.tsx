@@ -104,6 +104,7 @@ const getPrecoMedioVenda = (op: OperacaoFechada): number => {
 
   return 0;
 };
+
 // Formatting helpers
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -217,6 +218,7 @@ interface OperacoesEncerradasTableProps {
 
 // Removido: interface OperacaoFechada
 
+// ✅ VERIFICAR se esta interface não referencia ResultadoMensal desnecessariamente
 interface OperationRowProps {
   op: OperacaoFechada;
   index: number;
@@ -228,7 +230,7 @@ interface OperationRowProps {
     isProfit: boolean,
     op: OperacaoFechada,
     operacoesFechadas: OperacaoFechada[]
-  ) => JSX.Element; // ✅ ATUALIZADA
+  ) => JSX.Element;
   getDarfBadge: (
     darfStatus: string | null,
     op: OperacaoFechada
@@ -241,8 +243,9 @@ interface OperationRowProps {
   darfStatusMap: Map<string, string>;
   handleOpenDarfModal: (op: OperacaoFechada) => void;
   operacoesFechadas: OperacaoFechada[];
-  resultadosMensais: ResultadoMensal[];
+  resultadosMensais?: ResultadoMensal[]; // ✅ Tornar opcional se não usado
 }
+
 // Subcomponent: Filters
 const Filters = ({
   searchTerm,
@@ -1474,34 +1477,8 @@ export default function OperacoesEncerradasTable(
     });
 
     setSelectedOpForDarf(op);
-
-    // Find the matching ResultadoMensal
-    if (resultadosMensais && Array.isArray(resultadosMensais)) {
-      const mesAno = op.data_fechamento.substring(0, 7);
-      const resultadoMensal = resultadosMensais.find((rm) => rm.mes === mesAno);
-
-      console.log("📊 [DARF MODAL] Resultado mensal encontrado:", {
-        mesAno,
-        resultadoMensal: resultadoMensal ? "encontrado" : "não encontrado",
-        resultadoMensalData: resultadoMensal,
-      });
-
-      if (!resultadoMensal) {
-        console.warn(
-          `[DARF MODAL] Resultado mensal não encontrado para ${mesAno}. Usando fallback.`
-        );
-        // Opcional: Crie um mock temporário para testes
-        // setSelectedResultadoMensalForDarf({ mes: mesAno, /* campos mock, ex: ir_devido_day: 0 */ });
-      }
-
-      setSelectedResultadoMensalForDarf(resultadoMensal || null);
-    } else {
-      setSelectedResultadoMensalForDarf(null);
-    }
-
     setIsDarfModalOpen(true);
   };
-
   // DARF status map state (default empty Map)
   const [darfStatusMap, setDarfStatusMap] = useState<Map<string, string>>(
     new Map()
@@ -1786,15 +1763,6 @@ export default function OperacoesEncerradasTable(
   const hasOriginalData = operacoesFechadas.length > 0;
   const hasFilteredResults = processedOperacoes.length > 0;
 
-  // ✅ Adicionar useEffect para debug de estado do modal
-  useEffect(() => {
-    console.log("[DEBUG] Modal state:", {
-      isOpen: isDarfModalOpen,
-      op: selectedOpForDarf,
-      mensal: selectedResultadoMensalForDarf,
-    });
-  }, [isDarfModalOpen, selectedOpForDarf, selectedResultadoMensalForDarf]);
-
   if (!hasOriginalData) {
     return (
       <Card className="border-0 shadow-xl rounded-2xl overflow-hidden">
@@ -1979,7 +1947,6 @@ export default function OperacoesEncerradasTable(
           isOpen={isDarfModalOpen}
           onClose={() => setIsDarfModalOpen(false)}
           operacaoFechada={selectedOpForDarf}
-          resultadoMensal={selectedResultadoMensalForDarf}
           tipoDarf={selectedOpForDarf.day_trade ? "daytrade" : "swing"}
           onUpdateDashboard={handleUpdateDashboard}
           onDarfStatusChange={handleDarfStatusChange}
