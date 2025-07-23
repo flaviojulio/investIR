@@ -736,7 +736,8 @@ const OperationRow = ({
                           <div className="flex items-center gap-2 mb-3">
                             <Info className="h-4 w-4 text-orange-600" />
                             <span className="text-xs font-semibold uppercase tracking-wide text-orange-600">
-                              Acúmulo de Prejuízo
+                              Acúmulo de Prejuízo (
+                              {op.day_trade ? "Day Trade" : "Swing Trade"})
                             </span>
                           </div>
                           <div className="text-xs text-orange-700 leading-relaxed space-y-3">
@@ -745,196 +746,94 @@ const OperationRow = ({
                                 ? "day trade"
                                 : "swing trade";
 
-                              // ✅ NOVO CÁLCULO: Prejuízo acumulado até esta operação
-                              const {
-                                prejuizoAnterior,
-                                prejuizoAteOperacao,
-                                operacoesAnteriores,
-                              } = calcularPrejuizoAcumuladoAteOperacao(
-                                op,
-                                operacoesFechadas
-                              );
-
-                              const mesOperacao = op.data_fechamento.substring(
-                                0,
-                                7
-                              );
-                              const diaOperacao = op.data_fechamento.substring(
-                                0,
-                                10
-                              );
-
-                              // Operações do mesmo dia para mostrar fluxo
-                              const operacoesMesmoDia = operacoesFechadas
-                                .filter(
-                                  (opDia) =>
-                                    opDia.data_fechamento.substring(0, 10) ===
-                                      diaOperacao &&
-                                    (opDia.day_trade
-                                      ? "day trade"
-                                      : "swing trade") === tipoOperacao
+                              // ✅ CORRIGIDO: Buscar prejuízo do MESMO TIPO apenas
+                              const prejuizoDisponivelCorreto = useMemo(() => {
+                                if (
+                                  !resultadosMensais ||
+                                  resultadosMensais.length === 0
                                 )
-                                .sort((a, b) =>
-                                  a.data_fechamento.localeCompare(
-                                    b.data_fechamento
-                                  )
+                                  return 0;
+
+                                const mesOperacao =
+                                  op.data_fechamento.substring(0, 7);
+
+                                // 1️⃣ Buscar o resultado mensal para esta operação
+                                const resultadoMes = resultadosMensais.find(
+                                  (rm) => rm.mes === mesOperacao
                                 );
 
-                              const isMultiplasOperacoesDia =
-                                operacoesMesmoDia.length > 1;
+                                if (resultadoMes) {
+                                  // ✅ SEGREGAÇÃO: Retorna apenas prejuízo do mesmo tipo
+                                  return op.day_trade
+                                    ? resultadoMes.prejuizo_acumulado_day || 0
+                                    : resultadoMes.prejuizo_acumulado_swing ||
+                                        0;
+                                }
 
-                              // Fluxo sequencial do dia (se houver múltiplas operações)
-                              let fluxoDia = [];
-                              if (isMultiplasOperacoesDia) {
-                                const indexOperacaoAtual =
-                                  operacoesMesmoDia.findIndex(
-                                    (opDia) =>
-                                      opDia.ticker === op.ticker &&
-                                      opDia.data_fechamento ===
-                                        op.data_fechamento &&
-                                      opDia.resultado === op.resultado
-                                  );
+                                // 2️⃣ Se não encontrou o mês, buscar o último mês anterior
+                                const mesesAnteriores = resultadosMensais
+                                  .filter((rm) => rm.mes < mesOperacao)
+                                  .sort((a, b) => b.mes.localeCompare(a.mes));
 
-                                let saldoSequencial = prejuizoAnterior; // ✅ Usar prejuízo anterior correto
-                                fluxoDia = operacoesMesmoDia.map(
-                                  (opSeq, idx) => {
-                                    const saldoAnterior = saldoSequencial;
+                                if (mesesAnteriores.length > 0) {
+                                  const ultimoMesAnterior = mesesAnteriores[0];
+                                  // ✅ SEGREGAÇÃO: Retorna apenas prejuízo do mesmo tipo
+                                  return op.day_trade
+                                    ? ultimoMesAnterior.prejuizo_acumulado_day ||
+                                        0
+                                    : ultimoMesAnterior.prejuizo_acumulado_swing ||
+                                        0;
+                                }
 
-                                    // Adicionar prejuízo ou subtrair compensação
-                                    if (opSeq.resultado < 0) {
-                                      saldoSequencial += Math.abs(
-                                        opSeq.resultado
-                                      );
-                                    } else if (
-                                      opSeq.resultado > 0 &&
-                                      saldoSequencial > 0
-                                    ) {
-                                      const compensacao = Math.min(
-                                        saldoSequencial,
-                                        opSeq.resultado
-                                      );
-                                      saldoSequencial -= compensacao;
-                                    }
-
-                                    return {
-                                      operacao: opSeq,
-                                      index: idx,
-                                      saldoAnterior,
-                                      saldoAtual: saldoSequencial,
-                                      isOperacaoAtual:
-                                        idx === indexOperacaoAtual,
-                                    };
-                                  }
-                                );
-                              }
+                                return 0;
+                              }, [op, resultadosMensais]);
 
                               return (
                                 <>
-                                  {/* Fluxo do dia (se múltiplas operações) */}
-                                  {isMultiplasOperacoesDia && (
-                                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <div className="text-purple-600">
-                                          🔄
-                                        </div>
-                                        <span className="font-semibold text-purple-800 text-xs">
-                                          {operacoesMesmoDia.length} operações
-                                          em{" "}
-                                          {diaOperacao
-                                            .split("-")
-                                            .reverse()
-                                            .join("/")}
-                                        </span>
-                                      </div>
-                                      <div className="space-y-1 max-h-32 overflow-y-auto">
-                                        {fluxoDia.map((fluxo, idx) => (
-                                          <div
-                                            key={idx}
-                                            className={`flex items-center justify-between p-2 rounded text-xs ${
-                                              fluxo.isOperacaoAtual
-                                                ? "bg-orange-100 border border-orange-300"
-                                                : "bg-white/60"
-                                            }`}
-                                          >
-                                            <div className="flex items-center gap-2">
-                                              <span
-                                                className={`w-4 h-4 rounded-full flex items-center justify-center text-xs font-bold ${
-                                                  fluxo.isOperacaoAtual
-                                                    ? "bg-orange-500 text-white"
-                                                    : "bg-purple-200 text-purple-700"
-                                                }`}
-                                              >
-                                                {idx + 1}
-                                              </span>
-                                              <span className="font-medium">
-                                                {fluxo.operacao.ticker}
-                                              </span>
-                                              <span
-                                                className={`${
-                                                  fluxo.operacao.resultado >= 0
-                                                    ? "text-green-600"
-                                                    : "text-red-600"
-                                                }`}
-                                              >
-                                                {fluxo.operacao.resultado >= 0
-                                                  ? "+"
-                                                  : ""}
-                                                {formatCurrency(
-                                                  fluxo.operacao.resultado
-                                                )}
-                                              </span>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                              <span className="text-purple-600 font-medium text-xs">
-                                                {formatCurrency(
-                                                  fluxo.saldoAnterior
-                                                )}
-                                              </span>
-                                              <span className="text-gray-400">
-                                                →
-                                              </span>
-                                              <span
-                                                className={`font-bold text-xs ${
-                                                  fluxo.isOperacaoAtual
-                                                    ? "text-orange-700"
-                                                    : "text-purple-700"
-                                                }`}
-                                              >
-                                                {formatCurrency(
-                                                  fluxo.saldoAtual
-                                                )}
-                                              </span>
-                                            </div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-
-                                  {/* ✅ CARD PRINCIPAL CORRIGIDO */}
+                                  {/* Card principal corrigido */}
                                   <div className="bg-white/60 rounded-lg p-3 border border-orange-300/50 mt-4">
                                     <div className="flex items-center justify-center gap-3 mb-2">
                                       <div className="text-center flex-1">
                                         <div className="text-xs text-orange-600 mb-1">
-                                          Prejuízo Acumulado até esta Operação
+                                          Prejuízo Acumulado{" "}
+                                          {op.day_trade
+                                            ? "Day Trade"
+                                            : "Swing Trade"}
                                         </div>
                                         <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1">
-                                          {formatCurrency(prejuizoAteOperacao)}
-                                        </div>
-                                        <div className="text-xs text-gray-600 mt-1">
-                                          {operacoesAnteriores.length > 0 ? (
-                                            <>
-                                              Anterior:{" "}
-                                              {formatCurrency(prejuizoAnterior)}{" "}
-                                              + Esta op:{" "}
-                                              {formatCurrency(
-                                                Math.abs(op.resultado)
-                                              )}
-                                            </>
-                                          ) : (
-                                            "Primeira operação com prejuízo"
+                                          {formatCurrency(
+                                            prejuizoDisponivelCorreto
                                           )}
                                         </div>
+                                        <div className="text-xs text-gray-600 mt-1">
+                                          {prejuizoDisponivelCorreto > 0
+                                            ? `Baseado nos resultados mensais oficiais`
+                                            : "Primeira operação com prejuízo"}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* ✅ NOVA SEÇÃO: Explicação da segregação */}
+                                  <div className="bg-blue-100 border border-blue-200 rounded-lg p-3">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <span className="text-blue-600">⚖️</span>
+                                      <span className="font-semibold text-blue-800 text-xs">
+                                        Regra de Segregação Fiscal
+                                      </span>
+                                    </div>
+                                    <div className="text-xs text-blue-700 space-y-1">
+                                      <div>
+                                        • <strong>Day Trade:</strong> Só
+                                        compensa prejuízos de Day Trade
+                                      </div>
+                                      <div>
+                                        • <strong>Swing Trade:</strong> Só
+                                        compensa prejuízos de Swing Trade
+                                      </div>
+                                      <div className="mt-2 p-2 bg-blue-50 rounded">
+                                        <strong>⚠️ Importante:</strong> Não há
+                                        compensação cruzada entre os tipos
                                       </div>
                                     </div>
                                   </div>
@@ -958,7 +857,7 @@ const OperationRow = ({
                                           , este saldo de{" "}
                                           <span className="font-bold text-red-700">
                                             {formatCurrency(
-                                              prejuizoAteOperacao
+                                              prejuizoDisponivelCorreto
                                             )}
                                           </span>{" "}
                                           será automaticamente descontado,
@@ -975,47 +874,27 @@ const OperationRow = ({
                         </div>
                       )}
 
-                      {/* Profit Compensation Card */}
-                      {/* Profit Compensation Card - VERSÃO SUPER DIDÁTICA COM CONTEXTO MENSAL */}
+                      {/* ✅ PROFIT COMPENSATION CARD - CORRIGIDO COM SEGREGAÇÃO */}
                       {isProfit &&
                         (op.status_ir === "Lucro Compensado" ||
                           op.status_ir === "Tributável Day Trade" ||
                           op.status_ir === "Tributável Swing") &&
                         (() => {
-                          // ✅ USAR NOVA LÓGICA: Verificar compensação no contexto mensal
-                          const mesOperacao = op.data_fechamento.substring(
-                            0,
-                            7
+                          const detalhes = calcularDetalhesCompensacao(
+                            op,
+                            operacoesFechadas
                           );
-                          const resultadoMensal = resultadosMensais.find(
-                            (rm) => rm.mes === mesOperacao
-                          );
+                          const tipoOperacao = op.day_trade
+                            ? "Day Trade"
+                            : "Swing Trade";
 
-                          const compensacaoInfoMensal =
-                            getCompensacaoInfoMensal(
-                              op,
-                              operacoesFechadas,
-                              resultadoMensal
-                            );
-
-                          // ✅ NOVA CONDIÇÃO: Mostra o card se há compensação OU se foi totalmente compensado
-                          const deveExibirCard =
-                            compensacaoInfoMensal.temCompensacao ||
-                            op.status_ir === "Lucro Compensado";
-
-                          if (!deveExibirCard) return null;
-
-                          console.log(`💡 [CARD COMPENSAÇÃO] ${op.ticker}:`, {
-                            statusIR: op.status_ir,
-                            compensacaoInfo: compensacaoInfoMensal,
-                            deveExibir: deveExibirCard,
-                          });
+                          // Se não há compensação, não mostrar o card
+                          if (detalhes.valorCompensado <= 0) return null;
 
                           return (
                             <div className="flex flex-col p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
                               <div className="flex items-center gap-2 mb-4">
-                                {compensacaoInfoMensal.ehCompensacaoTotal ||
-                                op.status_ir === "Lucro Compensado" ? (
+                                {detalhes.lucroTributavel === 0 ? (
                                   <>
                                     <CheckCircle2 className="h-5 w-5 text-green-600" />
                                     <span className="text-sm font-bold uppercase tracking-wide text-green-700">
@@ -1032,306 +911,115 @@ const OperationRow = ({
                                 )}
                               </div>
 
-                              <div className="text-xs leading-relaxed space-y-4">
-                                {(() => {
-                                  const tipoOperacao = op.day_trade
-                                    ? "day trade"
-                                    : "swing trade";
+                              <div className="text-xs leading-relaxed space-y-3">
+                                {/* ✅ ITEM 4: Card de compensação com segregação */}
+                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-yellow-600">⚖️</span>
+                                    <span className="font-semibold text-yellow-800">
+                                      Compensação {tipoOperacao}
+                                    </span>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <div className="text-xs">
+                                      • <strong>Tipo de operação:</strong>{" "}
+                                      {tipoOperacao}
+                                    </div>
+                                    <div className="text-xs">
+                                      • <strong>Lucro da operação:</strong>{" "}
+                                      {formatCurrency(detalhes.lucroOperacao)}
+                                    </div>
+                                    <div className="text-xs">
+                                      •{" "}
+                                      <strong>
+                                        Prejuízo disponível (mesmo tipo):
+                                      </strong>{" "}
+                                      {formatCurrency(
+                                        detalhes.prejuizoAnteriorDisponivel
+                                      )}
+                                    </div>
+                                    <div className="text-xs">
+                                      • <strong>Valor compensado:</strong>{" "}
+                                      {formatCurrency(detalhes.valorCompensado)}
+                                    </div>
+                                    <div className="text-xs">
+                                      •{" "}
+                                      <strong>
+                                        Lucro tributável restante:
+                                      </strong>{" "}
+                                      {formatCurrency(detalhes.lucroTributavel)}
+                                    </div>
+                                  </div>
+                                </div>
 
-                                  // ✅ USAR NOVA FUNÇÃO: Calcular com contexto mensal
-                                  const detalhes = calcularCompensacaoMensal(
-                                    op,
-                                    operacoesFechadas,
-                                    resultadoMensal
-                                  );
+                                {/* Card de explicação da regra fiscal */}
+                                <div className="text-xs bg-blue-100 border border-blue-200 rounded p-3">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span className="text-blue-600">💡</span>
+                                    <strong className="text-blue-800">
+                                      Regra Fiscal Importante:
+                                    </strong>
+                                  </div>
+                                  <div className="text-blue-700">
+                                    Prejuízos de <strong>Day Trade</strong> só
+                                    compensam lucros de{" "}
+                                    <strong>Day Trade</strong>.<br />
+                                    Prejuízos de <strong>Swing Trade</strong> só
+                                    compensam lucros de{" "}
+                                    <strong>Swing Trade</strong>.<br />
+                                    <em>
+                                      Não há compensação cruzada entre os tipos.
+                                    </em>
+                                  </div>
+                                </div>
 
-                                  return (
-                                    <>
-                                      {/* 🎯 SEÇÃO 1: RESUMO VISUAL COM ÍCONES */}
-                                      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-3">
-                                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                                            <span className="text-white text-sm font-bold">
-                                              💰
-                                            </span>
-                                          </div>
-                                          <span className="font-bold text-blue-800 text-sm">
-                                            Resumo da Operação (Contexto Mensal)
-                                          </span>
-                                        </div>
-
-                                        <div className="grid grid-cols-3 gap-3">
-                                          <div className="bg-white/80 rounded-lg p-3 text-center border border-blue-200">
-                                            <div className="text-2xl mb-1">
-                                              💵
-                                            </div>
-                                            <div className="text-blue-600 font-medium text-xs">
-                                              Lucro Operação
-                                            </div>
-                                            <div className="font-black text-green-700 text-sm">
-                                              {formatCurrency(
-                                                detalhes.lucroOperacao
-                                              )}
-                                            </div>
-                                          </div>
-
-                                          <div className="bg-white/80 rounded-lg p-3 text-center border border-blue-200">
-                                            <div className="text-2xl mb-1">
-                                              📉
-                                            </div>
-                                            <div className="text-blue-600 font-medium text-xs">
-                                              Prejuízo Disponível
-                                            </div>
-                                            <div className="font-black text-red-700 text-sm">
-                                              {formatCurrency(
-                                                detalhes.prejuizoAnteriorDisponivel
-                                              )}
-                                            </div>
-                                          </div>
-
-                                          <div className="bg-white/80 rounded-lg p-3 text-center border border-blue-200">
-                                            <div className="text-2xl mb-1">
-                                              ⚖️
-                                            </div>
-                                            <div className="text-blue-600 font-medium text-xs">
-                                              Tipo Operação
-                                            </div>
-                                            <div className="font-black text-blue-700 text-sm capitalize">
-                                              {tipoOperacao}
-                                            </div>
-                                          </div>
-                                        </div>
+                                {/* Status final */}
+                                <div
+                                  className={`rounded-xl p-3 ${
+                                    detalhes.lucroTributavel === 0
+                                      ? "bg-green-100 border border-green-300"
+                                      : "bg-blue-100 border border-blue-300"
+                                  }`}
+                                >
+                                  <div className="text-center">
+                                    <div
+                                      className={`font-bold text-sm ${
+                                        detalhes.lucroTributavel === 0
+                                          ? "text-green-800"
+                                          : "text-blue-800"
+                                      }`}
+                                    >
+                                      {detalhes.lucroTributavel === 0
+                                        ? "🎉 OPERAÇÃO TOTALMENTE COMPENSADA"
+                                        : "📊 COMPENSAÇÃO PARCIAL APLICADA"}
+                                    </div>
+                                    {detalhes.lucroTributavel === 0 ? (
+                                      <div className="text-xs text-green-700 mt-1">
+                                        Imposto de Renda:{" "}
+                                        <strong>R$ 0,00</strong>
                                       </div>
-
-                                      {/* 🧮 SEÇÃO 2: CALCULADORA VISUAL */}
-                                      <div className="bg-gradient-to-r from-orange-50 to-yellow-50 border border-orange-200 rounded-xl p-4 shadow-sm">
-                                        <div className="flex items-center gap-2 mb-3">
-                                          <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                                            <Calculator className="h-4 w-4 text-white" />
-                                          </div>
-                                          <span className="font-bold text-orange-800 text-sm">
-                                            Calculadora da Compensação (Mensal)
-                                          </span>
-                                        </div>
-
-                                        <div className="space-y-2">
-                                          {/* Linha 1: Lucro */}
-                                          <div className="flex items-center justify-between p-3 bg-green-100 rounded-lg border border-green-300">
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-green-600 text-lg">
-                                                ➕
-                                              </span>
-                                              <span className="text-green-800 font-medium">
-                                                Lucro da operação
-                                              </span>
-                                            </div>
-                                            <span className="font-black text-green-900 text-sm">
-                                              {formatCurrency(
-                                                detalhes.lucroOperacao
-                                              )}
-                                            </span>
-                                          </div>
-
-                                          {/* Linha 2: Prejuízo */}
-                                          <div className="flex items-center justify-between p-3 bg-red-100 rounded-lg border border-red-300">
-                                            <div className="flex items-center gap-2">
-                                              <span className="text-red-600 text-lg">
-                                                ➖
-                                              </span>
-                                              <span className="text-red-800 font-medium">
-                                                Prejuízo disponível
-                                                (considerando mês atual)
-                                              </span>
-                                            </div>
-                                            <span className="font-black text-red-900 text-sm">
-                                              {formatCurrency(
-                                                detalhes.prejuizoAnteriorDisponivel
-                                              )}
-                                            </span>
-                                          </div>
-
-                                          {/* Linha 3: Resultado */}
-                                          <div className="border-t-2 border-orange-300 pt-2 mt-3">
-                                            <div className="flex items-center justify-between p-3 bg-orange-100 rounded-lg border-2 border-orange-400">
-                                              <div className="flex items-center gap-2">
-                                                <span className="text-orange-600 text-lg">
-                                                  💡
-                                                </span>
-                                                <span className="text-orange-800 font-bold">
-                                                  Valor compensado
-                                                </span>
-                                              </div>
-                                              <span className="font-black text-orange-900 text-lg">
-                                                {formatCurrency(
-                                                  detalhes.valorCompensado
-                                                )}
-                                              </span>
-                                            </div>
-
-                                            {/* Lucro tributável (se houver) */}
-                                            {detalhes.lucroTributavel > 0 && (
-                                              <div className="flex items-center justify-between p-3 bg-blue-100 rounded-lg border border-blue-300 mt-2">
-                                                <div className="flex items-center gap-2">
-                                                  <span className="text-blue-600 text-lg">
-                                                    📊
-                                                  </span>
-                                                  <span className="text-blue-800 font-medium">
-                                                    Lucro tributável restante
-                                                  </span>
-                                                </div>
-                                                <span className="font-black text-blue-900 text-sm">
-                                                  {formatCurrency(
-                                                    detalhes.lucroTributavel
-                                                  )}
-                                                </span>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
+                                    ) : (
+                                      <div className="text-xs text-blue-700 mt-1">
+                                        IR sobre{" "}
+                                        {formatCurrency(
+                                          detalhes.lucroTributavel
+                                        )}{" "}
+                                        ={" "}
+                                        <strong>
+                                          {formatCurrency(
+                                            detalhes.lucroTributavel *
+                                              (op.day_trade ? 0.2 : 0.15)
+                                          )}
+                                        </strong>
                                       </div>
-
-                                      {/* 🎯 SEÇÃO 3: STATUS FINAL MELHORADO */}
-                                      <div
-                                        className={`rounded-xl p-4 border-3 shadow-lg ${
-                                          compensacaoInfoMensal.ehCompensacaoTotal ||
-                                          op.status_ir === "Lucro Compensado"
-                                            ? "bg-gradient-to-r from-green-100 to-emerald-100 border-green-400"
-                                            : "bg-gradient-to-r from-blue-100 to-indigo-100 border-blue-400"
-                                        }`}
-                                      >
-                                        <div className="text-center space-y-3">
-                                          <div className="flex items-center justify-center gap-3 mb-3">
-                                            <div
-                                              className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
-                                                compensacaoInfoMensal.ehCompensacaoTotal ||
-                                                op.status_ir ===
-                                                  "Lucro Compensado"
-                                                  ? "bg-green-500"
-                                                  : "bg-blue-500"
-                                              }`}
-                                            >
-                                              <span className="text-white">
-                                                {compensacaoInfoMensal.ehCompensacaoTotal ||
-                                                op.status_ir ===
-                                                  "Lucro Compensado"
-                                                  ? "✅"
-                                                  : "⚖️"}
-                                              </span>
-                                            </div>
-                                            <div>
-                                              <div
-                                                className={`font-black text-lg ${
-                                                  compensacaoInfoMensal.ehCompensacaoTotal ||
-                                                  op.status_ir ===
-                                                    "Lucro Compensado"
-                                                    ? "text-green-800"
-                                                    : "text-blue-800"
-                                                }`}
-                                              >
-                                                {compensacaoInfoMensal.ehCompensacaoTotal ||
-                                                op.status_ir ===
-                                                  "Lucro Compensado"
-                                                  ? "OPERAÇÃO TOTALMENTE COMPENSADA"
-                                                  : "COMPENSAÇÃO PARCIAL APLICADA"}
-                                              </div>
-                                            </div>
-                                          </div>
-
-                                          <div
-                                            className={`text-xs leading-relaxed p-3 rounded-lg ${
-                                              compensacaoInfoMensal.ehCompensacaoTotal ||
-                                              op.status_ir ===
-                                                "Lucro Compensado"
-                                                ? "bg-green-50 text-green-800 border border-green-200"
-                                                : "bg-blue-50 text-blue-800 border border-blue-200"
-                                            }`}
-                                          >
-                                            {compensacaoInfoMensal.ehCompensacaoTotal ||
-                                            op.status_ir ===
-                                              "Lucro Compensado" ? (
-                                              <>
-                                                <div className="font-bold mb-2">
-                                                  🎉 Resultado fiscal final:
-                                                </div>
-                                                <div className="space-y-1">
-                                                  <div>
-                                                    • Todo o lucro de{" "}
-                                                    <strong>
-                                                      {formatCurrency(
-                                                        detalhes.lucroOperacao
-                                                      )}
-                                                    </strong>{" "}
-                                                    foi compensado
-                                                  </div>
-                                                  <div>
-                                                    • Prejuízos disponíveis
-                                                    utilizados:{" "}
-                                                    <strong>
-                                                      {formatCurrency(
-                                                        detalhes.valorCompensado
-                                                      )}
-                                                    </strong>
-                                                  </div>
-                                                  <div>
-                                                    •{" "}
-                                                    <span className="bg-green-200 px-2 py-1 rounded font-bold">
-                                                      Imposto de Renda: R$ 0,00
-                                                    </span>
-                                                  </div>
-                                                  <div className="mt-2 text-xs bg-yellow-100 border border-yellow-200 rounded p-2">
-                                                    💡{" "}
-                                                    <strong>
-                                                      Contexto mensal:
-                                                    </strong>{" "}
-                                                    A compensação considera
-                                                    prejuízos do mês completo,
-                                                    não apenas operações
-                                                    anteriores.
-                                                  </div>
-                                                </div>
-                                              </>
-                                            ) : (
-                                              <>
-                                                <div className="font-bold mb-2">
-                                                  📊 Resultado fiscal final:
-                                                </div>
-                                                <div className="space-y-1">
-                                                  <div>
-                                                    • Compensado:{" "}
-                                                    <strong>
-                                                      {formatCurrency(
-                                                        detalhes.valorCompensado
-                                                      )}
-                                                    </strong>
-                                                  </div>
-                                                  <div>
-                                                    • Tributável:{" "}
-                                                    <strong>
-                                                      {formatCurrency(
-                                                        detalhes.lucroTributavel
-                                                      )}
-                                                    </strong>{" "}
-                                                    (sujeito a IR de{" "}
-                                                    <strong>
-                                                      {op.day_trade
-                                                        ? "20%"
-                                                        : "15%"}
-                                                    </strong>
-                                                    )
-                                                  </div>
-                                                </div>
-                                              </>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </>
-                                  );
-                                })()}
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           );
                         })()}
+
                       {/* DARF Button */}
                       {(op.status_ir === "Tributável Day Trade" ||
                         op.status_ir === "Tributável Swing") && (
@@ -1361,71 +1049,127 @@ const OperationRow = ({
 };
 
 // Subcomponent: SummaryCards
+// ✅ ATUALIZAR a interface e o card:
+interface SummaryCardsProps {
+  totalResultadoOperacoes: number;
+  totalLucros: number;
+  totalPrejuizosDisponiveis: {
+    swing: number;
+    dayTrade: number;
+    total: number;
+  }; // ✅ TIPO CORRETO: objeto ao invés de number
+  operacoesTributaveis: number;
+}
+
 const SummaryCards = ({
   totalResultadoOperacoes,
   totalLucros,
-  totalPrejuizos,
+  totalPrejuizosDisponiveis, // ✅ Agora é um objeto
   operacoesTributaveis,
-}: {
-  totalResultadoOperacoes: number;
-  totalLucros: number;
-  totalPrejuizos: number;
-  operacoesTributaveis: number;
-}) => (
-  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+}: SummaryCardsProps) => (
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    {/* Card 1: Resultado Total */}
+    <div className="bg-white/90 backdrop-blur-sm rounded-xl p-3 border border-white/30">
       <div className="flex items-center gap-2">
-        <Target className="h-4 w-4 text-white/80" />
+        <div className="h-8 w-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+          <Target className="h-4 w-4 text-indigo-600" />
+        </div>
         <div>
-          <div className="text-xs font-medium text-white/80 uppercase tracking-wide">
-            Total
-          </div>
-          <div
+          <p className="text-xs font-medium text-gray-600">Resultado Total</p>
+          <p
             className={`text-sm font-bold ${
-              totalResultadoOperacoes >= 0 ? "text-green-200" : "text-red-200"
+              totalResultadoOperacoes >= 0 ? "text-green-700" : "text-red-700"
             }`}
           >
             {formatCurrency(totalResultadoOperacoes)}
-          </div>
+          </p>
         </div>
       </div>
     </div>
-    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+
+    {/* Card 2: Total Lucros */}
+    <div className="bg-white/90 backdrop-blur-sm rounded-xl p-3 border border-white/30">
       <div className="flex items-center gap-2">
-        <TrendingUp className="h-4 w-4 text-green-300" />
+        <div className="h-8 w-8 bg-green-100 rounded-lg flex items-center justify-center">
+          <TrendingUp className="h-4 w-4 text-green-600" />
+        </div>
         <div>
-          <div className="text-xs font-medium text-white/80 uppercase tracking-wide">
-            Lucros
-          </div>
-          <div className="text-sm font-bold text-green-200">
+          <p className="text-xs font-medium text-gray-600">Total Lucros</p>
+          <p className="text-sm font-bold text-green-700">
             {formatCurrency(totalLucros)}
-          </div>
+          </p>
         </div>
       </div>
     </div>
-    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
-      <div className="flex items-center gap-2">
-        <TrendingDown className="h-4 w-4 text-red-300" />
-        <div>
-          <div className="text-xs font-medium text-white/80 uppercase tracking-wide">
-            Prejuízos
+
+    {/* Card 3: Prejuízo Acumulado - VERSÃO SEGREGADA */}
+    <div className="bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <TrendingDown className="h-4 w-4 text-red-600" />
+        <span className="text-sm font-semibold text-red-800">
+          Prejuízos Acumulados (Disponíveis)
+        </span>
+      </div>
+
+      <div className="space-y-3">
+        {/* Swing Trade */}
+        <div className="bg-white/60 rounded-lg p-3 border border-red-200">
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-xs font-medium text-red-700">
+              Swing Trade
+            </span>
+            <span className="text-sm font-bold text-red-900">
+              {formatCurrency(totalPrejuizosDisponiveis.swing)}
+            </span>
           </div>
-          <div className="text-sm font-bold text-red-200">
-            {formatCurrency(totalPrejuizos)}
+          {totalPrejuizosDisponiveis.swing > 0 && (
+            <div className="text-xs text-red-600">
+              Compensa apenas lucros de Swing Trade
+            </div>
+          )}
+        </div>
+
+        {/* Day Trade */}
+        <div className="bg-white/60 rounded-lg p-3 border border-red-200">
+          <div className="flex justify-between items-center mb-1">
+            <span className="text-xs font-medium text-red-700">Day Trade</span>
+            <span className="text-sm font-bold text-red-900">
+              {formatCurrency(totalPrejuizosDisponiveis.dayTrade)}
+            </span>
           </div>
+          {totalPrejuizosDisponiveis.dayTrade > 0 && (
+            <div className="text-xs text-red-600">
+              Compensa apenas lucros de Day Trade
+            </div>
+          )}
+        </div>
+
+        {/* Total (apenas informativo) */}
+        <hr className="border-red-300" />
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-medium text-red-700">
+            Total Disponível
+          </span>
+          <span className="text-lg font-bold text-red-900">
+            {formatCurrency(totalPrejuizosDisponiveis.total)}
+          </span>
         </div>
       </div>
     </div>
-    <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
+
+    {/* Card 4: Operações Tributáveis */}
+    <div className="bg-white/90 backdrop-blur-sm rounded-xl p-3 border border-white/30">
       <div className="flex items-center gap-2">
-        <FileText className="h-4 w-4 text-yellow-300" />
+        <div className="h-8 w-8 bg-purple-100 rounded-lg flex items-center justify-center">
+          <FileText className="h-4 w-4 text-purple-600" />
+        </div>
         <div>
-          <div className="text-xs font-medium text-white/80 uppercase tracking-wide">
-            Tributáveis
-          </div>
-          <div className="text-sm font-bold text-yellow-200">
+          <p className="text-xs font-medium text-gray-600">
+            Operações Tributáveis
+          </p>
+          <p className="text-sm font-bold text-purple-700">
             {operacoesTributaveis}
-          </div>
+          </p>
         </div>
       </div>
     </div>
@@ -1753,9 +1497,79 @@ export default function OperacoesEncerradasTable(
   const totalLucros = processedOperacoes
     .filter((op) => op.resultado > 0)
     .reduce((acc, op) => acc + op.resultado, 0);
-  const totalPrejuizos = processedOperacoes
-    .filter((op) => op.resultado < 0)
-    .reduce((acc, op) => acc + Math.abs(op.resultado), 0);
+
+  // ✅ CORREÇÃO: Segregar prejuízos DT e ST
+  const totalPrejuizosDisponiveis = useMemo(() => {
+    if (
+      !resultadosMensais ||
+      resultadosMensais.length === 0 ||
+      !operacoesComStatusCorrigido
+    )
+      return { swing: 0, dayTrade: 0, total: 0 };
+
+    // Calcular compensações usadas POR TIPO
+    const compensacoesUsadas = operacoesComStatusCorrigido.reduce(
+      (acc, op) => {
+        if (
+          op.resultado > 0 &&
+          (op.status_ir === "Lucro Compensado" ||
+            op.status_ir?.includes("Tributável"))
+        ) {
+          const detalhes = calcularDetalhesCompensacao(
+            op,
+            operacoesComStatusCorrigido
+          );
+
+          // Segregar por tipo de operação
+          if (op.day_trade) {
+            acc.dayTrade += detalhes.valorCompensado;
+          } else {
+            acc.swing += detalhes.valorCompensado;
+          }
+        }
+        return acc;
+      },
+      { swing: 0, dayTrade: 0 }
+    );
+
+    // Pegar prejuízos do último mês (SEPARADOS)
+    const ultimoMes = resultadosMensais.sort((a, b) =>
+      b.mes.localeCompare(a.mes)
+    )[0];
+
+    const prejuizoTotalSwing = ultimoMes?.prejuizo_acumulado_swing || 0;
+    const prejuizoTotalDay = ultimoMes?.prejuizo_acumulado_day || 0;
+
+    // Calcular disponível de cada tipo SEPARADAMENTE
+    const prejuizoDisponivelSwing = Math.max(
+      0,
+      prejuizoTotalSwing - compensacoesUsadas.swing
+    );
+    const prejuizoDisponivelDay = Math.max(
+      0,
+      prejuizoTotalDay - compensacoesUsadas.dayTrade
+    );
+
+    console.log("🔍 [PREJUÍZOS SEGREGADOS]", {
+      swing: {
+        total: prejuizoTotalSwing,
+        usado: compensacoesUsadas.swing,
+        disponivel: prejuizoDisponivelSwing,
+      },
+      dayTrade: {
+        total: prejuizoTotalDay,
+        usado: compensacoesUsadas.dayTrade,
+        disponivel: prejuizoDisponivelDay,
+      },
+    });
+
+    return {
+      swing: prejuizoDisponivelSwing,
+      dayTrade: prejuizoDisponivelDay,
+      total: prejuizoDisponivelSwing + prejuizoDisponivelDay,
+    };
+  }, [resultadosMensais, operacoesComStatusCorrigido]);
+
   const operacoesTributaveis = processedOperacoes.filter((op) =>
     op.status_ir?.includes("Tributável")
   ).length;
@@ -1893,7 +1707,7 @@ export default function OperacoesEncerradasTable(
             <SummaryCards
               totalResultadoOperacoes={totalResultadoOperacoes}
               totalLucros={totalLucros}
-              totalPrejuizos={totalPrejuizos}
+              totalPrejuizosDisponiveis={totalPrejuizosDisponiveis} // ✅ NOME CORRETO
               operacoesTributaveis={operacoesTributaveis}
             />
           </div>
