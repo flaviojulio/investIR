@@ -15,7 +15,7 @@ import {
   type PrejuizoAcumuladoInfo,
 } from "@/lib/fiscal-utils";
 
-import { DarfComprehensiveModal } from "@/components/DarfComprehensiveModal_simple";
+import { DarfComprehensiveModal } from "@/components/DarfComprehensiveModal";
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -1585,41 +1585,32 @@ export default function OperacoesEncerradasTable(
 
   // ✅ CORREÇÃO: Segregar prejuízos DT e ST
   const totalPrejuizosDisponiveis = useMemo(() => {
-    console.log("🔍 [DEBUG PREJUÍZOS] Iniciando cálculo:", {
-      resultadosMensais: resultadosMensais?.length || 0,
-      operacoesComStatusCorrigido: operacoesComStatusCorrigido?.length || 0,
-      resultadosMensaisDetalhado: resultadosMensais,
-    });
-
     if (
       !resultadosMensais ||
       resultadosMensais.length === 0 ||
       !operacoesComStatusCorrigido
     ) {
-      console.log("🚫 [DEBUG PREJUÍZOS] Dados insuficientes - retornando zeros");
+      console.log("⚠️ [PREJUÍZOS] Dados insuficientes para cálculo");
       return { swing: 0, dayTrade: 0, total: 0 };
     }
 
     // Log dos dados mensais
-    console.log("📊 [DEBUG PREJUÍZOS] Resultados mensais:", resultadosMensais);
+    console.log("📊 [PREJUÍZOS] Processando", resultadosMensais?.length || 0, "meses de resultados");
 
     // NOVA ABORDAGEM: Usar dados dos resultados mensais ao invés de calcular compensações
     // Os resultados mensais já têm os valores corretos calculados pelo backend
     console.log("� [DEBUG PREJUÍZOS] Resultados mensais:", resultadosMensais);
 
-    // Pegar prejuízos do último mês (SEPARADOS)
-    const ultimoMes = resultadosMensais.sort((a, b) =>
+    // Pegar prejuízos do último mês (SEPARADOS) - não modificar o array original
+    const mesesOrdenados = [...resultadosMensais].sort((a, b) =>
       b.mes.localeCompare(a.mes)
-    )[0];
+    );
+    const ultimoMes = mesesOrdenados[0];
 
-    console.log("📅 [DEBUG PREJUÍZOS] Último mês encontrado:", {
-      mes: ultimoMes?.mes,
-      prejuizo_acumulado_swing: ultimoMes?.prejuizo_acumulado_swing,
-      prejuizo_acumulado_day: ultimoMes?.prejuizo_acumulado_day,
-      tipoSwing: typeof ultimoMes?.prejuizo_acumulado_swing,
-      tipoDay: typeof ultimoMes?.prejuizo_acumulado_day,
-      objetoCompleto: ultimoMes,
-    });
+    if (!ultimoMes) {
+      console.log("⚠️ [PREJUÍZOS] Último mês não encontrado");
+      return { swing: 0, dayTrade: 0, total: 0 };
+    }
 
     // ✅ CORREÇÃO: Usar prejuízos acumulados diretamente do backend
     // O backend já calcula corretamente considerando compensações
@@ -1632,20 +1623,10 @@ export default function OperacoesEncerradasTable(
       total: Math.max(0, prejuizoDisponivelSwing) + Math.max(0, prejuizoDisponivelDay),
     };
 
-    console.log("🎯 [PREJUÍZOS RESULTADO FINAL] DETALHADO:", {
-      ultimoMes: ultimoMes?.mes,
-      valoresOriginais: {
-        swing: prejuizoDisponivelSwing,
-        day: prejuizoDisponivelDay,
-      },
-      valoresCalculados: {
-        swingMax: Math.max(0, prejuizoDisponivelSwing),
-        dayMax: Math.max(0, prejuizoDisponivelDay),
-      },
-      resultadoFinal: resultado,
-      esperado: { swing: 7500, day: 0, total: 7500 },
-      correto: resultado.total === 7500 ? '✅ CORRETO' : '❌ INCORRETO',
-    });
+    // Log resumido apenas se houver prejuízos ou em caso de erro
+    if (resultado.total > 0 || (ultimoMes.prejuizo_acumulado_swing === undefined)) {
+      console.log(`💰 [PREJUÍZOS] ${ultimoMes.mes}: Swing R$ ${resultado.swing.toLocaleString('pt-BR')}, Day R$ ${resultado.dayTrade.toLocaleString('pt-BR')}, Total R$ ${resultado.total.toLocaleString('pt-BR')}`);
+    }
 
     return resultado;
   }, [resultadosMensais, operacoesComStatusCorrigido]);

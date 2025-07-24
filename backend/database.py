@@ -54,23 +54,7 @@ sqlite3.register_adapter(date, lambda val: val.isoformat())
 # Convert DATE column string (YYYY-MM-DD) from DB to datetime.date objects when reading
 sqlite3.register_converter("date", lambda val: datetime.strptime(val.decode(), "%Y-%m-%d").date())
 
-def _transform_date_string_to_iso(date_str: Optional[str]) -> Optional[str]:
-    if not date_str or date_str.strip() == '--' or date_str.strip() == '':
-        return None
 
-    cleaned_date_str = date_str.strip()
-
-    try:
-        # Try ISO format first (YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)
-        return datetime.strptime(cleaned_date_str.split("T")[0], '%Y-%m-%d').date().isoformat()
-    except ValueError:
-        try:
-            # Try DD/MM/YYYY format
-            return datetime.strptime(cleaned_date_str, '%d/%m/%Y').date().isoformat()
-        except ValueError:
-            # If both fail, return None
-            print(f"WARNING: Could not parse date string '{date_str}' during proventos migration. Storing as NULL.")
-            return None
 
 @contextmanager
 def get_db():
@@ -267,13 +251,7 @@ def criar_tabelas():
     migrar_operacoes_fechadas()
     
     
-def date_converter(obj):
-    """
-    Conversor de data para JSON.
-    """
-    if isinstance(obj, (date, datetime)):
-        return obj.isoformat()
-    raise TypeError(f"Type {type(obj)} not serializable")
+
 
 def inserir_operacao(operacao: Dict[str, Any], usuario_id: Optional[int] = None, importacao_id: Optional[int] = None) -> int:
     """
@@ -703,13 +681,6 @@ def limpar_banco_dados() -> None:
     with get_db() as conn:
         cursor = conn.cursor()
         
-def limpar_banco_dados() -> None:
-    """
-    Remove todos os dados de TODAS as tabelas (usado por admin).
-    """
-    with get_db() as conn:
-        cursor = conn.cursor()
-        
         # Limpa todas as tabelas
         cursor.execute('DELETE FROM operacoes')
         cursor.execute('DELETE FROM resultados_mensais')
@@ -725,7 +696,7 @@ def limpar_banco_dados() -> None:
 
 def obter_operacoes_para_calculo_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     """
-    🔍 ADICIONAR DEBUG para ver o que está sendo retornado do banco
+    Obtém operações fechadas para cálculo de IR.
     """
     with get_db() as conn:
         cursor = conn.cursor()
@@ -741,30 +712,14 @@ def obter_operacoes_para_calculo_fechadas(usuario_id: int) -> List[Dict[str, Any
         ''', (usuario_id,))
         
         resultados = cursor.fetchall()
+        operacoes = [dict(row) for row in resultados]
         
-        # 🔍 DEBUG: Verificar cada linha retornada
-        operacoes = []
-        for i, row in enumerate(resultados):
-            op_dict = dict(row)
-            
-            # 🔍 LOG: Verificar dados específicos
-            if i < 3:  # Primeiras 3 operações
-                logging.info(f"🔍 [DB DEBUG] Operação {i+1} do banco:")
-                logging.info(f"   - ticker: {op_dict.get('ticker')}")
-                logging.info(f"   - data_fechamento: {op_dict.get('data_fechamento')} (tipo: {type(op_dict.get('data_fechamento'))})")
-                logging.info(f"   - data_abertura: {op_dict.get('data_abertura')} (tipo: {type(op_dict.get('data_abertura'))})")
-                logging.info(f"   - resultado: {op_dict.get('resultado')}")
-            
-            operacoes.append(op_dict)
-        
-        logging.info(f"🔍 [DB DEBUG] Total de {len(operacoes)} operações retornadas do banco")
         return operacoes
 
 
 def salvar_operacao_fechada(operacao_fechada_dict: Dict[str, Any], usuario_id: int) -> int:
     """
     Salva uma operação fechada no banco de dados.
-    CORREÇÃO: Usar apenas os campos que existem na tabela operacoes_fechadas.
     
     Args:
         operacao_fechada_dict: Dicionário com os dados da operação fechada
@@ -775,26 +730,21 @@ def salvar_operacao_fechada(operacao_fechada_dict: Dict[str, Any], usuario_id: i
     """
     import logging
     
-    # ✅ DEBUG: Verificar se day_trade está presente nos dados
+    # Garantir que day_trade seja tratado corretamente
     day_trade_value = operacao_fechada_dict.get('day_trade', False)
-    ticker = operacao_fechada_dict.get('ticker', 'N/A')
     
-    logging.info(f"🔍 [DATABASE SAVE] {ticker}: Salvando day_trade = {day_trade_value} (tipo: {type(day_trade_value)})")
-    
-    # ✅ CORREÇÃO: Garantir que data_abertura não seja None
+    # Garantir que data_abertura não seja None
     data_abertura = operacao_fechada_dict.get('data_abertura')
     data_fechamento = operacao_fechada_dict.get('data_fechamento')
     
     if data_abertura is None:
         data_abertura = data_fechamento
-        logging.warning(f"   ⚠️ {ticker}: data_abertura era None, usando data_fechamento: {data_fechamento}")
     
     if data_fechamento is None:
         from datetime import date
         data_fechamento = date.today().isoformat()
-        logging.warning(f"   ⚠️ {ticker}: data_fechamento era None, usando data atual: {data_fechamento}")
     
-    # ✅ Converter datas para string se necessário
+    # Converter datas para string se necessário
     if hasattr(data_abertura, 'isoformat'):
         data_abertura = data_abertura.isoformat()
     if hasattr(data_fechamento, 'isoformat'):
@@ -803,7 +753,6 @@ def salvar_operacao_fechada(operacao_fechada_dict: Dict[str, Any], usuario_id: i
     with get_db() as conn:
         cursor = conn.cursor()
         
-        # ✅ CORREÇÃO: Usar apenas os campos que existem na tabela
         cursor.execute('''
             INSERT INTO operacoes_fechadas (
                 usuario_id,
@@ -830,7 +779,7 @@ def salvar_operacao_fechada(operacao_fechada_dict: Dict[str, Any], usuario_id: i
             operacao_fechada_dict.get('valor_venda', 0.0),
             operacao_fechada_dict.get('resultado', 0.0),
             operacao_fechada_dict.get('percentual_lucro', 0.0),
-            1 if day_trade_value else 0,  # ✅ CRÍTICO: Converter para int (0 ou 1)
+            1 if day_trade_value else 0,
             operacao_fechada_dict.get('status_ir'),
             operacao_fechada_dict.get('preco_medio_compra', 0.0),
             operacao_fechada_dict.get('preco_medio_venda', 0.0)
@@ -838,22 +787,6 @@ def salvar_operacao_fechada(operacao_fechada_dict: Dict[str, Any], usuario_id: i
         
         new_id = cursor.lastrowid
         conn.commit()
-        
-        # ✅ VERIFICAÇÃO: Confirmar se foi salvo corretamente
-        cursor.execute('''
-            SELECT day_trade FROM operacoes_fechadas WHERE id = ?
-        ''', (new_id,))
-        
-        saved_day_trade = cursor.fetchone()
-        if saved_day_trade:
-            saved_value = saved_day_trade['day_trade']
-            expected_value = 1 if day_trade_value else 0
-            logging.info(f"✅ [DATABASE SAVE] {ticker}: Confirmado day_trade salvo como {saved_value}")
-            
-            if expected_value != saved_value:
-                logging.error(f"❌ [DATABASE SAVE] {ticker}: ERRO! Esperado {expected_value}, salvo {saved_value}")
-        else:
-            logging.error(f"❌ [DATABASE SAVE] {ticker}: Erro ao verificar operação salva")
         
         return new_id
 

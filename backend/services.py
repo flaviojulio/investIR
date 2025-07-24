@@ -128,29 +128,6 @@ def _transformar_provento_db_para_modelo(p_db: Dict[str, Any]) -> Optional[Dict[
 
     return dados_transformados
 
-def _calculate_darf_due_date(year_month_str: str) -> date:
-    """
-    Calcula a data de vencimento do DARF para um dado mês/ano de competência.
-    O vencimento é o último dia útil do mês seguinte ao mês de competência.
-    """
-    ano, mes_num = map(int, year_month_str.split('-'))
-    
-    # Calcula o próximo mês e ano
-    prox_mes_ano = ano
-    prox_mes_num = mes_num + 1
-    if prox_mes_num > 12:
-        prox_mes_num = 1
-        prox_mes_ano += 1
-        
-    # Último dia do próximo mês
-    ultimo_dia_prox_mes = calendar.monthrange(prox_mes_ano, prox_mes_num)[1]
-    vencimento = date(prox_mes_ano, prox_mes_num, ultimo_dia_prox_mes)
-    
-    # Ajusta para o último dia útil (retrocede se for sábado ou domingo)
-    while vencimento.weekday() >= 5:  # 5 = Sábado, 6 = Domingo
-        vencimento -= timedelta(days=1)
-    return vencimento
-
 def processar_operacoes(operacoes: List[OperacaoCreate], usuario_id: int) -> None:
     """
     Processa uma lista de operações, salvando-as no banco de dados
@@ -394,36 +371,25 @@ def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int, importaca
     except ValueError: # Catching the specific ValueError from database.inserir_operacao
         raise # Re-raise it to be handled by the router (e.g., converted to HTTPException)
     
-    logging.info(f"🔄 [RECÁLCULO] Iniciando recálculos após inserção de operação ID {new_operacao_id}")
+    logging.info(f"🔄 [RECÁLCULO] Iniciando após inserção de operação ID {new_operacao_id}")
     
     try:
-        # 1️⃣ PRIMEIRO: Recalcula carteira (aplicando eventos corporativos)
-        logging.info(f"📊 [RECÁLCULO] 1/4 - Recalculando carteira com eventos corporativos...")
+        # Sequência de recálculos necessários
         recalcular_carteira(usuario_id=usuario_id)
-        
-        # 2️⃣ SEGUNDO: Calcula operações fechadas (usando carteira atualizada)
-        logging.info(f"📊 [RECÁLCULO] 2/4 - Calculando operações fechadas...")
         calcular_operacoes_fechadas(usuario_id=usuario_id)
-        
-        # 3️⃣ TERCEIRO: Recalcula resultados mensais (usando operações fechadas corretas)
-        logging.info(f"📊 [RECÁLCULO] 3/4 - Recalculando resultados mensais...")
         recalcular_resultados_corrigido(usuario_id=usuario_id)
-        
-        # 4️⃣ QUARTO: Atualiza status IR das operações fechadas
-        logging.info(f"📊 [RECÁLCULO] 4/4 - Atualizando status IR...")
         atualizar_status_ir_operacoes_fechadas(usuario_id=usuario_id)
         
-        logging.info(f"✅ [RECÁLCULO] Todos os cálculos concluídos com sucesso!")
+        logging.info(f"✅ [RECÁLCULO] Concluído com sucesso")
         
     except Exception as e_recalc:
-        logging.error(f"❌ [RECÁLCULO] Erro durante recálculos: {e_recalc}", exc_info=True)
+        logging.error(f"❌ [RECÁLCULO] Erro: {e_recalc}")
     
     try:
-        logging.info(f"[PROVENTO-TRACE] Iniciando recálculo rápido de proventos para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. ORIGEM: inserir_operacao_manual")
         stats = recalcular_proventos_recebidos_rapido(usuario_id=usuario_id)
-        logging.info(f"[PROVENTO-TRACE] Recálculo rápido de proventos para usuário {usuario_id} após inserção manual concluído. Stats: {stats}")
+        logging.info(f"[PROVENTO] Recálculo concluído: {stats.get('recalculados', 0)} atualizados")
     except Exception as e_recalc:
-        logging.error(f"[PROVENTO-TRACE] ALERTA: Falha ao recalcular proventos (rápido) para usuário {usuario_id} após inserção manual de operação ID {new_operacao_id}. A operação principal foi bem-sucedida. Erro no recálculo de proventos: {e_recalc}", exc_info=True)
+        logging.error(f"[PROVENTO] Falha no recálculo: {e_recalc}")
         # Não relançar o erro para não afetar o status da criação da operação.
 
     return new_operacao_id
@@ -491,21 +457,18 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     """
     import logging
     
-    logging.info(f"🔍 [SERVICES DEBUG] calcular_operacoes_fechadas chamado via API para usuário {usuario_id}")
-    
-    logging.info(f"🔄 [CALC V8] Iniciando cálculo para usuário {usuario_id}")
+    logging.info(f" [CALC] Iniciando para usuário {usuario_id}")
     
     # Limpar operações fechadas anteriores
     limpar_operacoes_fechadas_usuario(usuario_id=usuario_id)
-    logging.info(f"   ✅ Operações fechadas antigas limpas")
 
     # Buscar operações originais
     operacoes_originais = obter_todas_operacoes(usuario_id=usuario_id)
     if not operacoes_originais:
-        logging.info(f"   ❌ Nenhuma operação encontrada para usuário {usuario_id}")
+        logging.info(f"   ❌ Nenhuma operação encontrada")
         return []
 
-    logging.info(f"   📊 {len(operacoes_originais)} operações originais carregadas")
+    logging.info(f"   📊 {len(operacoes_originais)} operações carregadas")
     
     # Aplicar eventos corporativos (código existente)
     adjusted_operacoes = _aplicar_eventos_corporativos(operacoes_originais, usuario_id)
@@ -636,13 +599,6 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
             # Converter para dict e inserir no banco
             op_dict = op_model.model_dump()
             
-            day_trade_status = op_dict.get('day_trade', 'MISSING')
-            print(f"   🔍 [DEBUG SAVE] {op_dict['ticker']}: day_trade = {day_trade_status}")
-
-            # Verificar se o campo está sendo salvo corretamente
-            logging.info(f"   📅 {op_dict['ticker']}: day_trade={day_trade_status}, "
-                        f"data_abertura={data_abertura_str}, data_fechamento={data_fechamento_str}")
-
             # Salvar no banco usando a função do database.py
             salvar_operacao_fechada(op_dict, usuario_id=usuario_id)
             operacoes_fechadas_salvas.append(op_dict)
@@ -651,9 +607,7 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
             logging.error(f"   ❌ Erro ao salvar operação fechada {getattr(op_fechada, 'ticker', 'N/A')}: {e}", exc_info=True)
             continue
     
-    logging.info(f"🔍 [SERVICES DEBUG] Retornando {len(operacoes_fechadas_salvas)} operações fechadas:")
-    for i, op in enumerate(operacoes_fechadas_salvas[:3]):
-        logging.info(f"   - Op {i+1}: {op.get('ticker')} | data_fechamento: {op.get('data_fechamento')}")
+    logging.info(f"✅ [CALC] {len(operacoes_fechadas_salvas)} operações fechadas calculadas")
     
     return operacoes_fechadas_salvas
 
@@ -1536,38 +1490,26 @@ def listar_eventos_corporativos_por_acao_service(id_acao: int) -> List[EventoCor
 
 # --- Serviço de Recálculo de Proventos Recebidos pelo Usuário (Rápido) ---
 def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
-    import logging
-    import traceback
-    
-    # Log detalhado da origem da chamada
-    stack_trace = traceback.format_stack()
-    caller_info = stack_trace[-2] if len(stack_trace) > 1 else "unknown"
-    logging.info(f"[PROVENTO-TRACE] recalcular_proventos_recebidos_rapido chamado para usuário {usuario_id}. Origem: {caller_info.strip()}")
-    
-    print(f"[Proventos Rápido] Iniciando recálculo para usuário ID: {usuario_id}")
+    logging.info(f"[PROVENTO] Iniciando recálculo rápido para usuário {usuario_id}")
 
     limpar_usuario_proventos_recebidos_db(usuario_id)
-    print(f"[Proventos Rápido] Registros antigos de proventos limpos para usuário ID: {usuario_id}")
-
     tickers = obter_tickers_operados_por_usuario(usuario_id)
-    print(f"[Proventos Rápido] Tickers operados por usuário {usuario_id}: {tickers}")
+    logging.info(f"[PROVENTO] Processando {len(tickers)} tickers")
 
     verificados = 0
     calculados = 0
     erros = 0
 
     for ticker in tickers:
-        print(f"[Proventos Rápido] Processando ticker: {ticker} para usuário {usuario_id}")
         try:
             primeira_data = obter_primeira_data_operacao_usuario(usuario_id, ticker)
             if not primeira_data:
-                print(f"[Proventos Rápido] Nenhuma operação encontrada para {ticker}. Pulando.")
                 continue
 
             proventos = obter_proventos_por_ticker(ticker)
             proventos = [p for p in proventos if p.get("data_ex") and p["data_ex"] >= primeira_data]
         except Exception as e:
-            print(f"[Proventos Rápido] Erro ao obter proventos para o ticker {ticker}: {e}")
+            logging.error(f"[PROVENTO] Erro ao obter proventos para {ticker}: {e}")
             erros += 1
             continue
 
@@ -1576,7 +1518,6 @@ def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
                 verificados += 1
                 data_ex = prov.get("data_ex")
                 if not data_ex:
-                    print(f"[Proventos Rápido] Provento ID {prov['id']} sem data_ex. Pulando.")
                     continue
 
                 if isinstance(data_ex, str):
@@ -1595,7 +1536,6 @@ def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
                     try:
                         valor_unitario = float(valor_str)
                     except ValueError:
-                        print(f"[Proventos Rápido] valor inválido no provento ID {prov['id']} do ticker {ticker}: {prov['valor']}")
                         erros += 1
                         continue
 
@@ -1604,14 +1544,15 @@ def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
                     calculados += 1
 
             except Exception as e:
-                print(f"[Proventos Rápido] Erro ao processar provento ID {prov['id'] if 'id' in prov else None} do ticker {ticker}: {e}")
+                logging.error(f"[PROVENTO] Erro ao processar provento {ticker}: {e}")
                 erros += 1
 
-    print(f"[Proventos Rápido] Fim do recálculo. Verificados: {verificados}, Calculados: {calculados}, Erros: {erros}")
+    logging.info(f"[PROVENTO] Concluído - Verificados: {verificados}, Calculados: {calculados}, Erros: {erros}")
     return {
         "verificados": verificados,
         "calculados": calculados,
-        "erros": erros
+        "erros": erros,
+        "recalculados": calculados
     }
 # --- Serviço de Recálculo de Proventos Recebidos pelo Usuário ---
 
@@ -1833,25 +1774,14 @@ def processar_importacao_com_deteccao_duplicatas(
         
         # Recalcular carteira e resultados se houve operações importadas
         if operacoes_importadas > 0:
-            logging.info(f"🔄 [RECÁLCULO IMPORTAÇÃO] Iniciando recálculos para {operacoes_importadas} operações")
+            logging.info(f"🔄 [RECÁLCULO] Processando {operacoes_importadas} operações importadas")
             
-            # 1. Recalcular carteira
-            logging.info(f"📊 [RECÁLCULO] 1/4 - Recalculando carteira...")
             recalcular_carteira(usuario_id=usuario_id)
-            
-            # 2. Calcular operações fechadas
-            logging.info(f"📊 [RECÁLCULO] 2/4 - Calculando operações fechadas...")
             calcular_operacoes_fechadas(usuario_id=usuario_id)
-            
-            # 3. Recalcular resultados mensais
-            logging.info(f"📊 [RECÁLCULO] 3/4 - Recalculando resultados mensais...")
             recalcular_resultados_corrigido(usuario_id=usuario_id)
-            
-            # 4. Atualizar status IR
-            logging.info(f"📊 [RECÁLCULO] 4/4 - Atualizando status IR...")
             atualizar_status_ir_operacoes_fechadas(usuario_id=usuario_id)
             
-            logging.info(f"✅ [RECÁLCULO IMPORTAÇÃO] Todos os cálculos concluídos!")
+            logging.info(f"✅ [RECÁLCULO] Concluído")
         
         
         # Obter dados atualizados da importação
@@ -1944,13 +1874,6 @@ def analisar_duplicatas_service(usuario_id: int) -> List[Dict[str, Any]]:
     """
     return analisar_duplicatas_usuario(usuario_id)
 
-def verificar_estrutura_importacao_service() -> Dict[str, Any]:
-    """
-    Serviço para verificar se a estrutura de importação está correta.
-    Função temporária para debug.
-    """
-    return verificar_estrutura_importacao()
-
 def limpar_importacoes_service(usuario_id: int) -> Dict[str, Any]:
     """
     Serviço para limpar todas as importações de um usuário.
@@ -1961,39 +1884,6 @@ def limpar_importacoes_service(usuario_id: int) -> Dict[str, Any]:
         "mensagem": f"{importacoes_removidas} importações foram removidas com sucesso. Agora você pode reutilizar os mesmos arquivos.",
         "importacoes_removidas": importacoes_removidas
     }
-
-def obter_preco_medio_ponderado_carteira(usuario_id: int) -> float:
-    """
-    Obtém o preço médio ponderado da carteira atual de um usuário.
-    O preço médio é calculado como o custo total das ações dividido pela quantidade total de ações.
-    Apenas ações com quantidade positiva são consideradas.
-    
-    Args:
-        usuario_id: ID do usuário.
-        
-    Returns:
-        float: Preço médio ponderado da carteira.
-    """
-    carteira_atual = obter_carteira_atual(usuario_id)
-    
-    if not carteira_atual:
-        return 0.0
-    
-    custo_total = 0.0
-    quantidade_total = 0.0
-    
-    for acao in carteira_atual:
-        quantidade = acao["quantidade"] if "quantidade" in acao else 0
-        preco_medio = acao["preco_medio"] if "preco_medio" in acao else 0.0
-        
-        if quantidade > 0:
-            custo_total += quantidade * preco_medio
-            quantidade_total += quantidade
-    
-    if quantidade_total == 0:
-        return 0.0
-    
-    return custo_total / quantidade_total
 
 def obter_prejuizo_acumulado_anterior(usuario_id: int, tipo: str, mes_atual: str = None) -> float:
     """
@@ -2050,15 +1940,7 @@ def obter_prejuizo_acumulado_anterior(usuario_id: int, tipo: str, mes_atual: str
                 ''', (usuario_id,))
         
         result = cursor.fetchone()
-        import logging
-        logging.info(f"[DEBUG] obter_prejuizo_acumulado_anterior: usuario_id={usuario_id}, tipo={tipo}, mes_atual={mes_atual}")
-        logging.info(f"[DEBUG] Query result: {result}")
-        if result:
-            logging.info(f"[DEBUG] Prejuízo retornado: {result['prejuizo'] if 'prejuizo' in result else 0.0}")
-            return result['prejuizo'] if 'prejuizo' in result else 0.0
-        else:
-            logging.info(f"[DEBUG] Prejuízo retornado: 0.0")
-            return 0.0
+        return result['prejuizo'] if result and 'prejuizo' in result else 0.0
 
 # SUBSTITUIR NO SEU services.py:
 # 1. A função calcular_operacoes_fechadas existente (está incompleta no arquivo atual)
@@ -2583,7 +2465,7 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
         logging.warning(f"Nenhuma operação fechada encontrada para usuário {usuario_id}")
         return
     
-    logging.info(f"   📊 {len(operacoes_fechadas_raw)} operações fechadas carregadas do banco")
+    logging.info(f"📊 Processando {len(operacoes_fechadas_raw)} operações fechadas")
     
     operacoes_fechadas_db = []
     for row in operacoes_fechadas_raw:
@@ -2647,14 +2529,14 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 resultados_por_mes[mes]['swing_trade']['custo_swing'] += op.get('valor_compra', 0)
                 
         except Exception as e:
-            logging.error(f"   ❌ Erro ao processar operação {op.get('ticker', 'N/A')}: {e}")
+            logging.error(f"❌ Erro ao processar operação {op.get('ticker', 'N/A')}: {e}")
             continue
 
     if not resultados_por_mes:
         logging.warning(f"Nenhum resultado mensal para processar")
         return
 
-    logging.info(f"   📊 {len(resultados_por_mes)} meses identificados: {list(resultados_por_mes.keys())}")
+    logging.info(f"📊 Processando {len(resultados_por_mes)} meses de resultados")
 
     prejuizo_acumulado_swing = 0.0
     prejuizo_acumulado_day = 0.0
@@ -2708,10 +2590,9 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
             }
             
             salvar_resultado_mensal(resultado_dict, usuario_id=usuario_id)
-            logging.info(f"   ✅ {mes_str}: Swing={resultado_swing:.2f}, Day={resultado_day:.2f}, IR_S={imposto_swing:.2f}, IR_D={imposto_day:.2f}")
             
         except Exception as e:
-            logging.error(f"   ❌ Erro ao processar mês {mes_str}: {e}")
+            logging.error(f"❌ Erro ao processar mês {mes_str}: {e}")
             continue
 
     logging.info(f"✅ [RESULTADOS V3] {len(resultados_por_mes)} meses processados e salvos")
@@ -2720,14 +2601,14 @@ def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
     """
     Calcula o status de IR para uma operação fechada baseado nos resultados mensais
     """
-    data_fechamento = op_fechada.data_fechamento
+    data_fechamento = op_fechada.get('data_fechamento')
     if isinstance(data_fechamento, str):
         mes_fechamento = data_fechamento[:7]  # YYYY-MM
     else:
         mes_fechamento = extrair_mes_data_seguro(data_fechamento)
 
     resultado_mes = resultados_mensais_map.get(mes_fechamento)
-    resultado = op_fechada.resultado
+    resultado = op_fechada.get('resultado', 0)
     
     if resultado == 0:
         return "Isento"
@@ -2736,7 +2617,7 @@ def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
         return "Prejuízo Acumulado"
 
     # Para operações com lucro (resultado > 0)
-    if op_fechada.day_trade:
+    if op_fechada.get('day_trade', False):
         # Day Trade: verificar se há IR a pagar no mês
         if resultado_mes and resultado_mes.get("ir_pagar_day", 0) > 0:
             return "Tributável Day Trade"
@@ -2778,27 +2659,6 @@ def _deve_gerar_darf_operacao(op, resultado_mensal):
         # Swing trade: não isento E há IR a pagar
         return not resultado_mensal.get('isento_swing', False) and resultado_mensal.get('ir_pagar_swing', 0) > 0
 
-def _calcular_ir_devido_operacao(op, resultado_mensal):
-    """Calcula o IR devido para uma operação"""
-    if not _deve_gerar_darf_operacao(op, resultado_mensal):
-        return 0
-    
-    if resultado_mensal:
-        if op.get('day_trade'):
-            return resultado_mensal.get('ir_devido_day', 0)
-        else:
-            return resultado_mensal.get('ir_devido_swing', 0)
-    
-    return 0
-
-def _formatar_mes_ano(mes_str):
-    """Formata mês do formato YYYY-MM para MM/YYYY"""
-    if not mes_str or len(mes_str) != 7:
-        return mes_str
-    
-    ano, mes = mes_str.split('-')
-    return f"{mes}/{ano}"
-
 def _aplicar_eventos_corporativos(operacoes_originais, usuario_id):
     """
     Função simplificada que retorna as operações como estão para teste
@@ -2819,7 +2679,6 @@ def atualizar_status_ir_operacoes_fechadas(usuario_id: int):
         bool: True se bem-sucedido, False caso contrário
     """
     import logging
-    from calculos import _calcular_status_ir_operacao_fechada
     
     logging.info(f"🎯 [STATUS IR] Atualizando status para usuário {usuario_id}")
     
@@ -2878,42 +2737,4 @@ def atualizar_status_ir_operacoes_fechadas(usuario_id: int):
     except Exception as e:
         logging.error(f"❌ Erro geral ao atualizar status IR: {e}")
         raise
-
-def _calcular_status_ir_para_operacao(op_dict, resultados_map):
-    """
-    Calcula status IR para uma operação específica
-    """
-    resultado = op_dict.get("resultado", 0)
-    data_fechamento = op_dict.get("data_fechamento", "")
-    day_trade = op_dict.get("day_trade", False)
-    
-    # Casos simples
-    if resultado == 0:
-        return "Isento"
-    
-    if resultado < 0:
-        return "Prejuízo Acumulado"
-    
-    # Extrair mês
-    mes = data_fechamento[:7] if len(data_fechamento) >= 7 else ""
-    resultado_mensal = resultados_map.get(mes)
-    
-    if not resultado_mensal:
-        # Fallback se não há resultado mensal
-        return "Tributável Day Trade" if day_trade else "Tributável Swing"
-    
-    # Lógica baseada no resultado mensal
-    if day_trade:
-        ir_pagar = resultado_mensal.get("ir_pagar_day", 0)
-        return "Tributável Day Trade" if ir_pagar > 0 else "Lucro Compensado"
-    else:
-        isento = resultado_mensal.get("isento_swing", False)
-        ir_pagar = resultado_mensal.get("ir_pagar_swing", 0)
-        
-        if isento:
-            return "Isento"
-        elif ir_pagar > 0:
-            return "Tributável Swing"
-        else:
-            return "Lucro Compensado"
 

@@ -72,7 +72,6 @@ from services import (
     reverter_importacao_service,  # NOVA LINHA
     # Duplicate analysis services
     analisar_duplicatas_service,
-    verificar_estrutura_importacao_service,
     limpar_importacoes_service
 )
 
@@ -1456,18 +1455,6 @@ async def listar_duplicatas_exatas(
 
 # ==================== DEBUG ENDPOINTS (TEMPORARY) ====================
 
-@app.get("/api/debug/importacoes-test", tags=["Debug"])
-async def test_importacoes_table():
-    """
-    Endpoint temporário para testar se a tabela de importações foi criada corretamente.
-    REMOVER ESTE ENDPOINT DEPOIS DOS TESTES.
-    """
-    try:
-        resultado = verificar_estrutura_importacao_service()
-        return resultado
-    except Exception as e:
-        return {"erro": str(e)}
-
 # ==================== UTILITY FUNCTIONS ====================
 
 def preprocess_imported_operation(op: dict) -> dict:
@@ -1537,7 +1524,11 @@ def preprocess_imported_operation(op: dict) -> dict:
         
     if "ticker" in new_op:
         original_ticker = new_op["ticker"]
-        new_op["ticker"] = str(new_op["ticker"]).replace("F", "")
+        # Remove 'F' final se houver (ex: VALE3F -> VALE3, mas BEEF3 continua BEEF3)
+        ticker_str = str(new_op["ticker"]).upper().strip()
+        if ticker_str.endswith('F') and len(ticker_str) > 1:
+            ticker_str = ticker_str[:-1]
+        new_op["ticker"] = ticker_str
         print(f"🏷️ [PREPROCESS] Ticker convertido: '{original_ticker}' -> '{new_op['ticker']}'")
         
     if "date" in new_op:
@@ -1582,44 +1573,27 @@ def _calcular_status_ir_para_frontend(op, resultado_mensal):
     else:
         is_day_trade = bool(day_trade_field)
     
-    # 🔍 DEBUG: Log para detectar inconsistências
-    print(f"🔍 [STATUS DEBUG] {ticker}: day_trade_raw={day_trade_field} → is_day_trade={is_day_trade}")
-    
-    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    # ✅ CORREÇÃO: Não forçar day_trade baseado no resultado mensal
+    # O resultado mensal agrega TODAS as operações, não uma específica
+    # Cada operação individual deve manter seu próprio tipo (day_trade ou swing)
     if resultado_mensal:
         ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
         ir_pagar_swing = resultado_mensal.get("ir_pagar_swing", 0)
-        
-        # Se há IR Day mas operação não está marcada como Day Trade, DETECTAR INCONSISTÊNCIA
-        if ir_pagar_day > 0 and not is_day_trade:
-            print(f"⚠️ [INCONSISTÊNCIA] {ticker}: IR Day > 0 ({ir_pagar_day}) mas day_trade={is_day_trade}")
-            print(f"   Forçando como Day Trade devido à inconsistência nos dados")
-            is_day_trade = True
-        
-        # Se há IR Swing mas operação está marcada como Day Trade, DETECTAR INCONSISTÊNCIA
-        if ir_pagar_swing > 0 and is_day_trade:
-            print(f"⚠️ [INCONSISTÊNCIA] {ticker}: IR Swing > 0 ({ir_pagar_swing}) mas day_trade={is_day_trade}")
-            print(f"   Mantendo como Day Trade (day_trade tem prioridade)")
     
     # Para operações com lucro
     if is_day_trade:
         # Day Trade
         if resultado_mensal and resultado_mensal.get("ir_pagar_day", 0) > 0:
-            print(f"🟠 [STATUS] {ticker}: Day Trade tributável (IR: {resultado_mensal.get('ir_pagar_day', 0)})")
             return "Tributável Day Trade"
         else:
-            print(f"🟢 [STATUS] {ticker}: Day Trade compensado")
             return "Lucro Compensado"
     else:
         # Swing Trade
         if resultado_mensal and resultado_mensal.get("isento_swing", False):
-            print(f"🟢 [STATUS] {ticker}: Swing Trade isento")
             return "Isento"
         elif resultado_mensal and resultado_mensal.get("ir_pagar_swing", 0) > 0:
-            print(f"🔵 [STATUS] {ticker}: Swing Trade tributável (IR: {resultado_mensal.get('ir_pagar_swing', 0)})")
             return "Tributável Swing"
         else:
-            print(f"🟢 [STATUS] {ticker}: Swing Trade compensado")
             return "Lucro Compensado"
 
 
@@ -1645,13 +1619,10 @@ def _deve_gerar_darf_para_frontend(op, resultado_mensal):
     else:
         is_day_trade = bool(day_trade_field)
     
-    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    # ✅ CORREÇÃO: Não forçar day_trade baseado no resultado mensal
+    # Usar o valor original da operação
     ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
     ir_pagar_swing = resultado_mensal.get("ir_pagar_swing", 0)
-    
-    # Se há IR Day mas operação não está marcada como Day Trade, corrigir
-    if ir_pagar_day > 0 and not is_day_trade:
-        is_day_trade = True
     
     # Verificar por tipo de operação
     if is_day_trade:
@@ -1788,74 +1759,6 @@ def _calcular_valor_ir_pagar(op, resultado_mensal):
         return resultado_mensal.get("ir_pagar_day", 0)
     else:
         return resultado_mensal.get("ir_pagar_swing", 0)
-
-
-def _formatar_mes_para_exibicao(mes_str):
-    """
-    Formata mês do formato YYYY-MM para exibição
-    """
-    if not mes_str or len(mes_str) != 7:
-        return mes_str
-    
-    try:
-        ano, mes = mes_str.split('-')
-        meses = {
-            "01": "Janeiro", "02": "Fevereiro", "03": "Março", "04": "Abril",
-            "05": "Maio", "06": "Junho", "07": "Julho", "08": "Agosto",
-            "09": "Setembro", "10": "Outubro", "11": "Novembro", "12": "Dezembro"
-        }
-        return f"{meses.get(mes, mes)}/{ano}"
-    except:
-        return mes_str
-
-
-def _garantir_status_darf_swing(resultado):
-    """
-    Garante que o status DARF swing esteja definido
-    """
-    status_existente = resultado.get("status_darf_swing_trade")
-    
-    if status_existente:
-        return status_existente
-    
-    # Se há IR a pagar, status é Pendente
-    if resultado.get("ir_pagar_swing", 0) > 0:
-        return "Pendente"
-    
-    return None
-
-
-def _garantir_status_darf_day(resultado):
-    """
-    Garante que o status DARF day trade esteja definido
-    """
-    status_existente = resultado.get("status_darf_day_trade")
-    
-    if status_existente:
-        return status_existente
-    
-    # Se há IR a pagar, status é Pendente
-    if resultado.get("ir_pagar_day", 0) > 0:
-        return "Pendente"
-    
-    return None
-
-
-def _tem_darf_pendente(resultado):
-    """
-    Verifica se há algum DARF pendente no resultado mensal
-    """
-    swing_pendente = (
-        resultado.get("ir_pagar_swing", 0) > 0 and 
-        resultado.get("status_darf_swing_trade", "Pendente") == "Pendente"
-    )
-    
-    day_pendente = (
-        resultado.get("ir_pagar_day", 0) > 0 and 
-        resultado.get("status_darf_day_trade", "Pendente") == "Pendente"
-    )
-    
-    return swing_pendente or day_pendente
 
 @app.get("/api/debug/operacoes-fechadas/{usuario_id}")
 async def debug_operacoes_fechadas(usuario_id: int, admin: UsuarioResponse = Depends(get_admin_user)):
