@@ -25,6 +25,7 @@ from models import (
     OperacaoFechada,
     ItemCarteira,
     ProventoInfo,
+    ProventoRecebidoUsuario,  # Corrigido nome da classe
     ResultadoTicker,
     ResumoProventoAnual,
     ResumoProventoMensal,
@@ -333,12 +334,24 @@ def gerar_darfs(usuario_id: int) -> List[Dict[str, Any]]:
     
     darfs = []
     for resultado in resultados:
-        if resultado.get("darf_codigo") and resultado.get("darf_valor", 0) > 0:
+        # DARF Swing Trade
+        if resultado.get("darf_valor_swing", 0) > 0:
             darfs.append({
-                "codigo": resultado["darf_codigo"],
-                "competencia": resultado["darf_competencia"],
-                "valor": resultado["darf_valor"],
-                "vencimento": resultado["darf_vencimento"]
+                "codigo": resultado.get("darf_codigo_swing", "6015"),  # Código padrão para swing trade
+                "competencia": resultado.get("darf_competencia_swing"),
+                "valor": resultado["darf_valor_swing"],
+                "vencimento": resultado.get("darf_vencimento_swing"),
+                "tipo": "swing"
+            })
+        
+        # DARF Day Trade
+        if resultado.get("darf_valor_day", 0) > 0:
+            darfs.append({
+                "codigo": resultado.get("darf_codigo_day", "6015"),  # Código padrão para day trade
+                "competencia": resultado.get("darf_competencia_day"),
+                "valor": resultado["darf_valor_day"],
+                "vencimento": resultado.get("darf_vencimento_day"),
+                "tipo": "daytrade"
             })
     
     return darfs
@@ -1249,7 +1262,7 @@ def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Dic
                     v = 0.0
                 p_db_dict['valor_unitario_provento'] = v
             
-            provento_validado = ProventoRecebido.model_validate(p_db_dict)
+            provento_validado = ProventoRecebidoUsuario.model_validate(p_db_dict)
             proventos_validados.append(provento_validado.model_dump())
             
         except Exception as e:
@@ -1615,7 +1628,7 @@ def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict
                 'valor_unitario_provento': valor_unit_provento,
                 'quantidade_possuida_na_data_ex': quantidade_na_data_ex,
                 'valor_total_recebido': valor_total_recebido,
-                'data_calculo': dt.now().isoformat() # Usando dt (alias de datetime) para datetime.now()
+                'data_calculo': datetime.now().isoformat() # Usando datetime para datetime.now()
             }
 
             try:
@@ -2545,6 +2558,30 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
         try:
             res_mes = resultados_por_mes[mes_str]
             
+            # Calcular competência e vencimento do DARF
+            ano, mes_num = mes_str.split('-')
+            mes_int = int(mes_num)
+            ano_int = int(ano)
+            
+            # Competência: MMAAAA (ex: 012025 para Janeiro/2025)
+            darf_competencia_swing = f"{mes_int:02d}{ano_int}"
+            darf_competencia_day = f"{mes_int:02d}{ano_int}"
+            
+            # Vencimento: último dia do mês seguinte
+            if mes_int == 12:
+                # Dezembro -> vencimento em Janeiro do ano seguinte
+                vencimento_mes = 1
+                vencimento_ano = ano_int + 1
+            else:
+                vencimento_mes = mes_int + 1
+                vencimento_ano = ano_int
+            
+            # Último dia do mês de vencimento
+            import calendar
+            ultimo_dia = calendar.monthrange(vencimento_ano, vencimento_mes)[1]
+            darf_vencimento_swing = date(vencimento_ano, vencimento_mes, ultimo_dia)
+            darf_vencimento_day = date(vencimento_ano, vencimento_mes, ultimo_dia)
+            
             # Cálculos swing trade
             vendas_swing = res_mes['swing_trade']['vendas_total']
             isento_swing = vendas_swing <= 20000.0
@@ -2576,6 +2613,10 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
                 "ir_devido_swing": imposto_swing,
                 "ir_pagar_swing": imposto_swing if imposto_swing >= 10 else 0,
+                "darf_codigo_swing": "6015",  # Código fixo para swing trade
+                "darf_competencia_swing": darf_competencia_swing,
+                "darf_vencimento_swing": darf_vencimento_swing,
+                "darf_valor_swing": imposto_swing if imposto_swing >= 10 else 0,
                 
                 "vendas_day_trade": res_mes['day_trade']['vendas_total'],
                 "custo_day_trade": res_mes['day_trade']['custo_day_trade'],
@@ -2584,6 +2625,10 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 "irrf_day": irrf_day,
                 "ir_devido_day": imposto_bruto_day,
                 "ir_pagar_day": imposto_day if imposto_day >= 10 else 0,
+                "darf_codigo_day": "6015",  # Código fixo para day trade
+                "darf_competencia_day": darf_competencia_day,
+                "darf_vencimento_day": darf_vencimento_day,
+                "darf_valor_day": imposto_day if imposto_day >= 10 else 0,
                 
                 "status_darf_swing_trade": "Pendente" if imposto_swing >= 10 else None,
                 "status_darf_day_trade": "Pendente" if imposto_day >= 10 else None,
