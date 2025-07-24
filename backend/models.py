@@ -554,15 +554,6 @@ class OperacaoUpdate(BaseModel):
     price: Optional[float] = None
     fees: Optional[float] = None
 
-class ResultadoMensal(BaseModel):
-    mes: str
-    vendas_swing: float = 0.0
-    custo_swing: float = 0.0
-    ganho_liquido_swing: float = 0.0
-    isento_swing: bool = False
-    ir_devido_swing: float = 0.0
-    ir_pagar_swing: float = 0.0
-
 class OperacaoFechada(BaseModel):
     id: Optional[int] = None
     data_abertura: date

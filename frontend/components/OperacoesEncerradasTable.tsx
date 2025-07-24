@@ -4,6 +4,7 @@ import {
   getCompensacaoInfo,
   calcularPrejuizoAcumuladoAteOperacao,
   calcularDetalhesCompensacao,
+  calcularPrejuizoRestanteAposCompensacao, // ✅ NOVA FUNÇÃO
   useOperacoesComStatusCorrigido,
   deveGerarDarf,
   debugLogicaFiscal,
@@ -13,6 +14,8 @@ import {
   type DetalhesCompensacao,
   type PrejuizoAcumuladoInfo,
 } from "@/lib/fiscal-utils";
+
+import { DarfComprehensiveModal } from "@/components/DarfComprehensiveModal_simple";
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -186,7 +189,7 @@ const getDarfStatusForOperation = (
   if (darfStatusMap && darfStatusMap.has(operationKey)) {
     const status = darfStatusMap.get(operationKey);
     console.log("🎯 [DARF STATUS] Status do mapa encontrado:", status);
-    return status;
+    return status || null;
   }
 
   // ✅ PRIORIDADE 2: Status do backend
@@ -230,16 +233,17 @@ interface OperationRowProps {
     isProfit: boolean,
     op: OperacaoFechada,
     operacoesFechadas: OperacaoFechada[]
-  ) => JSX.Element;
+  ) => React.JSX.Element;
   getDarfBadge: (
     darfStatus: string | null,
     op: OperacaoFechada
-  ) => JSX.Element | null;
+  ) => React.JSX.Element | null;
   getDarfStatusForOperation: (
     op: OperacaoFechada,
     darfStatusMap?: Map<string, string>,
     resultadosMensais?: ResultadoMensal[]
   ) => string | null;
+  shouldShowDarf: (op: OperacaoFechada) => boolean;
   darfStatusMap: Map<string, string>;
   handleOpenDarfModal: (op: OperacaoFechada) => void;
   operacoesFechadas: OperacaoFechada[];
@@ -398,6 +402,7 @@ const OperationRow = ({
   getStatusBadge,
   getDarfBadge,
   getDarfStatusForOperation,
+  shouldShowDarf,
   darfStatusMap,
   handleOpenDarfModal,
   operacoesFechadas,
@@ -485,13 +490,12 @@ const OperationRow = ({
         <div className="col-span-3 flex items-center justify-start">
           <div className="flex items-center gap-2 min-h-[32px]">
             {getStatusBadge(
-              op.resultado === 0 ? "Isento" : op.status_ir || "",
+              "", // Não precisamos mais passar status, função usa getFinalStatus
               isProfit,
               op,
               operacoesFechadas
             )}
-            {(op.status_ir === "Tributável Day Trade" ||
-              op.status_ir === "Tributável Swing") &&
+            {shouldShowDarf(op) &&
               getDarfBadge(
                 getDarfStatusForOperation(op, darfStatusMap, resultadosMensais), // ✅ Ordem correta
                 op
@@ -688,13 +692,12 @@ const OperationRow = ({
                         {/* Badges */}
                         <div className="flex items-center gap-3 mb-3 flex-wrap">
                           {getStatusBadge(
-                            op.status_ir || "",
+                            "", // Não precisamos mais passar status, função usa getFinalStatus
                             isProfit,
                             op,
                             operacoesFechadas
                           )}
-                          {(op.status_ir === "Tributável Day Trade" ||
-                            op.status_ir === "Tributável Swing") &&
+                          {shouldShowDarf(op) &&
                             getDarfBadge(
                               getDarfStatusForOperation(
                                 op,
@@ -746,94 +749,79 @@ const OperationRow = ({
                                 ? "day trade"
                                 : "swing trade";
 
-                              // ✅ CORRIGIDO: Buscar prejuízo do MESMO TIPO apenas
-                              const prejuizoDisponivelCorreto = useMemo(() => {
-                                if (
-                                  !resultadosMensais ||
-                                  resultadosMensais.length === 0
-                                )
-                                  return 0;
-
-                                const mesOperacao =
-                                  op.data_fechamento.substring(0, 7);
-
-                                // 1️⃣ Buscar o resultado mensal para esta operação
-                                const resultadoMes = resultadosMensais.find(
-                                  (rm) => rm.mes === mesOperacao
-                                );
-
-                                if (resultadoMes) {
-                                  // ✅ SEGREGAÇÃO: Retorna apenas prejuízo do mesmo tipo
-                                  return op.day_trade
-                                    ? resultadoMes.prejuizo_acumulado_day || 0
-                                    : resultadoMes.prejuizo_acumulado_swing ||
-                                        0;
-                                }
-
-                                // 2️⃣ Se não encontrou o mês, buscar o último mês anterior
-                                const mesesAnteriores = resultadosMensais
-                                  .filter((rm) => rm.mes < mesOperacao)
-                                  .sort((a, b) => b.mes.localeCompare(a.mes));
-
-                                if (mesesAnteriores.length > 0) {
-                                  const ultimoMesAnterior = mesesAnteriores[0];
-                                  // ✅ SEGREGAÇÃO: Retorna apenas prejuízo do mesmo tipo
-                                  return op.day_trade
-                                    ? ultimoMesAnterior.prejuizo_acumulado_day ||
-                                        0
-                                    : ultimoMesAnterior.prejuizo_acumulado_swing ||
-                                        0;
-                                }
-
-                                return 0;
-                              }, [op, resultadosMensais]);
+                              // ✅ NOVO: Usar função específica para calcular prejuízo acumulado até esta operação
+                              const prejuizoInfo = calcularPrejuizoAcumuladoAteOperacao(
+                                op,
+                                operacoesFechadas
+                              );
 
                               return (
                                 <>
-                                  {/* Card principal corrigido */}
+                                  {/* Card principal com prejuízo acumulado até esta operação */}
                                   <div className="bg-white/60 rounded-lg p-3 border border-orange-300/50 mt-4">
                                     <div className="flex items-center justify-center gap-3 mb-2">
                                       <div className="text-center flex-1">
                                         <div className="text-xs text-orange-600 mb-1">
-                                          Prejuízo Acumulado{" "}
-                                          {op.day_trade
-                                            ? "Day Trade"
-                                            : "Swing Trade"}
+                                          Prejuízo Acumulado até esta Operação{" "}
+                                          ({op.day_trade ? "Day Trade" : "Swing Trade"})
                                         </div>
                                         <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1">
-                                          {formatCurrency(
-                                            prejuizoDisponivelCorreto
-                                          )}
+                                          {formatCurrency(prejuizoInfo.prejuizoAteOperacao)}
                                         </div>
                                         <div className="text-xs text-gray-600 mt-1">
-                                          {prejuizoDisponivelCorreto > 0
-                                            ? `Baseado nos resultados mensais oficiais`
-                                            : "Primeira operação com prejuízo"}
+                                          {prejuizoInfo.operacoesAnteriores.length > 0
+                                            ? `Baseado em ${prejuizoInfo.operacoesAnteriores.length + 1} operação(ões) ${tipoOperacao}`
+                                            : `Primeira operação ${tipoOperacao} com prejuízo`}
                                         </div>
                                       </div>
                                     </div>
+                                    
+                                    {/* Detalhamento adicional se houver operações anteriores */}
+                                    {prejuizoInfo.operacoesAnteriores.length > 0 && (
+                                      <div className="mt-3 pt-3 border-t border-orange-200">
+                                        <div className="grid grid-cols-2 gap-3 text-xs">
+                                          <div className="text-center">
+                                            <div className="text-orange-600">Prejuízo Anterior Disponível</div>
+                                            <div className="font-semibold text-orange-800">
+                                              {formatCurrency(prejuizoInfo.prejuizoAnterior)}
+                                            </div>
+                                            <div className="text-xs text-gray-500 mt-1">
+                                              (Já descontadas compensações)
+                                            </div>
+                                          </div>
+                                          <div className="text-center">
+                                            <div className="text-red-600">Esta Operação</div>
+                                            <div className="font-semibold text-red-800">
+                                              {formatCurrency(Math.abs(op.resultado))}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
 
-                                  {/* ✅ NOVA SEÇÃO: Explicação da segregação */}
+                                  {/* ✅ SEÇÃO: Explicação da segregação por tipo */}
                                   <div className="bg-blue-100 border border-blue-200 rounded-lg p-3">
                                     <div className="flex items-center gap-2 mb-2">
-                                      <span className="text-blue-600">⚖️</span>
-                                      <span className="font-semibold text-blue-800 text-xs">
-                                        Regra de Segregação Fiscal
+                                      <Info className="h-3 w-3 text-blue-600" />
+                                      <span className="text-xs font-semibold text-blue-700">
+                                        Como o Prejuízo é Calculado
                                       </span>
                                     </div>
-                                    <div className="text-xs text-blue-700 space-y-1">
+                                    <div className="text-xs text-blue-700 space-y-2">
                                       <div>
-                                        • <strong>Day Trade:</strong> Só
-                                        compensa prejuízos de Day Trade
+                                        • <strong>Segregação por tipo:</strong> Prejuízos {op.day_trade ? "Day Trade" : "Swing Trade"} só 
+                                        compensam lucros de <strong>{op.day_trade ? "Day Trade" : "Swing Trade"}</strong>
                                       </div>
                                       <div>
-                                        • <strong>Swing Trade:</strong> Só
-                                        compensa prejuízos de Swing Trade
+                                        • <strong>Ordem cronológica:</strong> Calculamos operação por operação, na sequência temporal
                                       </div>
-                                      <div className="mt-2 p-2 bg-blue-50 rounded">
-                                        <strong>⚠️ Importante:</strong> Não há
-                                        compensação cruzada entre os tipos
+                                      <div>
+                                        • <strong>Compensação automática:</strong> Quando há um lucro, ele consome prejuízos anteriores disponíveis
+                                      </div>
+                                      <div className="bg-blue-50 p-2 rounded mt-2">
+                                        <strong>📊 Valor mostrado:</strong> Prejuízo líquido disponível até esta operação, 
+                                        já descontadas todas as compensações que ocorreram antes dela.
                                       </div>
                                     </div>
                                   </div>
@@ -856,9 +844,7 @@ const OperationRow = ({
                                           </span>
                                           , este saldo de{" "}
                                           <span className="font-bold text-red-700">
-                                            {formatCurrency(
-                                              prejuizoDisponivelCorreto
-                                            )}
+                                            {formatCurrency(prejuizoInfo.prejuizoAteOperacao)}
                                           </span>{" "}
                                           será automaticamente descontado,
                                           reduzindo ou eliminando o imposto a
@@ -890,6 +876,12 @@ const OperationRow = ({
 
                           // Se não há compensação, não mostrar o card
                           if (detalhes.valorCompensado <= 0) return null;
+
+                          // ✅ NOVA FUNCIONALIDADE: Calcular prejuízo restante
+                          const infoRestante = calcularPrejuizoRestanteAposCompensacao(
+                            op,
+                            operacoesFechadas
+                          );
 
                           return (
                             <div className="flex flex-col p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
@@ -943,6 +935,17 @@ const OperationRow = ({
                                       {formatCurrency(detalhes.valorCompensado)}
                                     </div>
                                     <div className="text-xs">
+                                      • <strong>Prejuízo restante ({infoRestante.tipoOperacao}):</strong>{" "}
+                                      <span className={`font-semibold ${
+                                        infoRestante.prejuizoRestante > 0 
+                                          ? "text-orange-700" 
+                                          : "text-green-700"
+                                      }`}>
+                                        {formatCurrency(infoRestante.prejuizoRestante)}
+                                        {infoRestante.prejuizoRestante === 0 && " ✅"}
+                                      </span>
+                                    </div>
+                                    <div className="text-xs">
                                       •{" "}
                                       <strong>
                                         Lucro tributável restante:
@@ -972,6 +975,41 @@ const OperationRow = ({
                                     </em>
                                   </div>
                                 </div>
+
+                                {/* ✅ NOVO: Card informativo sobre prejuízo restante */}
+                                {infoRestante.prejuizoRestante > 0 && (
+                                  <div className="text-xs bg-orange-50 border border-orange-200 rounded p-3">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-orange-600">💰</span>
+                                      <strong className="text-orange-800">
+                                        Prejuízo Ainda Disponível:
+                                      </strong>
+                                    </div>
+                                    <div className="text-orange-700">
+                                      Após esta compensação, você ainda tem{" "}
+                                      <strong>{formatCurrency(infoRestante.prejuizoRestante)}</strong>{" "}
+                                      em prejuízos de <strong>{infoRestante.tipoOperacao}</strong>{" "}
+                                      disponíveis para compensar futuros lucros do mesmo tipo.
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Card quando não há mais prejuízo */}
+                                {infoRestante.prejuizoRestante === 0 && infoRestante.prejuizoAntes > 0 && (
+                                  <div className="text-xs bg-green-50 border border-green-200 rounded p-3">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="text-green-600">✅</span>
+                                      <strong className="text-green-800">
+                                        Prejuízo Totalmente Utilizado:
+                                      </strong>
+                                    </div>
+                                    <div className="text-green-700">
+                                      Esta operação utilizou todo o prejuízo acumulado de{" "}
+                                      <strong>{infoRestante.tipoOperacao}</strong>. Não há mais{" "}
+                                      prejuízos deste tipo disponíveis para compensações futuras.
+                                    </div>
+                                  </div>
+                                )}
 
                                 {/* Status final */}
                                 <div
@@ -1021,8 +1059,7 @@ const OperationRow = ({
                         })()}
 
                       {/* DARF Button */}
-                      {(op.status_ir === "Tributável Day Trade" ||
-                        op.status_ir === "Tributável Swing") && (
+                      {shouldShowDarf(op) && (
                         <div className="flex items-center justify-center mt-2">
                           <Button
                             onClick={(e) => {
@@ -1032,7 +1069,7 @@ const OperationRow = ({
                             className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
                           >
                             <FileText className="h-4 w-4 mr-2" />
-                            Ver Detalhes do DARF
+                            Ver Detalhes Completos do DARF
                           </Button>
                         </div>
                       )}
@@ -1102,59 +1139,48 @@ const SummaryCards = ({
       </div>
     </div>
 
-    {/* Card 3: Prejuízo Acumulado - VERSÃO SEGREGADA */}
-    <div className="bg-gradient-to-br from-red-50 to-orange-50 border border-red-200 rounded-xl p-4">
+    {/* Card 3: Prejuízos Disponíveis para Compensação - VERSÃO REFORMULADA */}
+    <div className="bg-white/90 backdrop-blur-sm rounded-xl p-3 border border-white/30">
       <div className="flex items-center gap-2 mb-3">
-        <TrendingDown className="h-4 w-4 text-red-600" />
-        <span className="text-sm font-semibold text-red-800">
-          Prejuízos Acumulados (Disponíveis)
-        </span>
-      </div>
-
-      <div className="space-y-3">
-        {/* Swing Trade */}
-        <div className="bg-white/60 rounded-lg p-3 border border-red-200">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-medium text-red-700">
-              Swing Trade
-            </span>
-            <span className="text-sm font-bold text-red-900">
-              {formatCurrency(totalPrejuizosDisponiveis.swing)}
-            </span>
-          </div>
-          {totalPrejuizosDisponiveis.swing > 0 && (
-            <div className="text-xs text-red-600">
-              Compensa apenas lucros de Swing Trade
-            </div>
-          )}
+        <div className="h-8 w-8 bg-red-100 rounded-lg flex items-center justify-center">
+          <TrendingDown className="h-4 w-4 text-red-600" />
         </div>
-
-        {/* Day Trade */}
-        <div className="bg-white/60 rounded-lg p-3 border border-red-200">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-medium text-red-700">Day Trade</span>
-            <span className="text-sm font-bold text-red-900">
-              {formatCurrency(totalPrejuizosDisponiveis.dayTrade)}
-            </span>
-          </div>
-          {totalPrejuizosDisponiveis.dayTrade > 0 && (
-            <div className="text-xs text-red-600">
-              Compensa apenas lucros de Day Trade
-            </div>
-          )}
-        </div>
-
-        {/* Total (apenas informativo) */}
-        <hr className="border-red-300" />
-        <div className="flex justify-between items-center">
-          <span className="text-xs font-medium text-red-700">
-            Total Disponível
-          </span>
-          <span className="text-lg font-bold text-red-900">
+        <div className="flex-1">
+          <p className="text-xs font-medium text-gray-600">Prejuízos p/ Compensação</p>
+          <p className="text-sm font-bold text-red-700">
             {formatCurrency(totalPrejuizosDisponiveis.total)}
-          </span>
+          </p>
         </div>
       </div>
+
+      {/* Detalhamento por tipo */}
+      {(totalPrejuizosDisponiveis.swing > 0 || totalPrejuizosDisponiveis.dayTrade > 0) && (
+        <div className="space-y-2 mt-2 pt-2 border-t border-gray-200">
+          {totalPrejuizosDisponiveis.swing > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-blue-600 flex items-center gap-1">
+                <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                Swing
+              </span>
+              <span className="text-xs font-semibold text-blue-700">
+                {formatCurrency(totalPrejuizosDisponiveis.swing)}
+              </span>
+            </div>
+          )}
+          {totalPrejuizosDisponiveis.dayTrade > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-orange-600 flex items-center gap-1">
+                <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                Day Trade
+              </span>
+              <span className="text-xs font-semibold text-orange-700">
+                {formatCurrency(totalPrejuizosDisponiveis.dayTrade)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
 
     {/* Card 4: Operações Tributáveis */}
@@ -1237,15 +1263,18 @@ export default function OperacoesEncerradasTable(
     let text = "DARF";
     let icon = "📄";
 
+    // Extrair mês da data de fechamento e converter para 3 letras
+    const mesOperacao = getMonthName(op.data_fechamento);
+
     if (darfStatus === "pago") {
       color = "green";
       bg = "bg-green-100";
-      text = "DARF Pago";
+      text = `DARF ${mesOperacao}`;
       icon = "✅";
     } else if (darfStatus === "pendente") {
       color = "amber";
       bg = "bg-amber-100";
-      text = "DARF Pendente";
+      text = `DARF ${mesOperacao}`;
       icon = "⏳";
     } else if (darfStatus === "vencido") {
       color = "red";
@@ -1273,27 +1302,21 @@ export default function OperacoesEncerradasTable(
   ) => {
     const badges = [];
 
-    // ✅ NOVA VERIFICAÇÃO: Confirmar se realmente deve ser tributável
-    let statusFinal = status;
-    if (
-      isProfit &&
-      (status === "Tributável Day Trade" || status === "Tributável Swing")
-    ) {
-      // Verificar com o resultado mensal se realmente deve tributar
-      const mesOperacao = op.data_fechamento.substring(0, 7);
-      const resultadoMensal = resultadosMensais.find(
-        (rm) => rm.mes === mesOperacao
-      );
+    // ✅ USAR LÓGICA UNIFICADA para determinar status final
+    const statusFinal = getFinalStatus(op);
+    
+    // ✅ SIMPLIFICAÇÃO: Backend já corrigiu, badges mais limpos sem DT/ST
+    const isDayTradeReal = Boolean(op.day_trade);
+    
+    console.log(`🎯 [GET STATUS BADGE] ${op.ticker}:`, {
+      statusPassado: status,
+      statusDaApi: op.status_ir,
+      statusFinal,
+      isProfit,
+      isDayTradeReal
+    });
 
-      if (resultadoMensal && !deveGerarDarf(op, resultadoMensal)) {
-        statusFinal = "Lucro Compensado";
-        console.log(
-          `🔄 [BADGE CORRIGIDO] ${op.ticker}: ${status} → ${statusFinal}`
-        );
-      }
-    }
-
-    // Badge principal do status fiscal
+    // Badge principal do status fiscal - versão simplificada
     let color = "gray";
     let bg = "bg-gray-100";
     let text = statusFinal;
@@ -1320,6 +1343,8 @@ export default function OperacoesEncerradasTable(
       text = "Compensado";
     }
 
+    console.log(`🎨 [BADGE VISUAL] ${op.ticker}: ${statusFinal} → ${text} (${color})`);
+
     // Badge principal
     badges.push(
       <span
@@ -1330,7 +1355,7 @@ export default function OperacoesEncerradasTable(
       </span>
     );
 
-    // ✅ NOVA LÓGICA: Badge adicional para compensação parcial
+    // ✅ LÓGICA EXISTENTE: Badge adicional para compensação parcial
     if (
       isProfit &&
       (statusFinal === "Tributável Day Trade" ||
@@ -1378,6 +1403,66 @@ export default function OperacoesEncerradasTable(
     operacoesFechadas,
     resultadosMensais
   );
+
+  // ✅ LOG PARA DEBUG: Ver dados que chegam do banco
+  React.useEffect(() => {
+    if (operacoesComStatusCorrigido && operacoesComStatusCorrigido.length > 0) {
+      console.log('📊 [DADOS DO BANCO] Todas as operações:', operacoesComStatusCorrigido.map(op => ({
+        ticker: op.ticker,
+        status_ir: op.status_ir,
+        resultado: op.resultado,
+        data_fechamento: op.data_fechamento,
+        day_trade: op.day_trade
+      })));
+      
+      // Filtrar apenas operações com "Lucro Compensado"
+      const compensadas = operacoesComStatusCorrigido.filter(op => op.status_ir === "Lucro Compensado");
+      if (compensadas.length > 0) {
+        console.log('💚 [OPERAÇÕES COMPENSADAS] Encontradas no banco:', compensadas);
+      }
+    }
+  }, [operacoesComStatusCorrigido]);
+
+  // Helper to determine final status of operation (unified logic)
+  const getFinalStatus = (op: OperacaoFechada): string => {
+    const statusApi = op.status_ir || "";
+    
+    console.log(`🔍 [GET FINAL STATUS] ${op.ticker}:`, {
+      statusDaApi: statusApi,
+      resultado: op.resultado,
+      data_fechamento: op.data_fechamento,
+      day_trade: op.day_trade,
+      deve_gerar_darf: op.deve_gerar_darf,
+      valor_ir_pagar: op.valor_ir_pagar,
+      prejuizo_anterior_disponivel: op.prejuizo_anterior_disponivel
+    });
+    
+    // ✅ CORREÇÃO FINAL: Confiar COMPLETAMENTE nos dados da API
+    // O backend já fez TODA a lógica de compensação, detecção de inconsistências
+    // e cálculo correto. O frontend só deve exibir os dados.
+    
+    console.log(`✅ [STATUS FINAL] ${op.ticker}: Usando status da API → ${statusApi}`);
+    return statusApi; // Usar status já calculado e corrigido da API
+  };
+
+  // Helper to determine if operation should show DARF
+  const shouldShowDarf = (op: OperacaoFechada): boolean => {
+    const finalStatus = getFinalStatus(op);
+    
+    console.log(`🚨 [SHOULD SHOW DARF] ${op.ticker}:`, {
+      finalStatus,
+      deve_gerar_darf: op.deve_gerar_darf,
+      valor_ir_pagar: op.valor_ir_pagar,
+      statusDaApi: op.status_ir
+    });
+    
+    // ✅ CORREÇÃO FINAL: Confiar no campo 'deve_gerar_darf' da API
+    // O backend já calculou tudo corretamente
+    const deveGerar = Boolean(op.deve_gerar_darf);
+    
+    console.log(`✅ [SHOULD SHOW DARF] ${op.ticker}: deve_gerar_darf=${deveGerar} → ${deveGerar ? 'true' : 'false'}`);
+    return deveGerar;
+  };
 
   // States and memos...
   // (The rest of the state declarations, useEffects, and helpers remain the same as in the original code, but now we use subcomponents in the render.)
@@ -1470,8 +1555,8 @@ export default function OperacoesEncerradasTable(
     const ops = [...processedOperacoes];
     if (!sortConfig.key) return ops;
     return ops.sort((a, b) => {
-      let aValue = a[sortConfig.key];
-      let bValue = b[sortConfig.key];
+      let aValue = (a as any)[sortConfig.key];
+      let bValue = (b as any)[sortConfig.key];
       if (typeof aValue === "string" && typeof bValue === "string") {
         if (sortConfig.direction === "ascending") {
           return aValue.localeCompare(bValue);
@@ -1500,74 +1585,69 @@ export default function OperacoesEncerradasTable(
 
   // ✅ CORREÇÃO: Segregar prejuízos DT e ST
   const totalPrejuizosDisponiveis = useMemo(() => {
+    console.log("🔍 [DEBUG PREJUÍZOS] Iniciando cálculo:", {
+      resultadosMensais: resultadosMensais?.length || 0,
+      operacoesComStatusCorrigido: operacoesComStatusCorrigido?.length || 0,
+      resultadosMensaisDetalhado: resultadosMensais,
+    });
+
     if (
       !resultadosMensais ||
       resultadosMensais.length === 0 ||
       !operacoesComStatusCorrigido
-    )
+    ) {
+      console.log("🚫 [DEBUG PREJUÍZOS] Dados insuficientes - retornando zeros");
       return { swing: 0, dayTrade: 0, total: 0 };
+    }
 
-    // Calcular compensações usadas POR TIPO
-    const compensacoesUsadas = operacoesComStatusCorrigido.reduce(
-      (acc, op) => {
-        if (
-          op.resultado > 0 &&
-          (op.status_ir === "Lucro Compensado" ||
-            op.status_ir?.includes("Tributável"))
-        ) {
-          const detalhes = calcularDetalhesCompensacao(
-            op,
-            operacoesComStatusCorrigido
-          );
+    // Log dos dados mensais
+    console.log("📊 [DEBUG PREJUÍZOS] Resultados mensais:", resultadosMensais);
 
-          // Segregar por tipo de operação
-          if (op.day_trade) {
-            acc.dayTrade += detalhes.valorCompensado;
-          } else {
-            acc.swing += detalhes.valorCompensado;
-          }
-        }
-        return acc;
-      },
-      { swing: 0, dayTrade: 0 }
-    );
+    // NOVA ABORDAGEM: Usar dados dos resultados mensais ao invés de calcular compensações
+    // Os resultados mensais já têm os valores corretos calculados pelo backend
+    console.log("� [DEBUG PREJUÍZOS] Resultados mensais:", resultadosMensais);
 
     // Pegar prejuízos do último mês (SEPARADOS)
     const ultimoMes = resultadosMensais.sort((a, b) =>
       b.mes.localeCompare(a.mes)
     )[0];
 
-    const prejuizoTotalSwing = ultimoMes?.prejuizo_acumulado_swing || 0;
-    const prejuizoTotalDay = ultimoMes?.prejuizo_acumulado_day || 0;
-
-    // Calcular disponível de cada tipo SEPARADAMENTE
-    const prejuizoDisponivelSwing = Math.max(
-      0,
-      prejuizoTotalSwing - compensacoesUsadas.swing
-    );
-    const prejuizoDisponivelDay = Math.max(
-      0,
-      prejuizoTotalDay - compensacoesUsadas.dayTrade
-    );
-
-    console.log("🔍 [PREJUÍZOS SEGREGADOS]", {
-      swing: {
-        total: prejuizoTotalSwing,
-        usado: compensacoesUsadas.swing,
-        disponivel: prejuizoDisponivelSwing,
-      },
-      dayTrade: {
-        total: prejuizoTotalDay,
-        usado: compensacoesUsadas.dayTrade,
-        disponivel: prejuizoDisponivelDay,
-      },
+    console.log("📅 [DEBUG PREJUÍZOS] Último mês encontrado:", {
+      mes: ultimoMes?.mes,
+      prejuizo_acumulado_swing: ultimoMes?.prejuizo_acumulado_swing,
+      prejuizo_acumulado_day: ultimoMes?.prejuizo_acumulado_day,
+      tipoSwing: typeof ultimoMes?.prejuizo_acumulado_swing,
+      tipoDay: typeof ultimoMes?.prejuizo_acumulado_day,
+      objetoCompleto: ultimoMes,
     });
 
-    return {
-      swing: prejuizoDisponivelSwing,
-      dayTrade: prejuizoDisponivelDay,
-      total: prejuizoDisponivelSwing + prejuizoDisponivelDay,
+    // ✅ CORREÇÃO: Usar prejuízos acumulados diretamente do backend
+    // O backend já calcula corretamente considerando compensações
+    const prejuizoDisponivelSwing = ultimoMes?.prejuizo_acumulado_swing || 0;
+    const prejuizoDisponivelDay = ultimoMes?.prejuizo_acumulado_day || 0;
+
+    const resultado = {
+      swing: Math.max(0, prejuizoDisponivelSwing),
+      dayTrade: Math.max(0, prejuizoDisponivelDay),
+      total: Math.max(0, prejuizoDisponivelSwing) + Math.max(0, prejuizoDisponivelDay),
     };
+
+    console.log("🎯 [PREJUÍZOS RESULTADO FINAL] DETALHADO:", {
+      ultimoMes: ultimoMes?.mes,
+      valoresOriginais: {
+        swing: prejuizoDisponivelSwing,
+        day: prejuizoDisponivelDay,
+      },
+      valoresCalculados: {
+        swingMax: Math.max(0, prejuizoDisponivelSwing),
+        dayMax: Math.max(0, prejuizoDisponivelDay),
+      },
+      resultadoFinal: resultado,
+      esperado: { swing: 7500, day: 0, total: 7500 },
+      correto: resultado.total === 7500 ? '✅ CORRETO' : '❌ INCORRETO',
+    });
+
+    return resultado;
   }, [resultadosMensais, operacoesComStatusCorrigido]);
 
   const operacoesTributaveis = processedOperacoes.filter((op) =>
@@ -1746,6 +1826,7 @@ export default function OperacoesEncerradasTable(
                 getStatusBadge={getStatusBadge}
                 getDarfBadge={getDarfBadge}
                 getDarfStatusForOperation={getDarfStatusForOperation}
+                shouldShowDarf={shouldShowDarf}
                 darfStatusMap={darfStatusMap}
                 handleOpenDarfModal={handleOpenDarfModal}
                 operacoesFechadas={operacoesComStatusCorrigido}
@@ -1757,14 +1838,12 @@ export default function OperacoesEncerradasTable(
       </Card>
 
       {isDarfModalOpen && selectedOpForDarf && (
-        <DarfDetailsModal
+        <DarfComprehensiveModal
           isOpen={isDarfModalOpen}
           onClose={() => setIsDarfModalOpen(false)}
-          operacaoFechada={selectedOpForDarf}
-          tipoDarf={selectedOpForDarf.day_trade ? "daytrade" : "swing"}
-          onUpdateDashboard={handleUpdateDashboard}
-          onDarfStatusChange={handleDarfStatusChange}
           operacoesFechadas={operacoesComStatusCorrigido}
+          mes={selectedOpForDarf.mes_operacao || selectedOpForDarf.data_fechamento.substring(0, 7)}
+          tipo={selectedOpForDarf.day_trade ? "daytrade" : "swing"}
         />
       )}
     </>

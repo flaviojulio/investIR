@@ -807,76 +807,77 @@ async def upload_operacoes(
 async def obter_resultados(mes: str = None, usuario: UsuarioResponse = Depends(get_current_user)):
     """
     Retorna os resultados mensais com todos os dados necessários para o frontend.
-    CORREÇÃO: Garante que todos os meses com operações tenham resultados.
+    VERSÃO CORRIGIDA: Usar dados diretos do banco sem processamento excessivo.
     """
     try:
         logging.info(f"[API] /api/resultados chamado por usuario_id={usuario.id} | mes={mes}")
         
-        # ✅ 1. VERIFICAR SE HÁ RESULTADOS MENSAIS
-        resultados_existentes = services.obter_resultados_mensais(usuario_id=usuario.id)
+        # 1. OBTER DADOS DIRETOS DO BANCO
+        resultados_do_banco = services.obter_resultados_mensais(usuario_id=usuario.id)
         
-        # ✅ 2. SE NÃO HÁ RESULTADOS, FORÇAR RECÁLCULO COMPLETO
-        if not resultados_existentes:
-            logging.info(f"[API] Nenhum resultado mensal encontrado, forçando recálculo completo...")
-            services.recalcular_carteira(usuario_id=usuario.id)
-            services.calcular_operacoes_fechadas(usuario_id=usuario.id)
-            services.recalcular_resultados_corrigido(usuario_id=usuario.id)
-            resultados_existentes = services.obter_resultados_mensais(usuario_id=usuario.id)
+        if not resultados_do_banco:
+            logging.info(f"[API] Nenhum resultado mensal encontrado para usuario_id={usuario.id}")
+            return []
         
-        # ✅ 3. FILTRAR POR MÊS SE SOLICITADO
-        resultados = resultados_existentes
+        # 2. FILTRAR POR MÊS SE SOLICITADO
         if mes:
-            resultados = [r for r in resultados if r["mes"] == mes]
+            resultados_do_banco = [r for r in resultados_do_banco if r.get("mes") == mes]
         
-        # ✅ 4. ENRIQUECER RESULTADOS PARA FRONTEND
-        resultados_enriquecidos = []
-        for resultado in resultados:
+        # 3. CONVERTER PARA FORMATO ESPERADO PELO FRONTEND (mínimo processamento)
+        resultados_formatados = []
+        for resultado in resultados_do_banco:
             try:
-                mes_resultado = resultado.get("mes", "")
-                
-                # ✅ GARANTIR CAMPOS OBRIGATÓRIOS
-                resultado_enriquecido = {
+                # Usar dados diretos do banco com fallbacks seguros
+                resultado_formatado = {
                     # Dados básicos
-                    "mes": mes_resultado,
-                    "mes_formatado": _formatar_mes_para_exibicao(mes_resultado),
+                    "mes": resultado.get("mes", ""),
                     
-                    # Swing Trade
-                    "vendas_swing": resultado.get("vendas_swing", 0),
-                    "custo_swing": resultado.get("custo_swing", 0),
-                    "ganho_liquido_swing": resultado.get("ganho_liquido_swing", 0),
-                    "isento_swing": resultado.get("isento_swing", False),
-                    "prejuizo_acumulado_swing": resultado.get("prejuizo_acumulado_swing", 0),
-                    "ir_devido_swing": resultado.get("ir_devido_swing", 0),
-                    "ir_pagar_swing": resultado.get("ir_pagar_swing", 0),
+                    # Swing Trade - dados diretos do banco
+                    "vendas_swing": float(resultado.get("vendas_swing", 0)),
+                    "custo_swing": float(resultado.get("custo_swing", 0)),
+                    "ganho_liquido_swing": float(resultado.get("ganho_liquido_swing", 0)),
+                    "isento_swing": bool(resultado.get("isento_swing", False)),
+                    "prejuizo_acumulado_swing": float(resultado.get("prejuizo_acumulado_swing", 0)),
+                    "ir_devido_swing": float(resultado.get("ir_devido_swing", 0)),
+                    "ir_pagar_swing": float(resultado.get("ir_pagar_swing", 0)),
                     
-                    # Day Trade
-                    "vendas_day_trade": resultado.get("vendas_day_trade", 0),
-                    "custo_day_trade": resultado.get("custo_day_trade", 0),
-                    "ganho_liquido_day": resultado.get("ganho_liquido_day", 0),
-                    "prejuizo_acumulado_day": resultado.get("prejuizo_acumulado_day", 0),
-                    "irrf_day": resultado.get("irrf_day", 0),
-                    "ir_devido_day": resultado.get("ir_devido_day", 0),
-                    "ir_pagar_day": resultado.get("ir_pagar_day", 0),
+                    # Day Trade - dados diretos do banco
+                    "vendas_day_trade": float(resultado.get("vendas_day_trade", 0)),
+                    "custo_day_trade": float(resultado.get("custo_day_trade", 0)),
+                    "ganho_liquido_day": float(resultado.get("ganho_liquido_day", 0)),
+                    "prejuizo_acumulado_day": float(resultado.get("prejuizo_acumulado_day", 0)),
+                    "irrf_day": float(resultado.get("irrf_day", 0)),
+                    "ir_devido_day": float(resultado.get("ir_devido_day", 0)),
+                    "ir_pagar_day": float(resultado.get("ir_pagar_day", 0)),
                     
-                    # ✅ STATUS DARF GARANTIDOS
-                    "status_darf_swing_trade": _garantir_status_darf_swing(resultado),
-                    "status_darf_day_trade": _garantir_status_darf_day(resultado),
+                    # Status DARF - dados diretos do banco
+                    "status_darf_swing_trade": resultado.get("status_darf_swing_trade"),
+                    "status_darf_day_trade": resultado.get("status_darf_day_trade"),
                     
-                    # ✅ CAMPOS AUXILIARES PARA FRONTEND
-                    "tem_ir_swing": resultado.get("ir_pagar_swing", 0) > 0,
-                    "tem_ir_day": resultado.get("ir_pagar_day", 0) > 0,
-                    "tem_darf_pendente": _tem_darf_pendente(resultado),
-                    "valor_total_ir": resultado.get("ir_pagar_swing", 0) + resultado.get("ir_pagar_day", 0),
+                    # DARF Swing
+                    "darf_codigo_swing": resultado.get("darf_codigo_swing"),
+                    "darf_competencia_swing": resultado.get("darf_competencia_swing"), 
+                    "darf_valor_swing": resultado.get("darf_valor_swing"),
+                    "darf_vencimento_swing": resultado.get("darf_vencimento_swing"),
+                    
+                    # DARF Day
+                    "darf_codigo_day": resultado.get("darf_codigo_day"),
+                    "darf_competencia_day": resultado.get("darf_competencia_day"),
+                    "darf_valor_day": resultado.get("darf_valor_day"),
+                    "darf_vencimento_day": resultado.get("darf_vencimento_day"),
                 }
                 
-                resultados_enriquecidos.append(resultado_enriquecido)
+                resultados_formatados.append(resultado_formatado)
+                
+                # Log para debug
+                logging.info(f"[API] Mês {resultado.get('mes')}: prejuizo_swing={resultado_formatado['prejuizo_acumulado_swing']}, prejuizo_day={resultado_formatado['prejuizo_acumulado_day']}")
                 
             except Exception as e:
                 logging.error(f"Erro ao processar resultado do mês {resultado.get('mes', 'N/A')}: {e}")
                 continue
         
-        logging.info(f"[API] Retornando {len(resultados_enriquecidos)} resultados mensais enriquecidos")
-        return resultados_enriquecidos
+        logging.info(f"[API] Retornando {len(resultados_formatados)} resultados mensais")
+        return resultados_formatados
         
     except Exception as e:
         logging.error(f"Erro em /api/resultados para usuário {usuario.id}: {e}", exc_info=True)
@@ -1169,7 +1170,7 @@ async def obter_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_curren
                     "status_darf": status_darf,
                     
                     # ✅ DADOS PARA COMPENSAÇÃO
-                    "prejuizo_anterior_disponivel": _obter_prejuizo_anterior(resultado_mensal, op.get("day_trade", False)),
+                    "prejuizo_anterior_disponivel": _obter_prejuizo_anterior(resultado_mensal, op),
                     "valor_ir_devido": _calcular_valor_ir_devido(op, resultado_mensal),
                     "valor_ir_pagar": _calcular_valor_ir_pagar(op, resultado_mensal),
                     
@@ -1560,8 +1561,10 @@ def preprocess_imported_operation(op: dict) -> dict:
 def _calcular_status_ir_para_frontend(op, resultado_mensal):
     """
     Calcula o status de IR correto para exibição no frontend
+    CORREÇÃO: Detecta inconsistências entre day_trade e resultado mensal
     """
     resultado = op.get("resultado", 0)
+    ticker = op.get("ticker", "N/A")
     
     # Casos simples
     if resultado == 0:
@@ -1570,26 +1573,60 @@ def _calcular_status_ir_para_frontend(op, resultado_mensal):
     if resultado < 0:
         return "Prejuízo Acumulado"
     
+    # ✅ CORREÇÃO: Verificar day_trade mais robustamente
+    day_trade_field = op.get("day_trade", False)
+    
+    # Converter valores do banco (0/1) para boolean
+    if isinstance(day_trade_field, (int, str)):
+        is_day_trade = bool(int(day_trade_field)) if str(day_trade_field).isdigit() else bool(day_trade_field)
+    else:
+        is_day_trade = bool(day_trade_field)
+    
+    # 🔍 DEBUG: Log para detectar inconsistências
+    print(f"🔍 [STATUS DEBUG] {ticker}: day_trade_raw={day_trade_field} → is_day_trade={is_day_trade}")
+    
+    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    if resultado_mensal:
+        ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
+        ir_pagar_swing = resultado_mensal.get("ir_pagar_swing", 0)
+        
+        # Se há IR Day mas operação não está marcada como Day Trade, DETECTAR INCONSISTÊNCIA
+        if ir_pagar_day > 0 and not is_day_trade:
+            print(f"⚠️ [INCONSISTÊNCIA] {ticker}: IR Day > 0 ({ir_pagar_day}) mas day_trade={is_day_trade}")
+            print(f"   Forçando como Day Trade devido à inconsistência nos dados")
+            is_day_trade = True
+        
+        # Se há IR Swing mas operação está marcada como Day Trade, DETECTAR INCONSISTÊNCIA
+        if ir_pagar_swing > 0 and is_day_trade:
+            print(f"⚠️ [INCONSISTÊNCIA] {ticker}: IR Swing > 0 ({ir_pagar_swing}) mas day_trade={is_day_trade}")
+            print(f"   Mantendo como Day Trade (day_trade tem prioridade)")
+    
     # Para operações com lucro
-    if op.get("day_trade", False):
+    if is_day_trade:
         # Day Trade
         if resultado_mensal and resultado_mensal.get("ir_pagar_day", 0) > 0:
+            print(f"🟠 [STATUS] {ticker}: Day Trade tributável (IR: {resultado_mensal.get('ir_pagar_day', 0)})")
             return "Tributável Day Trade"
         else:
+            print(f"🟢 [STATUS] {ticker}: Day Trade compensado")
             return "Lucro Compensado"
     else:
         # Swing Trade
         if resultado_mensal and resultado_mensal.get("isento_swing", False):
+            print(f"🟢 [STATUS] {ticker}: Swing Trade isento")
             return "Isento"
         elif resultado_mensal and resultado_mensal.get("ir_pagar_swing", 0) > 0:
+            print(f"🔵 [STATUS] {ticker}: Swing Trade tributável (IR: {resultado_mensal.get('ir_pagar_swing', 0)})")
             return "Tributável Swing"
         else:
+            print(f"🟢 [STATUS] {ticker}: Swing Trade compensado")
             return "Lucro Compensado"
 
 
 def _deve_gerar_darf_para_frontend(op, resultado_mensal):
     """
     Verifica se a operação deve gerar DARF
+    CORREÇÃO: Usa mesma lógica robusta de detecção Day Trade
     """
     # Só gera DARF para operações com lucro
     if op.get("resultado", 0) <= 0:
@@ -1599,35 +1636,89 @@ def _deve_gerar_darf_para_frontend(op, resultado_mensal):
     if not resultado_mensal:
         return False
     
+    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    day_trade_field = op.get("day_trade", False)
+    
+    # Converter valores do banco (0/1) para boolean
+    if isinstance(day_trade_field, (int, str)):
+        is_day_trade = bool(int(day_trade_field)) if str(day_trade_field).isdigit() else bool(day_trade_field)
+    else:
+        is_day_trade = bool(day_trade_field)
+    
+    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
+    ir_pagar_swing = resultado_mensal.get("ir_pagar_swing", 0)
+    
+    # Se há IR Day mas operação não está marcada como Day Trade, corrigir
+    if ir_pagar_day > 0 and not is_day_trade:
+        is_day_trade = True
+    
     # Verificar por tipo de operação
-    if op.get("day_trade", False):
-        return resultado_mensal.get("ir_pagar_day", 0) > 0
+    if is_day_trade:
+        return ir_pagar_day > 0
     else:
         # Swing trade: não isento E há IR a pagar
         isento = resultado_mensal.get("isento_swing", False)
-        ir_pagar = resultado_mensal.get("ir_pagar_swing", 0)
-        return not isento and ir_pagar > 0
+        return not isento and ir_pagar_swing > 0
 
 
 def _obter_status_darf_para_frontend(op, resultado_mensal):
     """
     Obtém o status DARF para uma operação
+    CORREÇÃO: Usa mesma lógica robusta de detecção Day Trade
     """
     if not resultado_mensal:
         return "Pendente"
     
-    if op.get("day_trade", False):
+    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    day_trade_field = op.get("day_trade", False)
+    
+    # Converter valores do banco (0/1) para boolean
+    if isinstance(day_trade_field, (int, str)):
+        is_day_trade = bool(int(day_trade_field)) if str(day_trade_field).isdigit() else bool(day_trade_field)
+    else:
+        is_day_trade = bool(day_trade_field)
+    
+    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
+    
+    # Se há IR Day mas operação não está marcada como Day Trade, corrigir
+    if ir_pagar_day > 0 and not is_day_trade:
+        is_day_trade = True
+    
+    if is_day_trade:
         return resultado_mensal.get("status_darf_day_trade", "Pendente")
     else:
         return resultado_mensal.get("status_darf_swing_trade", "Pendente")
 
 
-def _obter_prejuizo_anterior(resultado_mensal, is_day_trade):
+def _obter_prejuizo_anterior(resultado_mensal, op):
     """
     Obtém o prejuízo anterior disponível para compensação
+    CORREÇÃO: Usa mesma lógica robusta de detecção Day Trade
     """
     if not resultado_mensal:
         return 0
+    
+    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    if isinstance(op, dict):
+        day_trade_field = op.get("day_trade", False)
+    else:
+        day_trade_field = op
+    
+    # Converter valores do banco (0/1) para boolean
+    if isinstance(day_trade_field, (int, str)):
+        is_day_trade = bool(int(day_trade_field)) if str(day_trade_field).isdigit() else bool(day_trade_field)
+    else:
+        is_day_trade = bool(day_trade_field)
+    
+    # ✅ CORREÇÃO: Verificar consistência com dados mensais se op for dict
+    if isinstance(op, dict):
+        ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
+        
+        # Se há IR Day mas operação não está marcada como Day Trade, corrigir
+        if ir_pagar_day > 0 and not is_day_trade:
+            is_day_trade = True
     
     if is_day_trade:
         return resultado_mensal.get("prejuizo_acumulado_day", 0)
@@ -1638,6 +1729,7 @@ def _obter_prejuizo_anterior(resultado_mensal, is_day_trade):
 def _calcular_valor_ir_devido(op, resultado_mensal):
     """
     Calcula o valor de IR devido para uma operação
+    CORREÇÃO: Usa mesma lógica robusta de detecção Day Trade
     """
     if not _deve_gerar_darf_para_frontend(op, resultado_mensal):
         return 0
@@ -1645,15 +1737,30 @@ def _calcular_valor_ir_devido(op, resultado_mensal):
     if not resultado_mensal:
         return 0
     
-    if op.get("day_trade", False):
+    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    day_trade_field = op.get("day_trade", False)
+    
+    # Converter valores do banco (0/1) para boolean
+    if isinstance(day_trade_field, (int, str)):
+        is_day_trade = bool(int(day_trade_field)) if str(day_trade_field).isdigit() else bool(day_trade_field)
+    else:
+        is_day_trade = bool(day_trade_field)
+    
+    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
+    
+    # Se há IR Day mas operação não está marcada como Day Trade, corrigir
+    if ir_pagar_day > 0 and not is_day_trade:
+        is_day_trade = True
+    
+    if is_day_trade:
         return resultado_mensal.get("ir_devido_day", 0)
     else:
         return resultado_mensal.get("ir_devido_swing", 0)
-
-
 def _calcular_valor_ir_pagar(op, resultado_mensal):
     """
     Calcula o valor de IR a pagar para uma operação
+    CORREÇÃO: Usa mesma lógica robusta de detecção Day Trade
     """
     if not _deve_gerar_darf_para_frontend(op, resultado_mensal):
         return 0
@@ -1661,7 +1768,23 @@ def _calcular_valor_ir_pagar(op, resultado_mensal):
     if not resultado_mensal:
         return 0
     
-    if op.get("day_trade", False):
+    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    day_trade_field = op.get("day_trade", False)
+    
+    # Converter valores do banco (0/1) para boolean
+    if isinstance(day_trade_field, (int, str)):
+        is_day_trade = bool(int(day_trade_field)) if str(day_trade_field).isdigit() else bool(day_trade_field)
+    else:
+        is_day_trade = bool(day_trade_field)
+    
+    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
+    
+    # Se há IR Day mas operação não está marcada como Day Trade, corrigir
+    if ir_pagar_day > 0 and not is_day_trade:
+        is_day_trade = True
+    
+    if is_day_trade:
         return resultado_mensal.get("ir_pagar_day", 0)
     else:
         return resultado_mensal.get("ir_pagar_swing", 0)
