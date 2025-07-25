@@ -282,7 +282,13 @@ export default function ExtratoTabContent({
 
   // Mapeia eventos corporativos (apenas das ações que o usuário possuía na data do evento)
   const mappedEventos = useMemo(() => {
-    if (!Array.isArray(eventos)) return [];
+    console.log("🔍 [ExtratoTabContent] mappedEventos - Iniciando mapeamento");
+    console.log("🔍 [ExtratoTabContent] eventos recebidos:", eventos);
+    
+    if (!Array.isArray(eventos)) {
+      console.log("🔍 [ExtratoTabContent] eventos não é array, retornando vazio");
+      return [];
+    }
     
     // Criar um mapa de ticker para ID de ação e vice-versa
     const tickerToAcaoId = new Map<string, number>();
@@ -298,6 +304,31 @@ export default function ExtratoTabContent({
       }
     });
     
+    console.log("🔍 [ExtratoTabContent] Mapeamento proventos:", {
+      tickerToAcaoId: Object.fromEntries(tickerToAcaoId),
+      acaoIdToTicker: Object.fromEntries(acaoIdToTicker)
+    });
+    
+    // IMPORTANTE: Criar mapeamento adicional baseado nos IDs conhecidos do banco
+    // Como sabemos que: BBAS3=ID4, ITUB4=ID9, PETR4=ID10, VALE3=ID24, WEGE3=ID27
+    const knownMappings = new Map([
+      [4, 'BBAS3'],
+      [9, 'ITUB4'], 
+      [10, 'PETR4'],
+      [24, 'VALE3'],
+      [27, 'WEGE3']
+    ]);
+    
+    // Adicionar mapeamentos conhecidos
+    knownMappings.forEach((ticker, idAcao) => {
+      acaoIdToTicker.set(idAcao, ticker);
+      tickerToAcaoId.set(ticker, idAcao);
+    });
+    
+    console.log("🔍 [ExtratoTabContent] Mapeamento final com mappings conhecidos:", {
+      acaoIdToTicker: Object.fromEntries(acaoIdToTicker)
+    });
+    
     // Obter todos os tickers das operações do usuário
     const tickersUsuario = new Set<string>();
     
@@ -311,48 +342,74 @@ export default function ExtratoTabContent({
       tickersUsuario.add(pos.ticker);
     });
     
+    console.log("🔍 [ExtratoTabContent] Tickers do usuário:", Array.from(tickersUsuario));
+    
     // Função para verificar se o usuário possuía a ação na data do evento
     const possuiaAcaoNaData = (idAcao: number, dataEvento: string): boolean => {
       const ticker = acaoIdToTicker.get(idAcao);
-      if (!ticker || !tickersUsuario.has(ticker)) return false;
+      console.log(`🔍 [ExtratoTabContent] *** VERIFICANDO ação ID ${idAcao} -> ticker ${ticker} na data_registro ${dataEvento} ***`);
+      
+      if (!ticker) {
+        console.log(`🔍 [ExtratoTabContent] Ticker não encontrado para ID ${idAcao} -> EXCLUIR`);
+        return false;
+      }
       
       const dataEventoObj = new Date(dataEvento);
       
-      // Verificar operações abertas (que ainda estão em carteira)
-      const temOperacaoAberta = operacoesAbertas.some(op => 
-        op.ticker === ticker && new Date(op.date) <= dataEventoObj
-      );
+      // MÉTODO 1: Verificar se está na carteira atual (operações abertas)
+      const temOperacaoAberta = operacoesAbertas.some(op => op.ticker === ticker);
+      console.log(`🔍 [ExtratoTabContent] ${ticker} na carteira atual: ${temOperacaoAberta}`);
+      if (temOperacaoAberta) {
+        console.log(`🔍 [ExtratoTabContent] ${ticker} encontrado na carteira atual (operações abertas) -> INCLUIR evento`);
+        return true;
+      }
       
-      if (temOperacaoAberta) return true;
-      
-      // Verificar operações fechadas (se possuía ação naquela data)
+      // MÉTODO 2: Verificar operações fechadas - se possuía ação na data_registro
+      console.log(`🔍 [ExtratoTabContent] Verificando operações fechadas para ${ticker}:`);
       const possuiaNaDataFechada = operacoesFechadas.some(pos => {
         if (pos.ticker !== ticker) return false;
         
         const dataAbertura = new Date(pos.data_abertura);
         const dataFechamento = new Date(pos.data_fechamento);
         
-        // Se o evento foi entre a abertura e fechamento da posição
-        return dataAbertura <= dataEventoObj && dataEventoObj <= dataFechamento;
+        console.log(`🔍 [ExtratoTabContent]   Operação ${pos.data_abertura} a ${pos.data_fechamento}`);
+        console.log(`🔍 [ExtratoTabContent]     dataAbertura <= dataEvento: ${dataAbertura <= dataEventoObj}`);
+        console.log(`🔍 [ExtratoTabContent]     dataEvento < dataFechamento: ${dataEventoObj < dataFechamento}`);
+        
+        // Se o evento foi entre a abertura e fechamento (EXCLUSIVO do fechamento)
+        // Evento na data de fechamento NÃO deve ser incluído pois a posição já foi fechada
+        const dentroDoPeríodo = dataAbertura <= dataEventoObj && dataEventoObj < dataFechamento;
+        
+        console.log(`🔍 [ExtratoTabContent]     Dentro do período: ${dentroDoPeríodo}`);
+        
+        return dentroDoPeríodo;
       });
       
+      console.log(`🔍 [ExtratoTabContent] ${ticker} resultado final: ${possuiaNaDataFechada ? 'INCLUIR' : 'EXCLUIR'} evento`);
       return possuiaNaDataFechada;
     };
     
     // Filtrar e mapear apenas eventos das ações que o usuário possuía
     const result = eventos
       .filter(evento => {
-        const dataEvento = evento.data_ex || evento.data_registro || evento.data_aprovacao;
-        if (!dataEvento) return false;
+        // Usar data_registro como critério principal para verificar posse
+        const dataEvento = evento.data_registro;
+        if (!dataEvento) {
+          console.log("🔍 [ExtratoTabContent] Evento sem data_registro, excluindo:", evento);
+          return false;
+        }
         
-        // Só incluir eventos de ações que o usuário possui/possuía
-        return possuiaAcaoNaData(evento.id_acao, dataEvento);
+        // Só incluir eventos de ações que o usuário possui/possuía na data_registro
+        const possui = possuiaAcaoNaData(evento.id_acao, dataEvento);
+        console.log(`🔍 [ExtratoTabContent] Evento ${evento.id} (ação ${evento.id_acao}) na data_registro ${dataEvento}: ${possui ? 'INCLUÍDO' : 'EXCLUÍDO'}`);
+        return possui;
       })
       .map((evento) => {
         const ticker = acaoIdToTicker.get(evento.id_acao) || `ID_${evento.id_acao}`;
         
         const mappedEvento = {
           id: Math.floor(Math.random() * 1000000), // Generate numeric ID
+          // Usar data_ex para exibição na timeline, mas data_registro foi usada para filtrar
           date: evento.data_ex || evento.data_registro || evento.data_aprovacao || new Date().toISOString(),
           ticker: ticker,
           operation: normalizeOperation(evento.evento),

@@ -1252,6 +1252,13 @@ def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Dic
     proventos_validados = []
     for p_db_dict in proventos_db_dicts:
         try:
+            # Mapear campos do banco para os campos esperados pelo modelo
+            if 'tipo_provento' in p_db_dict:
+                p_db_dict['tipo'] = p_db_dict['tipo_provento']
+            
+            if 'quantidade_possuida_na_data_ex' in p_db_dict:
+                p_db_dict['quantidade_na_data_ex'] = p_db_dict['quantidade_possuida_na_data_ex']
+            
             # Corrigir valor_unitario_provento se vier como string com vírgula
             v = p_db_dict['valor_unitario_provento'] if 'valor_unitario_provento' in p_db_dict else None
             if isinstance(v, str):
