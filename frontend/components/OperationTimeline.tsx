@@ -15,7 +15,10 @@ import {
   ChevronDown,
   ChevronRight,
   Target,
-  Building2
+  Building2,
+  ArrowUpRight,
+  ArrowDownRight,
+  Calendar
 } from "lucide-react";
 
 interface OperacaoDetalhe {
@@ -44,16 +47,9 @@ const COLORS = {
     icon: "text-orange-600",
     dot: "bg-orange-500"
   },
-  position_closed: {
-    bg: "bg-slate-50",
-    border: "border-slate-300", 
-    text: "text-slate-700",
-    icon: "text-slate-600",
-    dot: "bg-slate-500"
-  },
   dividend: {
     bg: "bg-blue-50",
-    border: "border-blue-200", 
+    border: "border-blue-200",
     text: "text-blue-700",
     icon: "text-blue-600",
     dot: "bg-blue-500"
@@ -61,158 +57,146 @@ const COLORS = {
   jcp: {
     bg: "bg-cyan-50",
     border: "border-cyan-200",
-    text: "text-cyan-700", 
+    text: "text-cyan-700",
     icon: "text-cyan-600",
     dot: "bg-cyan-500"
   },
   rendimento: {
-    bg: "bg-amber-50",
-    border: "border-amber-200",
-    text: "text-amber-700",
-    icon: "text-amber-600", 
-    dot: "bg-amber-500"
+    bg: "bg-teal-50",
+    border: "border-teal-200",
+    text: "text-teal-700",
+    icon: "text-teal-600",
+    dot: "bg-teal-500"
   },
   bonificacao: {
-    bg: "bg-gradient-to-r from-purple-50 to-indigo-50",
-    border: "border-purple-300",
-    text: "text-purple-800",
-    icon: "text-purple-700",
-    dot: "bg-purple-500"
+    bg: "bg-yellow-50",
+    border: "border-yellow-200",
+    text: "text-yellow-700",
+    icon: "text-yellow-600",
+    dot: "bg-yellow-500"
   },
   desdobramento: {
-    bg: "bg-gradient-to-r from-purple-50 to-indigo-50",
-    border: "border-purple-300",
-    text: "text-purple-800",
-    icon: "text-purple-700",
-    dot: "bg-purple-500"
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
+    text: "text-indigo-700",
+    icon: "text-indigo-600",
+    dot: "bg-indigo-500"
   },
   agrupamento: {
-    bg: "bg-gradient-to-r from-purple-50 to-indigo-50",
-    border: "border-purple-300",
-    text: "text-purple-800",
-    icon: "text-purple-700",
+    bg: "bg-purple-50",
+    border: "border-purple-200",
+    text: "text-purple-700",
+    icon: "text-purple-600",
     dot: "bg-purple-500"
   },
   default: {
     bg: "bg-gray-50",
     border: "border-gray-200",
-    text: "text-gray-700", 
+    text: "text-gray-700",
     icon: "text-gray-600",
-    dot: "bg-gray-400"
+    dot: "bg-gray-500"
   }
 };
 
-// Ícones mais claros e consistentes
-const ICONS = {
-  buy: <TrendingUp className="w-4 h-4" />,
-  sell: <TrendingDown className="w-4 h-4" />,
-  position_closed: <Target className="w-4 h-4" />,
-  fechamento: <Target className="w-4 h-4" />,
-  dividend: <DollarSign className="w-4 h-4" />,
-  jcp: <Coins className="w-4 h-4" />,
-  rendimento: <DollarSign className="w-4 h-4" />,
-  desdobramento: <GitBranch className="w-4 h-4" />,
-  agrupamento: <GitMerge className="w-4 h-4" />,
-  bonificacao: <Gift className="w-4 h-4" />,
-  default: <DollarSign className="w-4 h-4" />
-};
+// Configuração de filtros
+type FilterKey = "all" | "buy" | "sell" | "proventos" | "events";
 
-// Configuração dos filtros com cores e ícones
-type FilterKey = 'all' | 'operations' | 'proventos' | 'events' | 'positions';
-interface FilterConfig {
-  label: string;
-  icon: React.ReactNode;
-  color: string;
-  types?: string[];
-}
-
-const FILTER_CONFIG: Record<FilterKey, FilterConfig> = {
+const FILTER_CONFIG: Record<FilterKey, { label: string; icon: React.ReactNode; color: string; types?: string[] }> = {
   all: {
     label: "Todos",
-    icon: <Filter className="w-4 h-4 text-gray-500" />,
-    color: "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200"
+    icon: <Filter className="w-4 h-4 text-gray-600" />,
+    color: "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200",
+    types: []
   },
-  operations: {
-    label: "Operações", 
-    icon: <TrendingUp className="w-4 h-4 text-blue-600" />,
-    color: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200",
-    types: ["buy", "sell"]
+  buy: {
+    label: "Compras",
+    icon: <TrendingUp className="w-4 h-4 text-emerald-600" />,
+    color: "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200",
+    types: ["buy"]
   },
-  positions: {
-    label: "Posições",
-    icon: <Target className="w-4 h-4 text-slate-600" />,
-    color: "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200",
-    types: ["position_closed", "fechamento"]
+  sell: {
+    label: "Vendas",
+    icon: <TrendingDown className="w-4 h-4 text-orange-600" />,
+    color: "bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200",
+    types: ["sell"]
   },
   proventos: {
     label: "Proventos",
-    icon: <DollarSign className="w-4 h-4 text-green-600" />, 
-    color: "bg-green-100 text-green-700 border-green-200 hover:bg-green-200",
+    icon: <DollarSign className="w-4 h-4 text-blue-600" />, 
+    color: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200",
     types: ["dividend", "jcp", "rendimento"]
   },
   events: {
     label: "Eventos Corporativos",
-    icon: <Building2 className="w-4 h-4 text-purple-700" />,
-    color: "bg-purple-100 text-purple-700 border-purple-200 hover:bg-purple-200", 
-    types: ["desdobramento", "agrupamento", "bonificacao"]
+    icon: <Building2 className="w-4 h-4 text-indigo-600" />,
+    color: "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200",
+    types: ["bonificacao", "desdobramento", "agrupamento"]
   }
 };
 
-const LABELS = {
-  buy: "Compra",
-  sell: "Venda", 
-  position_closed: "Posição Encerrada",
-  fechamento: "Posição Encerrada",
-  dividend: "Dividendo",
-  jcp: "JCP",
-  rendimento: "Rendimento",
-  bonificacao: "Bonificação",
-  desdobramento: "Desdobramento",
-  agrupamento: "Agrupamento"
-};
-
-function formatCurrency(value: number | undefined | null): string {
-  if (!value) return "R$ 0,00";
-  // Se for menor que 0,01, mostrar até 3 casas decimais
-  if (value > 0 && value < 0.01) {
-    return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 3, maximumFractionDigits: 3 });
-  }
-  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+// Props do componente
+interface Props {
+  items: any[];
 }
 
-function formatDate(dateStr: string): string {
-  if (!dateStr) return "";
-  
-  // Garantir que a data seja tratada como local (não UTC)
-  // Se a string estiver no formato YYYY-MM-DD, adicionar horário para evitar problemas de timezone
-  const dateToFormat = dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`;
-  const date = new Date(dateToFormat);
-  
-  // Verificar se a data é válida
-  if (isNaN(date.getTime())) {
-    console.warn("formatDate: Data inválida recebida:", dateStr);
-    return dateStr; // Retorna a string original se não conseguir parsear
-  }
-  
-  const formatted = date.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric"
-  }).replace(".", "");
-  
-  return formatted;
+// Utilitários
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency', 
+    currency: 'BRL'
+  }).format(value);
+}
+
+function formatDate(dateString: string) {
+  const date = new Date(dateString + 'T00:00:00');
+  return date.toLocaleDateString('pt-BR');
 }
 
 function getColorScheme(operation: string) {
-  return COLORS[operation?.toLowerCase() as keyof typeof COLORS] || COLORS.default;
+  return COLORS[operation as keyof typeof COLORS] || COLORS.default;
 }
 
 function getIcon(operation: string) {
-  return ICONS[operation?.toLowerCase() as keyof typeof ICONS] || ICONS.default;
+  switch (operation.toLowerCase()) {
+    case 'buy':
+      return <TrendingUp className="w-4 h-4" />;
+    case 'sell':
+      return <ArrowUpRight className="w-4 h-4" />;
+    case 'dividend':
+    case 'jcp':
+    case 'rendimento':
+      return <DollarSign className="w-4 h-4" />;
+    case 'bonificacao':
+      return <Gift className="w-4 h-4" />;
+    case 'desdobramento':
+      return <GitBranch className="w-4 h-4" />;
+    case 'agrupamento':
+      return <GitMerge className="w-4 h-4" />;
+    default:
+      return <Coins className="w-4 h-4" />;
+  }
+}
+
+// Função específica para obter ícone de venda baseado no resultado
+function getSellIcon(resultado?: number) {
+  if (resultado !== undefined && resultado < 0) {
+    return <TrendingDown className="w-4 h-4" />; // Gráfico em queda para prejuízo
+  }
+  return <ArrowUpRight className="w-4 h-4" />; // Ícone padrão de venda
 }
 
 function getOperationLabel(operation: string) {
-  return LABELS[operation?.toLowerCase() as keyof typeof LABELS] || operation;
+  const labels: { [key: string]: string } = {
+    'buy': 'Compra',
+    'sell': 'Venda',
+    'dividend': 'Dividendo',
+    'jcp': 'JCP',
+    'rendimento': 'Rendimento',
+    'bonificacao': 'Bonificação',
+    'desdobramento': 'Desdobramento',
+    'agrupamento': 'Agrupamento'
+  };
+  return labels[operation] || operation;
 }
 
 // Função para gerar explicação humanizada dos eventos corporativos
@@ -255,7 +239,16 @@ function distributeItemsBalanced(items: any[]): any[] {
     // Para proventos, usar data_ex; para outros, usar date ou data_fechamento
     const dateA = a.data_ex || a.date || a.data_fechamento || '';
     const dateB = b.data_ex || b.date || b.data_fechamento || '';
-    return new Date(dateB).getTime() - new Date(dateA).getTime();
+    
+    const timeA = new Date(dateA).getTime();
+    const timeB = new Date(dateB).getTime();
+    
+    // Primeiro ordenar por data (mais recente primeiro)
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+    
+    return 0;
   });
 
   // Estratégia de distribuição inteligente
@@ -263,15 +256,11 @@ function distributeItemsBalanced(items: any[]): any[] {
     let side: 'left' | 'right';
     
     // Regras de distribuição:
-    // 1. Posições encerradas sempre à esquerda para destaque
-    if (item.operation === 'fechamento' || item.operation === 'position_closed') {
-      side = 'left';
-    }
-    // 2. Proventos sempre à direita para diferenciação visual
-    else if (['dividend', 'jcp', 'rendimento'].includes(item.operation)) {
+    // 1. Proventos sempre à direita para diferenciação visual
+    if (['dividend', 'jcp', 'rendimento'].includes(item.operation)) {
       side = 'right';
     }
-    // 3. Operações de compra/venda alternam para balance visual
+    // 2. Operações de compra/venda alternam para balance visual
     else {
       side = index % 2 === 0 ? 'left' : 'right';
     }
@@ -286,7 +275,7 @@ function distributeItemsBalanced(items: any[]): any[] {
 // Componente de filtro individual
 interface FilterButtonProps {
   filterKey: FilterKey;
-  config: FilterConfig;
+  config: { label: string; icon: React.ReactNode; color: string };
   isActive: boolean;
   onClick: (key: FilterKey) => void;
   count?: number;
@@ -323,7 +312,7 @@ function FilterButton({ filterKey, config, isActive, onClick, count = 0 }: Filte
 // Componente de busca
 interface SearchInputProps {
   value: string;
-  onChange: (v: string) => void;
+  onChange: (value: string) => void;
   onClear: () => void;
 }
 
@@ -350,214 +339,6 @@ function SearchInput({ value, onChange, onClear }: SearchInputProps) {
   );
 }
 
-// Componente para posição encerrada expandível
-interface ClosedPositionCardProps {
-  item: any;
-  idx: number;
-}
-
-function ClosedPositionCard({ item, idx }: ClosedPositionCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const colors = getColorScheme("position_closed");
-  
-  const resultadoPositivo = (item.resultado || 0) > 0;
-  const resultadoClass = resultadoPositivo ? "text-emerald-700" : (item.resultado || 0) < 0 ? "text-red-600" : "text-gray-700";
-  const bgResultado = resultadoPositivo ? "bg-emerald-50" : (item.resultado || 0) < 0 ? "bg-red-50" : "bg-gray-50";
-
-  const isRight = item.visualBranch === "right";
-  
-  // Usar campos corretos para exibição
-  const displayTicker = item.ticker_acao || item.ticker;
-  const displayDate = item.data_fechamento || item.date;
-
-  // Badge de tributação com tooltip elegante (header)
-  function TaxBadgeHeader() {
-    let badge = null;
-    let tooltip = '';
-    let color = '';
-    if (item.day_trade) {
-      badge = 'Tributável';
-      tooltip = 'Day Trade é sempre tributável, independentemente do valor de venda.';
-      color = 'bg-red-100 text-red-700';
-    } else if (typeof item.valor_venda === 'number' && item.valor_venda <= 20000) {
-      badge = 'Isenta';
-      tooltip = 'Swing Trade isento de IR se o total vendido no mês for até R$ 20.000';
-      color = 'bg-green-100 text-green-700';
-    } else {
-      badge = 'Tributável';
-      tooltip = 'Swing Trade tributável se o total vendido no mês for acima de R$ 20.000';
-      color = 'bg-red-100 text-red-700';
-    }
-    return (
-      <span className="relative group ml-2">
-        <span className={`text-xs ${color} px-2 py-0.5 rounded-full font-semibold cursor-pointer transition-shadow group-hover:shadow-lg`}>
-          {badge}
-        </span>
-        <span className="absolute left-1/2 -translate-x-1/2 mt-2 z-20 hidden group-hover:flex px-3 py-2 rounded bg-white text-xs text-gray-700 shadow-lg transition-all duration-200 min-w-[180px] max-w-[220px] text-center pointer-events-none border border-gray-200 break-words whitespace-normal">
-          {tooltip}
-        </span>
-      </span>
-    );
-  }
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: isRight ? 20 : -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ 
-        delay: idx * 0.05,
-        type: "spring",
-        stiffness: 400,
-        damping: 25
-      }}
-      className="relative flex items-center"
-    >
-      <div className="absolute left-1/2 transform -translate-x-1/2 z-10">
-        <div className={`w-3 h-3 rounded-full ${colors.dot} border-2 border-white shadow-sm`} />
-      </div>
-
-      <div className={`w-5/12 ${isRight ? "ml-auto" : ""}`}>
-        <motion.div
-          whileHover={{ scale: 1.01 }}
-          className={`${colors.bg} ${colors.border} border rounded-lg shadow-sm hover:shadow-md transition-all duration-200`}
-        >
-          {/* Header principal - sempre visível */}
-          <div 
-            className="p-3 cursor-pointer"
-            onClick={() => setIsExpanded(!isExpanded)}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center space-x-2">
-                <div className={colors.icon}>
-                  {getIcon("position_closed")}
-                </div>
-                <span className={`text-sm font-medium ${colors.text}`}>
-                  Posição Encerrada
-                </span>
-                {/* Badge de tributação (header) */}
-                <TaxBadgeHeader />
-                <div className="flex items-center space-x-1">
-                  {isExpanded ? 
-                    <ChevronDown className="w-4 h-4 text-gray-400" /> : 
-                    <ChevronRight className="w-4 h-4 text-gray-400" />
-                  }
-                </div>
-              </div>
-              <span className="text-xs text-gray-500 font-mono">
-                {formatDate(displayDate)}
-              </span>
-            </div>
-
-            {/* Resumo principal */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-900 text-lg">{displayTicker}</span>
-                {item.day_trade && (
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
-                    Day Trade
-                  </span>
-                )}
-              </div>
-
-              <div className={`${bgResultado} rounded-lg p-2 border`}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">Resultado Final:</span>
-                  <div className="text-right">
-                    <div className={`text-lg font-bold ${resultadoClass}`}>
-                      {formatCurrency(item.resultado)}
-                    </div>
-                    {typeof item.percentual_lucro === 'number' && (
-                      <div className={`text-sm font-medium ${resultadoClass}`}>
-                        {item.percentual_lucro > 0 ? '+' : ''}{item.percentual_lucro.toFixed(2)}%
-                      </div>
-                    )}
-                  </div>
-                </div>
-                {/* Removido badge de tributação abaixo do resultado final */}
-              </div>
-            </div>
-          </div>
-          
-          {/* Detalhes expandidos */}
-          <AnimatePresence>
-            {isExpanded && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                className="overflow-hidden"
-              >
-                <div className="px-3 pb-3 pt-1 border-t border-gray-200 bg-gray-50/50">
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <span className="text-gray-500 block">Compra:</span>
-                      <span className="font-semibold text-gray-900">{formatCurrency(item.valor_compra)}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block">Venda:</span>
-                      <span className="font-semibold text-gray-900">{formatCurrency(item.valor_venda)}</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block">Quantidade:</span>
-                      <span className="font-semibold text-gray-900">{item.quantidade} ações</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-500 block">Tipo:</span>
-                      <span className="font-semibold text-gray-900">
-                        {item.day_trade ? 'Day Trade' : 'Swing Trade'}
-                      </span>
-                    </div>
-                  </div>
-                  {/* Timeline das operações que compõem a posição */}
-                  {item.operacoes && item.operacoes.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <span className="text-xs font-semibold text-gray-700 tracking-wide flex items-center gap-1 mb-2 uppercase">
-                        <GitBranch className="w-4 h-4 text-gray-400" /> Operações da Posição
-                      </span>
-                      <div className="space-y-1">
-                        {item.operacoes?.map((op: OperacaoDetalhe, i: number) => {
-                          const opType = (op.operation || '').toLowerCase();
-                          const opIcon = getIcon(opType);
-                          const opColor = getColorScheme(opType);
-                          // Função para formatar a data no padrão dd/mm/aaaa
-                          function formatDateBR(dateStr: string) {
-                            if (!dateStr) return '';
-                            
-                            // Garantir que a data seja tratada como local (não UTC)
-                            const dateToFormat = dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`;
-                            const d = new Date(dateToFormat);
-                            
-                            if (isNaN(d.getTime())) return dateStr;
-                            const day = String(d.getDate()).padStart(2, '0');
-                            const month = String(d.getMonth() + 1).padStart(2, '0');
-                            const year = d.getFullYear();
-                            return `${day}/${month}/${year}`;
-                          }
-                          return (
-                            <div key={i} className="flex items-center text-xs rounded px-2 py-1 gap-2 bg-gray-50 hover:bg-gray-100 transition">
-                              <span className={"" + opColor.icon}>{opIcon}</span>
-                              <span className="font-mono text-gray-500 mr-1">{formatDateBR(op.date)}</span>
-                              <span className="font-semibold text-gray-800 mr-1">{displayTicker}</span>
-                              <span className={`mr-1 font-medium capitalize ${opColor.text}`}>{getOperationLabel(opType)}</span>
-                              <span className="mr-1 text-gray-600">Qtd: <span className="font-semibold">{op.quantity}</span></span>
-                              <span className="text-gray-600">Preço: <span className="font-semibold">{op.price}</span></span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      </div>
-    </motion.div>
-  );
-}
-
 // Componente para operação individual
 interface OperationCardProps {
   item: any;
@@ -565,19 +346,20 @@ interface OperationCardProps {
 }
 
 function OperationCard({ item, idx }: OperationCardProps) {
-  const colors = getColorScheme(item.operation);
+  const operation = item.operation?.toLowerCase() || '';
+  const colors = getColorScheme(operation);
+  const isProvento = ['dividend', 'jcp', 'rendimento'].includes(operation);
+  const isEventoCorporativo = ['bonificacao', 'desdobramento', 'agrupamento'].includes(operation);
   const isRight = item.visualBranch === "right";
-  const isProvento = ["dividend", "jcp", "rendimento"].includes(item.operation?.toLowerCase());
-  const isEventoCorporativo = ["desdobramento", "agrupamento", "bonificacao"].includes(item.operation?.toLowerCase());
   
-  // Para proventos, mapear campos da API corretamente
+  // Usar campos corretos para exibição
   const displayTicker = item.ticker_acao || item.ticker;
   const displayNomeAcao = item.nome_acao;
   const displayDate = item.data_ex || item.date;
   const displayQuantity = item.quantidade_na_data_ex || item.quantity;
-  const displayPrice = item.valor || item.price;
+  const displayPrice = item.valor_unitario_provento || item.price;
   const displayValorTotal = item.valor_total_recebido;
-  
+
   return (
     <motion.div
       initial={{ opacity: 0, x: isRight ? 20 : -20 }}
@@ -601,17 +383,16 @@ function OperationCard({ item, idx }: OperationCardProps) {
             ${isEventoCorporativo 
               ? "bg-gradient-to-br from-purple-500 to-indigo-600 border-purple-400 text-white shadow-lg" 
               : `${colors.bg} ${colors.border} border`
-            } rounded-lg p-3 shadow-sm
-            hover:shadow-md transition-all duration-200
+            } rounded-lg p-3 shadow-sm hover:shadow-md transition-all duration-200
           `}
         >
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-2">
               <div className={isEventoCorporativo ? "text-white" : colors.icon}>
-                {getIcon(item.operation)}
+                {operation === 'sell' ? getSellIcon(item.resultado) : getIcon(operation)}
               </div>
               <span className={`text-sm font-medium ${isEventoCorporativo ? "text-white" : colors.text}`}>
-                {getOperationLabel(item.operation)}
+                {getOperationLabel(operation)}
               </span>
             </div>
             <span className={`text-xs font-mono ${isEventoCorporativo ? "text-white/80" : "text-gray-500"}`}>
@@ -624,7 +405,6 @@ function OperationCard({ item, idx }: OperationCardProps) {
               <span className={`font-semibold text-sm ${isEventoCorporativo ? "text-white" : "text-gray-900"}`}>
                 {displayTicker}
               </span>
-              {/* Não exibir nome_acao para eventos corporativos para evitar repetição */}
               {!isEventoCorporativo && displayNomeAcao && (
                 <span className="text-xs truncate ml-2 max-w-24 text-gray-500">
                   {displayNomeAcao}
@@ -635,9 +415,7 @@ function OperationCard({ item, idx }: OperationCardProps) {
             <div className="flex items-center justify-between">
               {isEventoCorporativo ? (
                 <div className="flex-1 mt-2">
-                  {/* Layout específico para eventos corporativos */}
                   <div className="space-y-3">
-                    {/* Proporção em destaque */}
                     {(item as any).razao && (
                       <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 border border-white/30">
                         <div className="text-sm font-bold text-white">
@@ -646,7 +424,6 @@ function OperationCard({ item, idx }: OperationCardProps) {
                       </div>
                     )}
                     
-                    {/* Explicação humanizada em destaque */}
                     <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3 border border-white/30">
                       <div className="text-sm font-medium text-white mb-1">
                         💡 O que isso significa:
@@ -655,13 +432,10 @@ function OperationCard({ item, idx }: OperationCardProps) {
                         {getEventoExplicacao(item.operation, (item as any).razao || '', displayTicker)}
                       </div>
                     </div>
-                    
-                    {/* Removido texto de data para eventos corporativos, pois já está no título do card */}
                   </div>
                 </div>
               ) : isProvento ? (
                 <div className="flex-1">
-                  {/* Mostrar valor total recebido se disponível - DESTAQUE PRINCIPAL */}
                   {displayValorTotal ? (
                     <div className="space-y-2">
                       {/* VALOR TOTAL RECEBIDO - DESTAQUE MÁXIMO */}
@@ -676,35 +450,14 @@ function OperationCard({ item, idx }: OperationCardProps) {
                       
                       {/* Detalhes do cálculo - visual secundário */}
                       <div className="bg-gray-50 px-2 py-1 rounded text-xs text-gray-500 border-l-2 border-gray-300">
-                        {displayQuantity > 0 ? (
-                          <>
-                            <span className="font-medium">Cálculo:</span> {displayQuantity} ações × {formatCurrency(displayPrice)}
-                          </>
-                        ) : (
-                          <>
-                            <span className="font-medium">Valor unitário:</span> {formatCurrency(displayPrice)}
-                          </>
-                        )}
+                        <div>📊 {displayQuantity} ações × {formatCurrency(displayPrice)}</div>
+                        <div className="text-gray-400">💸 Valor unitário do provento</div>
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {/* Valor unitário como principal quando não há total */}
-                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-2">
-                        <div className="text-lg font-bold text-gray-900 mb-1">
-                          {formatCurrency(displayPrice)}
-                        </div>
-                        <div className="text-xs font-medium text-gray-600">
-                          Valor por ação
-                        </div>
-                      </div>
-                      
-                      {/* Mostrar cálculo se disponível e quantity for válido */}
-                      {displayQuantity > 0 && (
-                        <div className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border-l-2 border-gray-300">
-                          <span className="font-medium">Total calculado:</span> {displayQuantity} × {formatCurrency(displayPrice)} = {formatCurrency(displayQuantity * displayPrice)}
-                        </div>
-                      )}
+                    <div className="text-sm text-gray-700">
+                      <span className="font-medium">{displayQuantity} ações a </span>
+                      <span className="font-semibold">{formatCurrency(displayPrice)}</span>
                     </div>
                   )}
                 </div>
@@ -722,6 +475,35 @@ function OperationCard({ item, idx }: OperationCardProps) {
                 <span className="text-sm font-semibold text-gray-900">
                   {formatCurrency(displayQuantity * displayPrice)}
                 </span>
+                
+                {/* Mostrar resultado se for uma venda com resultado */}
+                {operation === 'sell' && item.resultado !== undefined && (
+                  <div className="mt-2 pt-2 border-t border-gray-200">
+                    <div className="flex items-center justify-end gap-1">
+                      {item.resultado >= 0 ? (
+                        <TrendingUp className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4 text-red-600" />
+                      )}
+                      <span className="text-xs text-gray-500">Resultado: </span>
+                      <span className={`text-sm font-bold ${item.resultado >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {item.resultado >= 0 ? '+' : ''}{formatCurrency(item.resultado)}
+                      </span>
+                    </div>
+                    {item.percentual_lucro !== undefined && (
+                      <div className="text-xs text-gray-500 text-right">
+                        ({item.percentual_lucro >= 0 ? '+' : ''}{item.percentual_lucro.toFixed(2)}%)
+                      </div>
+                    )}
+                    {item.day_trade && (
+                      <div className="text-xs text-center mt-1">
+                        <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
+                          Day Trade
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -758,7 +540,6 @@ interface TimelineItem {
   tipo?: string;
   valor?: number;
   data_ex?: string;
-  dt_pagamento?: string;
   quantidade_na_data_ex?: number;
   valor_total_recebido?: number;
   
@@ -766,26 +547,14 @@ interface TimelineItem {
   razao?: string;
 }
 
-interface Props {
-  items?: TimelineItem[];
-}
-
 export default function OperationTimeline({ items = [] }: Props) {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
 
-  // Filtrar e buscar items
-  const filteredItems = useMemo(() => {
+  // Filtrar itens pela busca primeiro
+  const searchFilteredItems = useMemo(() => {
     let filtered = items;
-
-    // Aplicar filtro por categoria
-    if (activeFilter !== "all") {
-      const filterTypes = FILTER_CONFIG[activeFilter]?.types || [];
-      filtered = filtered.filter(item => 
-        filterTypes.includes(item.operation?.toLowerCase())
-      );
-    }
 
     // Aplicar busca por ticker
     if (searchTerm) {
@@ -802,25 +571,40 @@ export default function OperationTimeline({ items = [] }: Props) {
     }
 
     return filtered;
-  }, [items, activeFilter, searchTerm]);
+  }, [items, searchTerm]);
 
-  // Calcular contadores para os filtros
+  // Filtrar e buscar items (aplicar filtro de categoria aos itens já filtrados pela busca)
+  const filteredItems = useMemo(() => {
+    let filtered = searchFilteredItems;
+
+    // Aplicar filtro por categoria
+    if (activeFilter !== "all") {
+      const filterTypes = FILTER_CONFIG[activeFilter]?.types || [];
+      filtered = filtered.filter(item => 
+        filterTypes.includes(item.operation?.toLowerCase())
+      );
+    }
+
+    return filtered;
+  }, [searchFilteredItems, activeFilter]);
+
+  // Calcular contadores para os filtros baseado nos itens filtrados pela busca
   const filterCounts = useMemo(() => {
     const counts: Record<FilterKey, number> = {
-      all: items.length,
-      operations: 0,
-      positions: 0,
+      all: searchFilteredItems.length,
+      buy: 0,
+      sell: 0,
       proventos: 0, 
       events: 0
     };
 
-    items.forEach(item => {
+    searchFilteredItems.forEach(item => {
       const operation = item.operation?.toLowerCase();
-      if (FILTER_CONFIG.operations.types?.includes(operation)) {
-        counts.operations++;
+      if (FILTER_CONFIG.buy.types?.includes(operation)) {
+        counts.buy++;
       }
-      if (FILTER_CONFIG.positions.types?.includes(operation)) {
-        counts.positions++;
+      if (FILTER_CONFIG.sell.types?.includes(operation)) {
+        counts.sell++;
       }
       if (FILTER_CONFIG.proventos.types?.includes(operation)) {
         counts.proventos++;
@@ -831,7 +615,7 @@ export default function OperationTimeline({ items = [] }: Props) {
     });
 
     return counts;
-  }, [items]);
+  }, [searchFilteredItems]);
 
   const handleFilterChange = (filterKey: FilterKey) => {
     setActiveFilter(filterKey);
@@ -849,30 +633,27 @@ export default function OperationTimeline({ items = [] }: Props) {
     <div className="w-full max-w-4xl mx-auto p-6">
       {/* Header com filtros e busca */}
       <div className="mb-8 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="flex flex-col w-full gap-4">
-            <div className="flex w-full justify-center">
-              <div className="min-w-[180px] w-full max-w-md">
-                <SearchInput 
-                  value={searchTerm}
-                  onChange={handleSearchChange}
-                  onClear={handleSearchClear}
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-3 justify-center w-full pt-1">
-              {Object.entries(FILTER_CONFIG).map(([key, config]) => (
-                <FilterButton
-                  key={key}
-                  filterKey={key as FilterKey}
-                  config={config}
-                  isActive={activeFilter === key}
-                  onClick={handleFilterChange}
-                  count={filterCounts[key as FilterKey]}
-                />
-              ))}
-            </div>
-          </div>
+        {/* Campo de busca centralizado */}
+        <div className="flex justify-center">
+          <SearchInput 
+            value={searchTerm}
+            onChange={handleSearchChange}
+            onClear={handleSearchClear}
+          />
+        </div>
+        
+        {/* Botões de filtro centralizados */}
+        <div className="flex flex-wrap gap-2 justify-center">
+          {Object.entries(FILTER_CONFIG).map(([key, config]) => (
+            <FilterButton
+              key={key}
+              filterKey={key as FilterKey}
+              config={config}
+              isActive={activeFilter === key}
+              onClick={handleFilterChange}
+              count={filterCounts[key as FilterKey]}
+            />
+          ))}
         </div>
 
         {/* Resultados */}
@@ -906,19 +687,19 @@ export default function OperationTimeline({ items = [] }: Props) {
       {/* Timeline */}
       {filteredItems.length > 0 ? (
         <div className="relative">
+          {/* Linha central da timeline mais sutil */}
           <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-gradient-to-b from-gray-200 via-gray-300 to-gray-200 transform -translate-x-px" />
           
-          <div className="space-y-4">
+          {/* Cards da timeline com espaçamento otimizado */}
+          <div className="space-y-8">
             {distributeItemsBalanced(filteredItems).map((item, idx) => {
-              if (item.operation === 'fechamento' || item.operation === 'position_closed') {
-                return <ClosedPositionCard key={item.id || idx} item={item} idx={idx} />;
-              }
               return <OperationCard key={item.id || idx} item={item} idx={idx} />;
             })}
           </div>
           
+          {/* Marcador final mais sutil */}
           <div className="absolute left-1/2 bottom-0 transform -translate-x-1/2 translate-y-4">
-            <div className="w-2 h-2 rounded-full bg-gray-300" />
+            <div className="w-2 h-2 rounded-full bg-gray-400 border border-white shadow-sm" />
           </div>
         </div>
       ) : (

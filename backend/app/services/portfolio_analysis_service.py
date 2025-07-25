@@ -1125,7 +1125,6 @@ def calcular_lucro_mensal_por_ano(user_id: int, year: int) -> Dict[str, float]:
     """
     from collections import defaultdict
     lucro_por_mes = defaultdict(float)
-    print(f"[DEBUG] calcular_lucro_mensal_por_ano called with user_id={user_id}, year={year}")
     with get_db() as conn:
         cursor = conn.cursor()
         query = '''
@@ -1133,10 +1132,8 @@ def calcular_lucro_mensal_por_ano(user_id: int, year: int) -> Dict[str, float]:
             FROM operacoes
             WHERE usuario_id = ? AND strftime('%Y', date) = ?
             '''
-        print(f"[DEBUG] Executing SQL: {query.strip()} with params: user_id={user_id}, year={year}")
         cursor.execute(query, (user_id, str(year)))
         rows = cursor.fetchall()
-        print(f"[DEBUG] Rows fetched: {len(rows)}")
         for row in rows:
             dt = row["date"]
             op = row["operation"].lower()
@@ -1144,14 +1141,12 @@ def calcular_lucro_mensal_por_ano(user_id: int, year: int) -> Dict[str, float]:
             preco = row["price"]
             taxas = row["fees"]
             mes = dt[5:7]  # 'YYYY-MM-DD' -> MM
-            print(f"[DEBUG] Row: date={dt}, op={op}, qtd={qtd}, preco={preco}, taxas={taxas}, mes={mes}")
             if op == 'buy':
                 lucro_por_mes[mes] -= qtd * preco + taxas
             elif op == 'sell':
                 lucro_por_mes[mes] += qtd * preco - taxas
     # Garante todos os meses no resultado
     result = {f'{i:02d}': round(lucro_por_mes[f'{i:02d}'], 2) for i in range(1, 13)}
-    print(f"[DEBUG] Monthly profit result: {result}")
     return result
 
 if __name__ == '__main__':

@@ -84,6 +84,7 @@ import auth # Keep this for other auth functions
 from routers import analysis_router  # Incluído novamente para funcionalidade de gráficos
 from routers import proventos_router # Incluído novamente para funcionalidade de gráficos
 from routers import usuario_router # Added usuario_router import
+from routers import cotacoes_router # Added cotacoes_router import
 from dependencies import get_current_user, oauth2_scheme # Import from dependencies
 
 # Inicialização do banco de dados
@@ -109,6 +110,7 @@ app.add_middleware(
 app.include_router(analysis_router.router, prefix="/api") # Incluído novamente para funcionalidade de gráficos
 app.include_router(proventos_router.router, prefix="/api") # Incluído novamente para funcionalidade de gráficos
 app.include_router(usuario_router.router, prefix="/api") # Added usuario_router
+app.include_router(cotacoes_router.router, prefix="/api") # Added cotacoes_router
 
 # Endpoint para listar todas as ações (acoes)
 @app.get("/api/acoes", response_model=List[AcaoInfo], tags=["Ações"]) # Renamed path, response_model, tags

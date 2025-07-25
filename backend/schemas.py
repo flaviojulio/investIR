@@ -37,3 +37,51 @@ class BemDireitoAcaoSchema(BaseModel):
     preco_medio: float
     valor_total_data_base: float
     valor_total_ano_anterior: float = 0.0  # Novo campo: valor total em 31/12 do ano anterior
+
+# --- Schemas para Cotações ---
+
+class CotacaoBase(BaseModel):
+    """Schema base para cotações de ações."""
+    data: date
+    abertura: Optional[float] = None
+    maxima: Optional[float] = None
+    minima: Optional[float] = None
+    fechamento: Optional[float] = None
+    fechamento_ajustado: Optional[float] = None
+    volume: Optional[int] = None
+    dividendos: Optional[float] = 0.0
+    splits: Optional[float] = 0.0
+
+class CotacaoCreate(CotacaoBase):
+    """Schema para criação de cotações."""
+    acao_id: int
+
+class CotacaoResponse(CotacaoBase):
+    """Schema para resposta de cotações."""
+    id: int
+    acao_id: int
+    ticker: Optional[str] = None
+    nome: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class EstatisticasGerais(BaseModel):
+    """Schema para estatísticas gerais das cotações."""
+    total_registros: int
+    total_acoes: int
+    data_inicial: Optional[str] = None
+    data_final: Optional[str] = None
+
+class EstatisticaPorAcao(BaseModel):
+    """Schema para estatísticas por ação."""
+    ticker: str
+    nome: Optional[str] = None
+    total_cotacoes: int
+    primeira_data: Optional[str] = None
+    ultima_data: Optional[str] = None
+
+class EstatisticasCotacoes(BaseModel):
+    """Schema para estatísticas completas das cotações."""
+    estatisticas_gerais: EstatisticasGerais
+    por_acao: List[EstatisticaPorAcao]

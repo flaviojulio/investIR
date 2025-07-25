@@ -1711,23 +1711,17 @@ def listar_eventos_corporativos_usuario_service(usuario_id: int) -> List[EventoC
     Returns:
         Lista de eventos corporativos filtrados para o usuário
     """
-    print(f"🔍 [DEBUG] Iniciando para usuário {usuario_id}")
-    
     # 1. Buscar todos os eventos corporativos e converter para EventoCorporativoInfo
     todos_eventos_raw = obter_todos_eventos_corporativos()
-    print(f"🔍 [DEBUG] Total de eventos no sistema: {len(todos_eventos_raw)}")
     
     # Converter para EventoCorporativoInfo (que faz parsing correto das datas)
     try:
         todos_eventos = [EventoCorporativoInfo.model_validate(e) for e in todos_eventos_raw]
-        print(f"🔍 [DEBUG] Total de eventos validados: {len(todos_eventos)}")
     except Exception as e:
-        print(f"🚨 [DEBUG] Erro na validação dos eventos: {e}")
         return []
     
     # 2. Buscar todas as operações do usuário
     operacoes_usuario = obter_todas_operacoes(usuario_id)
-    print(f"🔍 [DEBUG] Total de operações do usuário: {len(operacoes_usuario)}")
     
     # 3. Criar mapeamento dinâmico de id_acao para ticker consultando a tabela acoes
     ticker_por_id_acao = {}
@@ -1739,9 +1733,7 @@ def listar_eventos_corporativos_usuario_service(usuario_id: int) -> List[EventoC
         for id_acao, ticker in cursor.fetchall():
             ticker_por_id_acao[id_acao] = ticker.upper()
         conn.close()
-        print(f"🔍 [DEBUG] Mapeamento ações carregado: {len(ticker_por_id_acao)} ações")
     except Exception as e:
-        print(f"🚨 [DEBUG] Erro ao buscar mapeamento de ações: {e}")
         # Fallback para mapeamento conhecido em caso de erro
         ticker_por_id_acao = {
             9: 'ITUB4'  # Mínimo necessário para funcionar

@@ -34,7 +34,7 @@ import logging
 # Unused imports json, Union, defaultdict removed
 
 # Caminho para o banco de dados SQLite
-DATABASE_FILE = "acoes_ir.db" # Changed to relative path
+DATABASE_FILE = "acoes_ir.db"  # Arquivo no diretório atual (backend)
 
 def obter_acao_info_por_ticker(ticker: str) -> Optional[Dict[str, Any]]:
     """
@@ -241,6 +241,25 @@ def criar_tabelas():
         observacao TEXT,
         FOREIGN KEY (usuario_id) REFERENCES usuarios (id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS cotacao_acoes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        acao_id INTEGER NOT NULL,
+        data DATE NOT NULL,
+        abertura DECIMAL(10,2),
+        maxima DECIMAL(10,2),
+        minima DECIMAL(10,2),
+        fechamento DECIMAL(10,2),
+        fechamento_ajustado DECIMAL(10,2),
+        volume BIGINT,
+        dividendos DECIMAL(10,4),
+        splits DECIMAL(10,4),
+        FOREIGN KEY (acao_id) REFERENCES acoes(id),
+        UNIQUE(acao_id, data)
+    );
+    CREATE INDEX IF NOT EXISTS idx_cotacao_acao_data ON cotacao_acoes(acao_id, data);
+    CREATE INDEX IF NOT EXISTS idx_cotacao_data ON cotacao_acoes(data);
+    CREATE INDEX IF NOT EXISTS idx_cotacao_acao_id ON cotacao_acoes(acao_id);
     
     """
     with get_db() as conn:
@@ -1824,3 +1843,256 @@ def limpar_historico_preco_medio_usuario(usuario_id: int) -> int:
         ''', (usuario_id,))
         conn.commit()
         return cursor.rowcount
+
+# --- Funções para Cotações de Ações ---
+
+def inserir_cotacao(cotacao_data: Dict[str, Any]) -> int:
+    """
+    Insere uma cotação de ação no banco de dados.
+    
+    Args:
+        cotacao_data: Dicionário com os dados da cotação
+        
+    Returns:
+        int: ID da cotação inserida
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT OR REPLACE INTO cotacao_acoes (
+                acao_id, data, abertura, maxima, minima, fechamento,
+                fechamento_ajustado, volume, dividendos, splits
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            cotacao_data['acao_id'],
+            cotacao_data['data'],
+            cotacao_data.get('abertura'),
+            cotacao_data.get('maxima'),
+            cotacao_data.get('minima'),
+            cotacao_data.get('fechamento'),
+            cotacao_data.get('fechamento_ajustado'),
+            cotacao_data.get('volume'),
+            cotacao_data.get('dividendos', 0.0),
+            cotacao_data.get('splits', 0.0)
+        ))
+        
+        conn.commit()
+        return cursor.lastrowid
+
+def inserir_cotacoes_lote(cotacoes_lista: List[Dict[str, Any]]) -> int:
+    """
+    Insere múltiplas cotações em lote para melhor performance.
+    
+    Args:
+        cotacoes_lista: Lista de dicionários com dados das cotações
+        
+    Returns:
+        int: Número de cotações inseridas
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        dados_para_inserir = []
+        for cotacao in cotacoes_lista:
+            dados_para_inserir.append((
+                cotacao['acao_id'],
+                cotacao['data'],
+                cotacao.get('abertura'),
+                cotacao.get('maxima'),
+                cotacao.get('minima'),
+                cotacao.get('fechamento'),
+                cotacao.get('fechamento_ajustado'),
+                cotacao.get('volume'),
+                cotacao.get('dividendos', 0.0),
+                cotacao.get('splits', 0.0)
+            ))
+        
+        cursor.executemany('''
+            INSERT OR REPLACE INTO cotacao_acoes (
+                acao_id, data, abertura, maxima, minima, fechamento,
+                fechamento_ajustado, volume, dividendos, splits
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', dados_para_inserir)
+        
+        conn.commit()
+        return len(dados_para_inserir)
+
+def obter_cotacoes_por_acao_id(acao_id: int, data_inicio: str = None, data_fim: str = None) -> List[Dict[str, Any]]:
+    """
+    Obtém cotações de uma ação específica, opcionalmente filtradas por período.
+    
+    Args:
+        acao_id: ID da ação
+        data_inicio: Data inicial no formato YYYY-MM-DD (opcional)
+        data_fim: Data final no formato YYYY-MM-DD (opcional)
+        
+    Returns:
+        List[Dict[str, Any]]: Lista de cotações
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM cotacao_acoes WHERE acao_id = ?"
+        params = [acao_id]
+        
+        if data_inicio:
+            query += " AND data >= ?"
+            params.append(data_inicio)
+            
+        if data_fim:
+            query += " AND data <= ?"
+            params.append(data_fim)
+            
+        query += " ORDER BY data DESC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_cotacoes_por_ticker(ticker: str, data_inicio: str = None, data_fim: str = None) -> List[Dict[str, Any]]:
+    """
+    Obtém cotações de uma ação específica pelo ticker, opcionalmente filtradas por período.
+    
+    Args:
+        ticker: Ticker da ação
+        data_inicio: Data inicial no formato YYYY-MM-DD (opcional)
+        data_fim: Data final no formato YYYY-MM-DD (opcional)
+        
+    Returns:
+        List[Dict[str, Any]]: Lista de cotações com informações da ação
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT c.*, a.ticker, a.nome 
+            FROM cotacao_acoes c
+            JOIN acoes a ON c.acao_id = a.id
+            WHERE a.ticker = ?
+        '''
+        params = [ticker]
+        
+        if data_inicio:
+            query += " AND c.data >= ?"
+            params.append(data_inicio)
+            
+        if data_fim:
+            query += " AND c.data <= ?"
+            params.append(data_fim)
+            
+        query += " ORDER BY c.data DESC"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def obter_cotacao_mais_recente_por_ticker(ticker: str) -> Optional[Dict[str, Any]]:
+    """
+    Obtém a cotação mais recente de uma ação pelo ticker.
+    
+    Args:
+        ticker: Ticker da ação
+        
+    Returns:
+        Optional[Dict[str, Any]]: Dados da cotação mais recente ou None
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT c.*, a.ticker, a.nome 
+            FROM cotacao_acoes c
+            JOIN acoes a ON c.acao_id = a.id
+            WHERE a.ticker = ?
+            ORDER BY c.data DESC
+            LIMIT 1
+        ''', (ticker,))
+        
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def obter_estatisticas_cotacoes() -> Dict[str, Any]:
+    """
+    Obtém estatísticas gerais sobre as cotações armazenadas.
+    
+    Returns:
+        Dict[str, Any]: Estatísticas das cotações
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Estatísticas gerais
+        cursor.execute('''
+            SELECT 
+                COUNT(*) as total_registros,
+                COUNT(DISTINCT acao_id) as total_acoes,
+                MIN(data) as data_inicial,
+                MAX(data) as data_final
+            FROM cotacao_acoes
+        ''')
+        
+        stats = dict(cursor.fetchone())
+        
+        # Registros por ação
+        cursor.execute('''
+            SELECT 
+                a.ticker,
+                a.nome,
+                COUNT(*) as total_cotacoes,
+                MIN(c.data) as primeira_data,
+                MAX(c.data) as ultima_data
+            FROM cotacao_acoes c
+            JOIN acoes a ON c.acao_id = a.id
+            GROUP BY a.id, a.ticker, a.nome
+            ORDER BY total_cotacoes DESC
+        ''')
+        
+        por_acao = [dict(row) for row in cursor.fetchall()]
+        
+        return {
+            'estatisticas_gerais': stats,
+            'por_acao': por_acao
+        }
+
+def limpar_cotacoes_acao(acao_id: int) -> int:
+    """
+    Remove todas as cotações de uma ação específica.
+    
+    Args:
+        acao_id: ID da ação
+        
+    Returns:
+        int: Número de registros removidos
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM cotacao_acoes WHERE acao_id = ?', (acao_id,))
+        conn.commit()
+        
+        return cursor.rowcount
+
+def verificar_cotacoes_existentes(acao_id: int, data_inicio: str, data_fim: str) -> bool:
+    """
+    Verifica se já existem cotações para uma ação em um período específico.
+    
+    Args:
+        acao_id: ID da ação
+        data_inicio: Data inicial no formato YYYY-MM-DD
+        data_fim: Data final no formato YYYY-MM-DD
+        
+    Returns:
+        bool: True se existem cotações no período
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT COUNT(*) as total
+            FROM cotacao_acoes
+            WHERE acao_id = ? AND data >= ? AND data <= ?
+        ''', (acao_id, data_inicio, data_fim))
+        
+        result = cursor.fetchone()
+        return result['total'] > 0

@@ -1,10 +1,12 @@
 "use client";
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import OperationTimeline from "./OperationTimeline";
+import OperationTable from "./OperationTable";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Calendar, BarChart3 } from "lucide-react";
 import type { Operacao, OperacaoFechada, EventoCorporativoInfo } from "@/lib/types";
 import type { ProventoRecebidoUsuario } from '@/lib/types';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { getProventosUsuarioDetalhado, getEventosCorporativosUsuario } from '@/lib/api';
 
 interface Props {
@@ -20,6 +22,9 @@ export default function ExtratoTabContent({
   proventos: proventosProp = [],
   eventos: eventosProp = []
 }: Props) {
+  // Estado para controle de visualização
+  const [viewMode, setViewMode] = useState<"timeline" | "table">("timeline");
+  
   // Estado para proventos detalhados
   const [proventos, setProventos] = useState<ProventoRecebidoUsuario[]>(proventosProp);
   const [proventosLoaded, setProventosLoaded] = useState(false);
@@ -376,8 +381,45 @@ export default function ExtratoTabContent({
   return (
     <div className="flex flex-col items-center justify-center w-full">
       <div className="w-full max-w-5xl">
-        <h3 className="text-lg font-semibold mb-4 text-center">Extrato da Sua Carteira</h3>
-        <OperationTimeline items={timelineItems} />
+                
+        {/* Controles de visualização */}
+        <div className="flex justify-center mb-1">
+          <div className="flex bg-gray-100 rounded-lg p-1 gap-1">
+            <button
+              onClick={() => setViewMode("timeline")}
+              className={`
+                flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200
+                ${viewMode === "timeline" 
+                  ? "bg-white text-gray-800 shadow-sm" 
+                  : "text-gray-600 hover:text-gray-800"
+                }
+              `}
+            >
+              <Calendar className="w-4 h-4" />
+              <span className="hidden sm:inline">Timeline</span>
+            </button>
+            <button
+              onClick={() => setViewMode("table")}
+              className={`
+                flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all duration-200
+                ${viewMode === "table" 
+                  ? "bg-white text-gray-800 shadow-sm" 
+                  : "text-gray-600 hover:text-gray-800"
+                }
+              `}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span className="hidden sm:inline">Tabela</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Renderização condicional baseada no modo de visualização */}
+        {viewMode === "timeline" ? (
+          <OperationTimeline items={timelineItems} />
+        ) : (
+          <OperationTable items={timelineItems} />
+        )}
       </div>
     </div>
   );
