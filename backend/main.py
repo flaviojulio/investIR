@@ -12,7 +12,7 @@ from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, Token
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
     DARF, AtualizacaoCarteira, OperacaoFechada, ResultadoTicker, AcaoInfo,
-    ProventoCreate, ProventoInfo, EventoCorporativoCreate, EventoCorporativoInfo,
+    ProventoCreate, ProventoInfo, ProventoRecebidoUsuario, EventoCorporativoCreate, EventoCorporativoInfo,
     ResumoProventoAnual, ResumoProventoMensal, ResumoProventoPorAcao,
     UsuarioProventoRecebidoDB, UsuarioCreate, UsuarioUpdate, UsuarioResponse,
     LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
@@ -65,6 +65,7 @@ from services import (
     registrar_evento_corporativo_service,
     listar_eventos_corporativos_por_acao_service,
     listar_todos_eventos_corporativos_service,
+    listar_eventos_corporativos_usuario_service,  # NOVO SERVIÇO
     # Importation services
     processar_importacao_com_deteccao_duplicatas,  # NOVA LINHA
     listar_historico_importacoes_service,  # NOVA LINHA
@@ -223,7 +224,7 @@ async def listar_todos_os_eventos_corporativos_api( # Renamed to avoid conflict 
 
 # Endpoints de Proventos do Usuário
 
-@app.get("/api/usuario/proventos/", response_model=List[UsuarioProventoRecebidoDB], tags=["Proventos Usuário"])
+@app.get("/api/usuario/proventos/", response_model=List[ProventoRecebidoUsuario], tags=["Proventos Usuário"])
 async def listar_proventos_usuario_detalhado(
     usuario: UsuarioResponse = Depends(get_current_user)
 ):
@@ -303,6 +304,21 @@ async def recalcular_proventos_usuario_endpoint(
     except Exception as e:
         logging.error(f"Error in POST /api/usuario/proventos/recalcular for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro durante o recálculo de proventos: {str(e)}")
+
+@app.get("/api/usuario/eventos_corporativos/", response_model=List[EventoCorporativoInfo], tags=["Eventos Corporativos Usuário"])
+async def listar_eventos_corporativos_usuario(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Lista apenas os eventos corporativos relevantes para o usuário logado.
+    Retorna somente eventos de ações que o usuário possuía na data de registro do evento.
+    """
+    try:
+        eventos_data = services.listar_eventos_corporativos_usuario_service(usuario_id=usuario.id)
+        return eventos_data
+    except Exception as e:
+        logging.error(f"Error in GET /api/usuario/eventos_corporativos/ for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao listar eventos corporativos do usuário: {str(e)}")
 
 
 # Configuração do OAuth2

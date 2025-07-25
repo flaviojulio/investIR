@@ -1,11 +1,11 @@
 "use client";
 import React, { useMemo } from "react";
-import OperationTimeline from "@/components/OperationTimeline";
+import OperationTimeline from "./OperationTimeline";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import type { Operacao, OperacaoFechada, EventoCorporativoInfo } from "@/lib/types";
 import type { ProventoRecebidoUsuario } from '@/lib/types';
 import { useEffect, useState } from 'react';
-import { getProventosUsuarioDetalhado, getEventosCorporativos } from '@/lib/api';
+import { getProventosUsuarioDetalhado, getEventosCorporativosUsuario } from '@/lib/api';
 
 interface Props {
   operacoesAbertas: Operacao[];
@@ -40,23 +40,19 @@ export default function ExtratoTabContent({
     }
     
     // Se não temos proventos via prop, buscar do backend apenas uma vez
+    console.log('🔍 [ExtratoTabContent] Buscando proventos do usuário...');
     getProventosUsuarioDetalhado().then((data) => {
+      console.log('✅ [ExtratoTabContent] Proventos carregados:', data?.length || 0, 'items');
       setProventos(Array.isArray(data) ? data : []);
       setProventosLoaded(true);
     }).catch((error) => {
-      console.error('Erro ao carregar proventos detalhados:', error);
+      console.error('🚨 [ExtratoTabContent] Erro ao carregar proventos:', error);
       setProventos([]);
       setProventosLoaded(true);
     });
-  }, [proventosProp, proventosLoaded]);
+  }, [proventosProp.length, proventosLoaded]); // Usar length ao invés do array completo
 
-  // Separado: efeito para atualizar proventos quando a prop mudar (apenas se tiver conteúdo)
-  useEffect(() => {
-    if (proventosProp && proventosProp.length > 0) {
-      setProventos(proventosProp);
-    }
-  }, [proventosProp]);
-
+  // Buscar eventos corporativos já filtrados do backend
   useEffect(() => {
     // Se já temos eventos carregados, não precisa carregar novamente
     if (eventosLoaded) return;
@@ -68,25 +64,23 @@ export default function ExtratoTabContent({
       return;
     }
     
-    // Se não temos eventos via prop, buscar do backend apenas uma vez
-    getEventosCorporativos().then((data) => {
-      setEventos(Array.isArray(data) ? data : []);
+    // Buscar eventos corporativos já filtrados do backend
+    console.log('🔍 [ExtratoTabContent] Buscando eventos corporativos...');
+    
+    getEventosCorporativosUsuario().then((eventosUsuario) => {
+      console.log('✅ [ExtratoTabContent] Eventos corporativos carregados:', eventosUsuario?.length || 0, 'items');
+      setEventos(eventosUsuario);
       setEventosLoaded(true);
     }).catch((error) => {
-      console.error('Erro ao carregar eventos corporativos:', error);
+      console.error('🚨 [ExtratoTabContent] Erro ao carregar eventos corporativos:', error);
       setEventos([]);
       setEventosLoaded(true);
     });
-  }, [eventosProp, eventosLoaded]);
+  }, [eventosProp.length, eventosLoaded]); // Usar length ao invés do array completo
 
   // Funções utilitárias para normalização
   function normalizeOperation(raw: string) {
     const op = raw?.toString().trim().toUpperCase() || "";
-    
-    // DEBUG: Log da normalização para identificar problemas
-    if (!op) {
-      console.log("⚠️ [ExtratoTabContent] normalizeOperation recebeu string vazia:", raw);
-    }
     
     if (op.includes("DIVIDENDO")) return "dividend";
     if (op.includes("JCP") || op.includes("JUROS SOBRE CAPITAL")) return "jcp";
@@ -99,7 +93,6 @@ export default function ExtratoTabContent({
     
     // Se chegou aqui e é string vazia, provavelmente é um provento não identificado
     if (!op) {
-      console.log("⚠️ [ExtratoTabContent] Operação não identificada, assumindo como dividend");
       return "dividend"; // Assume como dividendo por padrão para proventos não identificados
     }
     
@@ -108,8 +101,6 @@ export default function ExtratoTabContent({
 
   // Mapeia operações abertas (excluindo operações que fazem parte de posições fechadas)
   const mappedOperacoes = useMemo(() => {
-    console.log("🔍 [ExtratoTabContent] operacoesAbertas recebidas:", operacoesAbertas);
-    
     if (!Array.isArray(operacoesAbertas)) return [];
     
     // Criar um set de operações de venda que fazem parte de posições fechadas
@@ -134,7 +125,7 @@ export default function ExtratoTabContent({
         const chaveOperacao = `${opTicker}-${opDate}-${opQuantity}-${normalizedOp}`;
         
         // Filtrar operações que são proventos (serão tratadas separadamente)
-        if (["dividend", "jcp", "rendimento", "bonificacao"].includes(normalizedOp)) {
+        if (["dividend", "jcp", "rendimento"].includes(normalizedOp)) {
           return false;
         }
         
@@ -152,6 +143,7 @@ export default function ExtratoTabContent({
         
         const mappedOp = {
           ...op,
+          id: op.id || Math.floor(Math.random() * 1000000),
           date: (op.date || anyOp["Data do Negócio"] || "").toString().trim().slice(0, 10),
           ticker: (op.ticker || anyOp["Código de Negociação"] || "").toString().toUpperCase().replace(/\s+/g, ""),
           operation: normalizedOperation,
@@ -162,31 +154,19 @@ export default function ExtratoTabContent({
           visualBranch: "left" as const
         };
         
-        // DEBUG: Log operações com valores zerados
-        if (mappedOp.price === 0 || mappedOp.quantity === 0) {
-          console.log("⚠️ [ExtratoTabContent] Operação com valor zerado encontrada:", {
-            original: op,
-            anyOp: anyOp,
-            mapped: mappedOp
-          });
-        }
-        
         return mappedOp;
       })
-      .filter(op => !["dividend", "jcp", "rendimento", "bonificacao"].includes(op.operation));
+      .filter(op => !["dividend", "jcp", "rendimento"].includes(op.operation));
     
-    console.log("🔍 [ExtratoTabContent] mappedOperacoes resultado:", result);
     return result;
   }, [operacoesAbertas, operacoesFechadas]);
 
   // Mapeia proventos para a timeline
   const mappedProventos = useMemo(() => {
-    console.log("🔍 [ExtratoTabContent] proventos recebidos:", proventos);
+    console.log('🔍 [ExtratoTabContent] mappedProventos executando com proventos:', proventos.length, 'itens');
+    if (!Array.isArray(proventos)) return [];
     
-    const result = (proventos || []).map((p) => {
-      // DEBUG: Log detalhado de cada provento
-      console.log("🔍 [ExtratoTabContent] Mapeando provento individual:", p);
-      
+    const result = proventos.map((p) => {
       // Type assertion para acessar campos que vêm do backend mas não estão na interface
       const pAny = p as any;
       const tipo = p.tipo || pAny.tipo_provento || "";
@@ -194,6 +174,15 @@ export default function ExtratoTabContent({
       
       // Usar quantidade_possuida_na_data_ex que vem do backend, ou quantidade_na_data_ex como fallback
       const quantity = pAny.quantidade_possuida_na_data_ex || p.quantidade_na_data_ex || 0;
+      
+      console.log('🔍 [ExtratoTabContent] Mapeando provento:', {
+        ticker: p.ticker_acao,
+        tipo: tipo,
+        valor_unitario_provento: p.valor_unitario_provento,
+        valor: pAny.valor,
+        data_ex: p.data_ex,
+        quantity: quantity
+      });
       
       const mappedProvento = {
         date: (p.dt_pagamento || p.data_ex || "").toString().slice(0, 10),
@@ -210,39 +199,15 @@ export default function ExtratoTabContent({
         visualBranch: "right" as const
       };
       
-      // DEBUG: Log específico para verificar datas
-      if (p.dt_pagamento) {
-        console.log("🔍 [ExtratoTabContent] Verificação de data:", {
-          dt_pagamento_original: p.dt_pagamento,
-          date_mapeada: mappedProvento.date,
-          ticker: p.ticker_acao
-        });
-      }
-      
-      // DEBUG: Log proventos com valores zerados
-      if (mappedProvento.price === 0 || mappedProvento.quantity === 0) {
-        console.log("⚠️ [ExtratoTabContent] Provento com valor zerado encontrado:", {
-          original: p,
-          mapped: mappedProvento,
-          tipo_detectado: tipo,
-          tipo_normalizado: normalizedTipo,
-          quantidade_original: p.quantidade_na_data_ex,
-          quantidade_possuida: pAny.quantidade_possuida_na_data_ex,
-          quantidade_final: quantity
-        });
-      }
-      
       return mappedProvento;
     });
     
-    console.log("🔍 [ExtratoTabContent] mappedProventos resultado:", result);
+    console.log('✅ [ExtratoTabContent] Proventos mapeados para timeline:', result.length, 'itens');
     return result;
   }, [proventos]);
 
   // Mapeia posições encerradas
   const mappedPosicoesFechadas = useMemo(() => {
-    console.log("🔍 [ExtratoTabContent] operacoesFechadas recebidas:", operacoesFechadas);
-    
     if (!Array.isArray(operacoesFechadas)) return [];
     
     const result = operacoesFechadas.map((op) => {
@@ -264,29 +229,15 @@ export default function ExtratoTabContent({
         operacoes: op.operacoes_relacionadas || []      
       };
       
-      // DEBUG: Log posições fechadas com valores zerados
-      if (mappedFechada.price === 0 || mappedFechada.quantity === 0 || isNaN(mappedFechada.price)) {
-        console.log("⚠️ [ExtratoTabContent] Posição fechada com valor zerado/inválido encontrada:", {
-          original: op,
-          mapped: mappedFechada,
-          calculo_price: `${op.valor_venda} / ${op.quantidade} = ${op.valor_venda / op.quantidade}`
-        });
-      }
-      
       return mappedFechada;
     });
     
-    console.log("🔍 [ExtratoTabContent] mappedPosicoesFechadas resultado:", result);
     return result;
   }, [operacoesFechadas]);
 
   // Mapeia eventos corporativos (apenas das ações que o usuário possuía na data do evento)
   const mappedEventos = useMemo(() => {
-    console.log("🔍 [ExtratoTabContent] mappedEventos - Iniciando mapeamento");
-    console.log("🔍 [ExtratoTabContent] eventos recebidos:", eventos);
-    
     if (!Array.isArray(eventos)) {
-      console.log("🔍 [ExtratoTabContent] eventos não é array, retornando vazio");
       return [];
     }
     
@@ -302,11 +253,6 @@ export default function ExtratoTabContent({
         tickerToAcaoId.set(ticker, idAcao);
         acaoIdToTicker.set(idAcao, ticker);
       }
-    });
-    
-    console.log("🔍 [ExtratoTabContent] Mapeamento proventos:", {
-      tickerToAcaoId: Object.fromEntries(tickerToAcaoId),
-      acaoIdToTicker: Object.fromEntries(acaoIdToTicker)
     });
     
     // IMPORTANTE: Criar mapeamento adicional baseado nos IDs conhecidos do banco
@@ -325,10 +271,6 @@ export default function ExtratoTabContent({
       tickerToAcaoId.set(ticker, idAcao);
     });
     
-    console.log("🔍 [ExtratoTabContent] Mapeamento final com mappings conhecidos:", {
-      acaoIdToTicker: Object.fromEntries(acaoIdToTicker)
-    });
-    
     // Obter todos os tickers das operações do usuário
     const tickersUsuario = new Set<string>();
     
@@ -342,51 +284,44 @@ export default function ExtratoTabContent({
       tickersUsuario.add(pos.ticker);
     });
     
-    console.log("🔍 [ExtratoTabContent] Tickers do usuário:", Array.from(tickersUsuario));
-    
     // Função para verificar se o usuário possuía a ação na data do evento
     const possuiaAcaoNaData = (idAcao: number, dataEvento: string): boolean => {
       const ticker = acaoIdToTicker.get(idAcao);
-      console.log(`🔍 [ExtratoTabContent] *** VERIFICANDO ação ID ${idAcao} -> ticker ${ticker} na data_registro ${dataEvento} ***`);
       
       if (!ticker) {
-        console.log(`🔍 [ExtratoTabContent] Ticker não encontrado para ID ${idAcao} -> EXCLUIR`);
         return false;
       }
       
       const dataEventoObj = new Date(dataEvento);
       
-      // MÉTODO 1: Verificar se está na carteira atual (operações abertas)
-      const temOperacaoAberta = operacoesAbertas.some(op => op.ticker === ticker);
-      console.log(`🔍 [ExtratoTabContent] ${ticker} na carteira atual: ${temOperacaoAberta}`);
-      if (temOperacaoAberta) {
-        console.log(`🔍 [ExtratoTabContent] ${ticker} encontrado na carteira atual (operações abertas) -> INCLUIR evento`);
-        return true;
-      }
-      
-      // MÉTODO 2: Verificar operações fechadas - se possuía ação na data_registro
-      console.log(`🔍 [ExtratoTabContent] Verificando operações fechadas para ${ticker}:`);
+      // Verificar operações fechadas - se possuía ação na data_registro do evento
       const possuiaNaDataFechada = operacoesFechadas.some(pos => {
         if (pos.ticker !== ticker) return false;
         
         const dataAbertura = new Date(pos.data_abertura);
         const dataFechamento = new Date(pos.data_fechamento);
         
-        console.log(`🔍 [ExtratoTabContent]   Operação ${pos.data_abertura} a ${pos.data_fechamento}`);
-        console.log(`🔍 [ExtratoTabContent]     dataAbertura <= dataEvento: ${dataAbertura <= dataEventoObj}`);
-        console.log(`🔍 [ExtratoTabContent]     dataEvento < dataFechamento: ${dataEventoObj < dataFechamento}`);
-        
         // Se o evento foi entre a abertura e fechamento (EXCLUSIVO do fechamento)
         // Evento na data de fechamento NÃO deve ser incluído pois a posição já foi fechada
         const dentroDoPeríodo = dataAbertura <= dataEventoObj && dataEventoObj < dataFechamento;
         
-        console.log(`🔍 [ExtratoTabContent]     Dentro do período: ${dentroDoPeríodo}`);
-        
         return dentroDoPeríodo;
       });
       
-      console.log(`🔍 [ExtratoTabContent] ${ticker} resultado final: ${possuiaNaDataFechada ? 'INCLUIR' : 'EXCLUIR'} evento`);
-      return possuiaNaDataFechada;
+      // Verificar se tem posições abertas que incluem a data do evento
+      const possuiaNaDataAberta = operacoesAbertas.some(op => {
+        if (op.ticker !== ticker) return false;
+        
+        // Para operações abertas, verificar se a data de abertura é <= data do evento
+        const dataAbertura = new Date(op.date);
+        const possuiaNaData = dataAbertura <= dataEventoObj;
+        
+        return possuiaNaData;
+      });
+      
+      const resultado = possuiaNaDataFechada || possuiaNaDataAberta;
+      
+      return resultado;
     };
     
     // Filtrar e mapear apenas eventos das ações que o usuário possuía
@@ -395,13 +330,11 @@ export default function ExtratoTabContent({
         // Usar data_registro como critério principal para verificar posse
         const dataEvento = evento.data_registro;
         if (!dataEvento) {
-          console.log("🔍 [ExtratoTabContent] Evento sem data_registro, excluindo:", evento);
           return false;
         }
         
         // Só incluir eventos de ações que o usuário possui/possuía na data_registro
         const possui = possuiaAcaoNaData(evento.id_acao, dataEvento);
-        console.log(`🔍 [ExtratoTabContent] Evento ${evento.id} (ação ${evento.id_acao}) na data_registro ${dataEvento}: ${possui ? 'INCLUÍDO' : 'EXCLUÍDO'}`);
         return possui;
       })
       .map((evento) => {
@@ -424,14 +357,6 @@ export default function ExtratoTabContent({
         return mappedEvento;
       });
     
-    console.log("🔍 [ExtratoTabContent] mappedEventos resultado:", result);
-    console.log("🔍 [ExtratoTabContent] Eventos filtrados por posse:", {
-      totalEventos: eventos.length,
-      eventosDoUsuario: result.length,
-      tickersUsuario: Array.from(tickersUsuario),
-      mapeamentoIds: Object.fromEntries(acaoIdToTicker)
-    });
-    
     return result;
   }, [eventos, operacoesAbertas, operacoesFechadas, proventos]);
 
@@ -444,14 +369,6 @@ export default function ExtratoTabContent({
     
     const all = [...ops, ...provs, ...fechadas, ...evts];
     const sorted = all.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    console.log("🔍 [ExtratoTabContent] timelineItems finais:", sorted);
-    console.log("🔍 [ExtratoTabContent] Items com valores zerados no timeline final:", 
-      sorted.filter(item => 
-        (item.price === 0 || item.price === null || item.price === undefined || isNaN(item.price)) ||
-        (item.quantity === 0 || item.quantity === null || item.quantity === undefined)
-      )
-    );
     
     return sorted;
   }, [mappedOperacoes, mappedProventos, mappedPosicoesFechadas, mappedEventos]);

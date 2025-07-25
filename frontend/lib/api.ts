@@ -21,8 +21,12 @@ api.interceptors.request.use(
       const token = localStorage.getItem("token"); // Chave do token no localStorage
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
+        console.log('🔍 [API] Token JWT encontrado e adicionado ao header');
+      } else {
+        console.warn('⚠️ [API] Token JWT não encontrado no localStorage');
       }
     }
+    console.log('🔍 [API] Fazendo requisição para:', (config.baseURL || '') + (config.url || ''));
     return config;
   },
   (error) => {
@@ -77,10 +81,15 @@ export const getPortfolioEquityHistory = async (
 
 export const getProventosUsuarioDetalhado = async (): Promise<ProventoRecebidoUsuario[]> => {
   try {
+    console.log('🔍 [getProventosUsuarioDetalhado] Iniciando busca de proventos...');
     const response = await api.get<ProventoRecebidoUsuario[]>("/usuario/proventos/");
+    console.log('🔍 [getProventosUsuarioDetalhado] Resposta recebida:', response.data);
     return response.data;
   } catch (error) {
+    console.error('🚨 [getProventosUsuarioDetalhado] Erro:', error);
     if (axios.isAxiosError(error) && error.response) {
+      console.error('🚨 [getProventosUsuarioDetalhado] Resposta do erro:', error.response.data);
+      console.error('🚨 [getProventosUsuarioDetalhado] Status do erro:', error.response.status);
       throw new Error(error.response.data.detail || "Falha ao buscar proventos detalhados do usuário.");
     }
     throw new Error("Erro inesperado ao buscar proventos detalhados do usuário.");
@@ -148,5 +157,23 @@ export const getEventosCorporativos = async (): Promise<EventoCorporativoInfo[]>
       throw new Error(error.response.data.detail || "Falha ao buscar eventos corporativos.");
     }
     throw new Error("Erro inesperado ao buscar eventos corporativos.");
+  }
+};
+
+// Função para buscar eventos corporativos filtrados do usuário (NOVA - MAIS EFICIENTE)
+export const getEventosCorporativosUsuario = async (): Promise<EventoCorporativoInfo[]> => {
+  try {
+    console.log('🔍 [getEventosCorporativosUsuario] Iniciando busca de eventos corporativos do usuário...');
+    const response = await api.get<EventoCorporativoInfo[]>("/usuario/eventos_corporativos/");
+    console.log('🔍 [getEventosCorporativosUsuario] Resposta recebida:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('🚨 [getEventosCorporativosUsuario] Erro:', error);
+    if (axios.isAxiosError(error) && error.response) {
+      console.error('🚨 [getEventosCorporativosUsuario] Resposta do erro:', error.response.data);
+      console.error('🚨 [getEventosCorporativosUsuario] Status do erro:', error.response.status);
+      throw new Error(error.response.data.detail || "Falha ao buscar eventos corporativos do usuário.");
+    }
+    throw new Error("Erro inesperado ao buscar eventos corporativos do usuário.");
   }
 };

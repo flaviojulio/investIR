@@ -472,6 +472,32 @@ class EventoCorporativoCreate(BaseModel):
 class EventoCorporativoInfo(EventoCorporativoBase):
     id: int
     model_config = ConfigDict(from_attributes=True, json_encoders={date: lambda d: d.isoformat() if d else None})
+    
+    @field_validator('data_aprovacao', 'data_registro', 'data_ex', mode='before')
+    @classmethod
+    def parse_date_fields(cls, v):
+        """
+        Converte strings de data do banco (YYYY-MM-DD) para objetos date.
+        Aceita tanto strings quanto objetos date para máxima compatibilidade.
+        """
+        if v is None or v == "":
+            return None
+        
+        if isinstance(v, date):
+            return v  # Já é um objeto date
+            
+        if isinstance(v, str):
+            try:
+                # Tentar formato ISO do banco de dados (YYYY-MM-DD)
+                return datetime.strptime(v, "%Y-%m-%d").date()
+            except ValueError:
+                try:
+                    # Tentar formato brasileiro (DD/MM/YYYY) como fallback
+                    return datetime.strptime(v, "%d/%m/%Y").date()
+                except ValueError:
+                    raise ValueError(f"Formato de data inválido: {v}. Esperado YYYY-MM-DD ou DD/MM/YYYY.")
+        
+        raise ValueError(f"Tipo de data inválido: {type(v)}. Esperado string ou date.")
 
 # Modelos para Resumos de Proventos
 

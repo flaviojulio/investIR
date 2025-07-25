@@ -17,7 +17,16 @@ import {
   Target,
   Building2
 } from "lucide-react";
-import type { Operacao, OperacaoDetalhe } from "@/lib/types";
+
+interface OperacaoDetalhe {
+  id: number;
+  date: string;
+  ticker: string;
+  operation: string;
+  quantity: number;
+  price: number;
+  fees?: number;
+}
 
 // Sistema de cores consistente e acessível
 const COLORS = {
@@ -139,7 +148,7 @@ const FILTER_CONFIG: Record<FilterKey, FilterConfig> = {
     label: "Proventos",
     icon: <DollarSign className="w-4 h-4 text-green-600" />, 
     color: "bg-green-100 text-green-700 border-green-200 hover:bg-green-200",
-    types: ["dividend", "jcp", "rendimento", "bonificacao"]
+    types: ["dividend", "jcp", "rendimento"]
   },
   events: {
     label: "Eventos Corporativos",
@@ -174,9 +183,6 @@ function formatCurrency(value: number | undefined | null): string {
 function formatDate(dateStr: string): string {
   if (!dateStr) return "";
   
-  // DEBUG: Log para investigar problema de datas
-  const originalDateStr = dateStr;
-  
   // Garantir que a data seja tratada como local (não UTC)
   // Se a string estiver no formato YYYY-MM-DD, adicionar horário para evitar problemas de timezone
   const dateToFormat = dateStr.includes('T') ? dateStr : `${dateStr}T00:00:00`;
@@ -193,19 +199,6 @@ function formatDate(dateStr: string): string {
     month: "long",
     year: "numeric"
   }).replace(".", "");
-  
-  // DEBUG: Log para comparar entrada e saída
-  if (originalDateStr.includes('2025-06-12') || originalDateStr.includes('2025-03-20')) {
-    console.log("🔍 [formatDate] Debug:", {
-      input: originalDateStr,
-      dateToFormat: dateToFormat,
-      dateObject: date.toISOString(),
-      formatted: formatted,
-      getDate: date.getDate(),
-      getMonth: date.getMonth() + 1,
-      getFullYear: date.getFullYear()
-    });
-  }
   
   return formatted;
 }
@@ -258,10 +251,12 @@ function getEventoExplicacao(tipoEvento: string, razao: string, ticker: string):
 
 // Função para distribuir items de forma balanceada na timeline
 function distributeItemsBalanced(items: any[]): any[] {
-  const sortedItems = [...items].sort((a, b) => 
-    new Date(b.date || b.data_fechamento || '').getTime() - 
-    new Date(a.date || a.data_fechamento || '').getTime()
-  );
+  const sortedItems = [...items].sort((a, b) => {
+    // Para proventos, usar data_ex; para outros, usar date ou data_fechamento
+    const dateA = a.data_ex || a.date || a.data_fechamento || '';
+    const dateB = b.data_ex || b.date || b.data_fechamento || '';
+    return new Date(dateB).getTime() - new Date(dateA).getTime();
+  });
 
   // Estratégia de distribuição inteligente
   return sortedItems.map((item, index) => {
@@ -273,7 +268,7 @@ function distributeItemsBalanced(items: any[]): any[] {
       side = 'left';
     }
     // 2. Proventos sempre à direita para diferenciação visual
-    else if (['dividend', 'jcp', 'rendimento', 'bonificacao'].includes(item.operation)) {
+    else if (['dividend', 'jcp', 'rendimento'].includes(item.operation)) {
       side = 'right';
     }
     // 3. Operações de compra/venda alternam para balance visual
@@ -370,6 +365,10 @@ function ClosedPositionCard({ item, idx }: ClosedPositionCardProps) {
   const bgResultado = resultadoPositivo ? "bg-emerald-50" : (item.resultado || 0) < 0 ? "bg-red-50" : "bg-gray-50";
 
   const isRight = item.visualBranch === "right";
+  
+  // Usar campos corretos para exibição
+  const displayTicker = item.ticker_acao || item.ticker;
+  const displayDate = item.data_fechamento || item.date;
 
   // Badge de tributação com tooltip elegante (header)
   function TaxBadgeHeader() {
@@ -445,14 +444,14 @@ function ClosedPositionCard({ item, idx }: ClosedPositionCardProps) {
                 </div>
               </div>
               <span className="text-xs text-gray-500 font-mono">
-                {formatDate(item.date || item.data_fechamento)}
+                {formatDate(displayDate)}
               </span>
             </div>
 
             {/* Resumo principal */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-900 text-lg">{item.ticker}</span>
+                <span className="font-bold text-gray-900 text-lg">{displayTicker}</span>
                 {item.day_trade && (
                   <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
                     Day Trade
@@ -539,7 +538,7 @@ function ClosedPositionCard({ item, idx }: ClosedPositionCardProps) {
                             <div key={i} className="flex items-center text-xs rounded px-2 py-1 gap-2 bg-gray-50 hover:bg-gray-100 transition">
                               <span className={"" + opColor.icon}>{opIcon}</span>
                               <span className="font-mono text-gray-500 mr-1">{formatDateBR(op.date)}</span>
-                              <span className="font-semibold text-gray-800 mr-1">{item.ticker}</span>
+                              <span className="font-semibold text-gray-800 mr-1">{displayTicker}</span>
                               <span className={`mr-1 font-medium capitalize ${opColor.text}`}>{getOperationLabel(opType)}</span>
                               <span className="mr-1 text-gray-600">Qtd: <span className="font-semibold">{op.quantity}</span></span>
                               <span className="text-gray-600">Preço: <span className="font-semibold">{op.price}</span></span>
@@ -568,8 +567,16 @@ interface OperationCardProps {
 function OperationCard({ item, idx }: OperationCardProps) {
   const colors = getColorScheme(item.operation);
   const isRight = item.visualBranch === "right";
-  const isProvento = ["dividend", "jcp", "rendimento", "bonificacao"].includes(item.operation?.toLowerCase());
+  const isProvento = ["dividend", "jcp", "rendimento"].includes(item.operation?.toLowerCase());
   const isEventoCorporativo = ["desdobramento", "agrupamento", "bonificacao"].includes(item.operation?.toLowerCase());
+  
+  // Para proventos, mapear campos da API corretamente
+  const displayTicker = item.ticker_acao || item.ticker;
+  const displayNomeAcao = item.nome_acao;
+  const displayDate = item.data_ex || item.date;
+  const displayQuantity = item.quantidade_na_data_ex || item.quantity;
+  const displayPrice = item.valor || item.price;
+  const displayValorTotal = item.valor_total_recebido;
   
   return (
     <motion.div
@@ -608,19 +615,19 @@ function OperationCard({ item, idx }: OperationCardProps) {
               </span>
             </div>
             <span className={`text-xs font-mono ${isEventoCorporativo ? "text-white/80" : "text-gray-500"}`}>
-              {formatDate(item.date)}
+              {formatDate(displayDate)}
             </span>
           </div>
           
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <span className={`font-semibold text-sm ${isEventoCorporativo ? "text-white" : "text-gray-900"}`}>
-                {item.ticker}
+                {displayTicker}
               </span>
               {/* Não exibir nome_acao para eventos corporativos para evitar repetição */}
-              {!isEventoCorporativo && item.nome_acao && (
+              {!isEventoCorporativo && displayNomeAcao && (
                 <span className="text-xs truncate ml-2 max-w-24 text-gray-500">
-                  {item.nome_acao}
+                  {displayNomeAcao}
                 </span>
               )}
             </div>
@@ -645,7 +652,7 @@ function OperationCard({ item, idx }: OperationCardProps) {
                         💡 O que isso significa:
                       </div>
                       <div className="text-sm text-white/95 leading-relaxed">
-                        {getEventoExplicacao(item.operation, (item as any).razao || '', item.ticker)}
+                        {getEventoExplicacao(item.operation, (item as any).razao || '', displayTicker)}
                       </div>
                     </div>
                     
@@ -655,12 +662,12 @@ function OperationCard({ item, idx }: OperationCardProps) {
               ) : isProvento ? (
                 <div className="flex-1">
                   {/* Mostrar valor total recebido se disponível - DESTAQUE PRINCIPAL */}
-                  {(item as any).valor_total_recebido ? (
+                  {displayValorTotal ? (
                     <div className="space-y-2">
                       {/* VALOR TOTAL RECEBIDO - DESTAQUE MÁXIMO */}
                       <div className="bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-emerald-300 rounded-lg p-3 shadow-sm">
                         <div className="text-2xl font-bold text-emerald-800 mb-1">
-                          {formatCurrency((item as any).valor_total_recebido)}
+                          {formatCurrency(displayValorTotal)}
                         </div>
                         <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">
                           💰 TOTAL RECEBIDO
@@ -669,13 +676,13 @@ function OperationCard({ item, idx }: OperationCardProps) {
                       
                       {/* Detalhes do cálculo - visual secundário */}
                       <div className="bg-gray-50 px-2 py-1 rounded text-xs text-gray-500 border-l-2 border-gray-300">
-                        {item.quantity > 0 ? (
+                        {displayQuantity > 0 ? (
                           <>
-                            <span className="font-medium">Cálculo:</span> {item.quantity} ações × {formatCurrency(item.price)}
+                            <span className="font-medium">Cálculo:</span> {displayQuantity} ações × {formatCurrency(displayPrice)}
                           </>
                         ) : (
                           <>
-                            <span className="font-medium">Valor unitário:</span> {formatCurrency(item.price)}
+                            <span className="font-medium">Valor unitário:</span> {formatCurrency(displayPrice)}
                           </>
                         )}
                       </div>
@@ -685,7 +692,7 @@ function OperationCard({ item, idx }: OperationCardProps) {
                       {/* Valor unitário como principal quando não há total */}
                       <div className="bg-gray-50 border border-gray-200 rounded-lg p-2">
                         <div className="text-lg font-bold text-gray-900 mb-1">
-                          {formatCurrency(item.price)}
+                          {formatCurrency(displayPrice)}
                         </div>
                         <div className="text-xs font-medium text-gray-600">
                           Valor por ação
@@ -693,9 +700,9 @@ function OperationCard({ item, idx }: OperationCardProps) {
                       </div>
                       
                       {/* Mostrar cálculo se disponível e quantity for válido */}
-                      {item.quantity > 0 && (
+                      {displayQuantity > 0 && (
                         <div className="text-xs text-gray-500 bg-gray-50 px-2 py-1 rounded border-l-2 border-gray-300">
-                          <span className="font-medium">Total calculado:</span> {item.quantity} × {formatCurrency(item.price)} = {formatCurrency(item.quantity * item.price)}
+                          <span className="font-medium">Total calculado:</span> {displayQuantity} × {formatCurrency(displayPrice)} = {formatCurrency(displayQuantity * displayPrice)}
                         </div>
                       )}
                     </div>
@@ -703,17 +710,17 @@ function OperationCard({ item, idx }: OperationCardProps) {
                 </div>
               ) : (
                 <div className="text-sm text-gray-700">
-                  <span className="font-medium">{item.quantity} ações a </span>
-                  <span className="font-semibold">{formatCurrency(item.price)}</span>
+                  <span className="font-medium">{displayQuantity} ações a </span>
+                  <span className="font-semibold">{formatCurrency(displayPrice)}</span>
                 </div>
               )}
             </div>
             
-            {!isProvento && !isEventoCorporativo && item.quantity && item.price && (
+            {!isProvento && !isEventoCorporativo && displayQuantity && displayPrice && (
               <div className="text-right">
                 <span className="text-xs text-gray-500">Total: </span>
                 <span className="text-sm font-semibold text-gray-900">
-                  {formatCurrency(item.quantity * item.price)}
+                  {formatCurrency(displayQuantity * displayPrice)}
                 </span>
               </div>
             )}
@@ -744,6 +751,19 @@ interface TimelineItem {
   day_trade?: boolean;
   data_fechamento?: string;
   operacoes?: OperacaoDetalhe[]; // Add the operacoes property
+  
+  // Campos específicos para proventos (da API)
+  ticker_acao?: string;
+  nome_acao?: string;
+  tipo?: string;
+  valor?: number;
+  data_ex?: string;
+  dt_pagamento?: string;
+  quantidade_na_data_ex?: number;
+  valor_total_recebido?: number;
+  
+  // Campos específicos para eventos corporativos
+  razao?: string;
 }
 
 interface Props {
@@ -754,14 +774,6 @@ export default function OperationTimeline({ items = [] }: Props) {
   const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
   const [searchTerm, setSearchTerm] = useState("");
 
-  // DEBUG: Log dos items recebidos para identificar valores zerados
-  console.log("🔍 [OperationTimeline] Items recebidos:", items);
-  console.log("🔍 [OperationTimeline] Items com valores zerados:", 
-    items.filter(item => 
-      (item.price === 0 || item.price === null || item.price === undefined) ||
-      (item.quantity === 0 || item.quantity === null || item.quantity === undefined)
-    )
-  );
 
   // Filtrar e buscar items
   const filteredItems = useMemo(() => {
@@ -779,8 +791,12 @@ export default function OperationTimeline({ items = [] }: Props) {
     if (searchTerm) {
       const searchLower = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(item => {
-        const tickerMatch = item.ticker?.toLowerCase().includes(searchLower);
-        const nomeAcaoMatch = (item as any).nome_acao?.toLowerCase().includes(searchLower);
+        // Para proventos da API, usar ticker_acao; para outros, usar ticker
+        const ticker = item.ticker_acao || item.ticker || '';
+        const nomeAcao = item.nome_acao || '';
+        
+        const tickerMatch = ticker.toLowerCase().includes(searchLower);
+        const nomeAcaoMatch = nomeAcao.toLowerCase().includes(searchLower);
         return tickerMatch || nomeAcaoMatch;
       });
     }

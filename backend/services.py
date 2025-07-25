@@ -1269,8 +1269,18 @@ def listar_proventos_recebidos_pelo_usuario_service(usuario_id: int) -> List[Dic
                     v = 0.0
                 p_db_dict['valor_unitario_provento'] = v
             
+            # Mapear valor_unitario_provento para valor (campo do modelo Pydantic)
+            if 'valor_unitario_provento' in p_db_dict:
+                p_db_dict['valor'] = p_db_dict['valor_unitario_provento']
+            
             provento_validado = ProventoRecebidoUsuario.model_validate(p_db_dict)
-            proventos_validados.append(provento_validado.model_dump())
+            result_dict = provento_validado.model_dump()
+            
+            # Adicionar valor_unitario_provento de volta no resultado para compatibilidade com frontend
+            if 'valor_unitario_provento' in p_db_dict:
+                result_dict['valor_unitario_provento'] = p_db_dict['valor_unitario_provento']
+            
+            proventos_validados.append(result_dict)
             
         except Exception as e:
             logging.error(f"Erro ao validar provento recebido do DB ID {p_db_dict['id'] if 'id' in p_db_dict else None} para usuario {usuario_id}: {e}", exc_info=True)
@@ -1689,6 +1699,127 @@ def listar_todos_eventos_corporativos_service() -> List[EventoCorporativoInfo]:
     eventos_db = obter_todos_eventos_corporativos()
     # Pydantic model_validate irá analisar as strings ISO de data para objetos date.
     return [EventoCorporativoInfo.model_validate(e) for e in eventos_db]
+
+def listar_eventos_corporativos_usuario_service(usuario_id: int) -> List[EventoCorporativoInfo]:
+    """
+    Lista apenas os eventos corporativos relevantes para o usuário.
+    Retorna somente eventos de ações que o usuário possuía na data de registro do evento.
+    
+    Args:
+        usuario_id: ID do usuário logado
+        
+    Returns:
+        Lista de eventos corporativos filtrados para o usuário
+    """
+    print(f"🔍 [DEBUG] Iniciando para usuário {usuario_id}")
+    
+    # 1. Buscar todos os eventos corporativos e converter para EventoCorporativoInfo
+    todos_eventos_raw = obter_todos_eventos_corporativos()
+    print(f"🔍 [DEBUG] Total de eventos no sistema: {len(todos_eventos_raw)}")
+    
+    # Converter para EventoCorporativoInfo (que faz parsing correto das datas)
+    try:
+        todos_eventos = [EventoCorporativoInfo.model_validate(e) for e in todos_eventos_raw]
+        print(f"🔍 [DEBUG] Total de eventos validados: {len(todos_eventos)}")
+    except Exception as e:
+        print(f"🚨 [DEBUG] Erro na validação dos eventos: {e}")
+        return []
+    
+    # 2. Buscar todas as operações do usuário
+    operacoes_usuario = obter_todas_operacoes(usuario_id)
+    print(f"🔍 [DEBUG] Total de operações do usuário: {len(operacoes_usuario)}")
+    
+    # 3. Criar mapeamento dinâmico de id_acao para ticker consultando a tabela acoes
+    ticker_por_id_acao = {}
+    try:
+        import sqlite3
+        conn = sqlite3.connect("acoes_ir.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, ticker FROM acoes")
+        for id_acao, ticker in cursor.fetchall():
+            ticker_por_id_acao[id_acao] = ticker.upper()
+        conn.close()
+        print(f"🔍 [DEBUG] Mapeamento ações carregado: {len(ticker_por_id_acao)} ações")
+    except Exception as e:
+        print(f"🚨 [DEBUG] Erro ao buscar mapeamento de ações: {e}")
+        # Fallback para mapeamento conhecido em caso de erro
+        ticker_por_id_acao = {
+            9: 'ITUB4'  # Mínimo necessário para funcionar
+        }
+    
+    # 4. Função para verificar se usuário possuía ação na data específica
+    def usuario_possuia_acao_na_data(ticker: str, data_evento_obj: date) -> bool:
+        """
+        Verifica se o usuário possuía a ação na data do evento.
+        Calcula a posição considerando todas as operações até a data.
+        """
+        if not data_evento_obj:
+            print(f"      [DEBUG] {ticker}: sem data_evento")
+            return False
+            
+        print(f"      [DEBUG] {ticker}: verificando posição em {data_evento_obj}")
+        
+        quantidade_total = 0
+        
+        # Somar todas as operações até a data do evento
+        operacoes_ticker = [op for op in operacoes_usuario if op.get('ticker', '').upper() == ticker.upper()]
+        print(f"      [DEBUG] {ticker}: {len(operacoes_ticker)} operações encontradas")
+        
+        for op in operacoes_ticker:
+            try:
+                data_op = op.get('date')
+                if not data_op:
+                    continue
+                    
+                # Converter para objeto date se for string, caso contrário usar diretamente
+                if isinstance(data_op, str):
+                    from datetime import datetime
+                    data_op_dt = datetime.strptime(data_op, '%Y-%m-%d').date()
+                else:
+                    # Já é um objeto date
+                    data_op_dt = data_op
+                
+                # Só considerar operações até a data do evento
+                if data_op_dt <= data_evento_obj:
+                    operation = op.get('operation', '').lower()
+                    quantity = op.get('quantity', 0)
+                    
+                    if operation == 'buy':
+                        quantidade_total += quantity
+                    elif operation == 'sell':
+                        quantidade_total -= quantity
+                    
+                    print(f"      [DEBUG] {ticker}: {data_op_dt} {operation} {quantity} → posição: {quantidade_total}")
+                else:
+                    print(f"      [DEBUG] {ticker}: {data_op_dt} {op.get('operation')} {op.get('quantity')} (IGNORADO - após evento)")
+                        
+            except Exception as e:
+                print(f"      [DEBUG] {ticker}: erro ao processar operação: {e}")
+                continue
+        
+        possui_acao = quantidade_total > 0
+        print(f"      [DEBUG] {ticker}: posição final = {quantidade_total}, possui = {possui_acao}")
+        return possui_acao
+    
+    # 5. Filtrar eventos apenas para ações que o usuário possuía na data do evento
+    eventos_filtrados = []
+    for evento in todos_eventos:
+        ticker = ticker_por_id_acao.get(evento.id_acao)
+        if not ticker:
+            continue
+            
+        # Agora data_registro é um objeto date (não string)
+        if usuario_possuia_acao_na_data(ticker, evento.data_registro):
+            eventos_filtrados.append(evento)
+            print(f"✅ Evento aceito: {ticker} em {evento.data_registro} - usuário possuía a ação")
+        else:
+            # Debug: mostrar eventos filtrados
+            print(f"🚫 Evento filtrado: {ticker} em {evento.data_registro} - usuário não possuía a ação")
+    
+    print(f"\n📊 RESULTADO FINAL:")
+    print(f"   Total de eventos filtrados: {len(eventos_filtrados)}")
+    
+    return eventos_filtrados
 
 # --- Funções de Importação ---
 
