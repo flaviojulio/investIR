@@ -1249,6 +1249,28 @@ export default function OperacoesEncerradasTable(
     setSelectedOpForDarf(op);
     setIsDarfModalOpen(true);
   };
+
+  // Função para atualizar status do DARF na tabela quando mudado no modal
+  const handleDarfStatusUpdate = (mes: string, tipo: "swing" | "daytrade", novoStatus: string) => {
+    // Encontrar todas as operações do mesmo mês e tipo para atualizar
+    const operacoesParaAtualizar = operacoesComStatusCorrigido.filter(op => {
+      const opMes = op.mes_operacao || op.data_fechamento.substring(0, 7);
+      const isDayTrade = op.day_trade || false;
+      const tipoOperacao = isDayTrade ? "daytrade" : "swing";
+      
+      return opMes === mes && tipoOperacao === tipo;
+    });
+
+    // Criar novo mapa com os status atualizados
+    const novoMapa = new Map(darfStatusMap);
+    
+    operacoesParaAtualizar.forEach(op => {
+      const operationKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}`;
+      novoMapa.set(operationKey, novoStatus.toLowerCase());
+    });
+
+    setDarfStatusMap(novoMapa);
+  };
   // DARF status map state (default empty Map)
   const [darfStatusMap, setDarfStatusMap] = useState<Map<string, string>>(
     new Map()
@@ -1825,6 +1847,7 @@ export default function OperacoesEncerradasTable(
           operacoesFechadas={operacoesComStatusCorrigido}
           mes={selectedOpForDarf.mes_operacao || selectedOpForDarf.data_fechamento.substring(0, 7)}
           tipo={selectedOpForDarf.day_trade ? "daytrade" : "swing"}
+          onStatusUpdate={handleDarfStatusUpdate}
         />
       )}
     </>
