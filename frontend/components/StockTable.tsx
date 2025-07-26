@@ -56,6 +56,7 @@ import {
   Wallet,
   TrendingUpDown,
   DollarSign,
+  RefreshCw,
 } from "lucide-react"; // Edit, Trash2, and Sort icons
 import {
   Tooltip,
@@ -69,17 +70,19 @@ import { api } from "@/lib/api"; // For API calls
 import { useToast } from "@/hooks/use-toast"; // For notifications
 import { formatCurrency, formatNumber } from "@/lib/utils"; // Import centralized formatters
 
-// Simular preço atual (em uma aplicação real, viria de uma API de cotações)
-const getSimulatedCurrentPrice = (avgPrice: number) => {
-  const variation = (Math.random() - 0.5) * 0.2; // Variação de -10% a +10%
-  return avgPrice * (1 + variation);
-};
+// Interface para cotação
+interface Cotacao {
+  ticker: string;
+  fechamento: number;
+  data: string;
+}
 
 // Extensão do tipo CarteiraItem para incluir campos calculados
 interface CarteiraItemWithCalc extends CarteiraItem {
   _valorAtualCalculated: number;
   _resultadoAtualCalculated: number;
   _resultadoPercentualCalculated: number;
+  _currentPrice: number | null;
 }
 
 interface StockTableProps {
@@ -116,12 +119,73 @@ export function StockTable({
   // New state for search term
   const [searchTermST, setSearchTermST] = useState<string>("");
 
+  // Estado para cotações reais
+  const [cotacoes, setCotacoes] = useState<Map<string, Cotacao>>(new Map());
+  const [loadingCotacoes, setLoadingCotacoes] = useState<boolean>(false);
+
+  // Função para buscar cotações mais recentes
+  const fetchCotacoes = async () => {
+    if (carteira.length === 0) return;
+    
+    setLoadingCotacoes(true);
+    try {
+      const cotacoesMap = new Map<string, Cotacao>();
+      
+      // Buscar cotação mais recente para cada ticker da carteira
+      await Promise.all(
+        carteira.map(async (item) => {
+          try {
+            const response = await api.get(`/cotacoes/ticker/${item.ticker}/mais-recente`);
+            
+            if (response.data && response.data.fechamento !== undefined) {
+              cotacoesMap.set(item.ticker, {
+                ticker: item.ticker,
+                fechamento: response.data.fechamento,
+                data: response.data.data
+              });
+            }
+          } catch (error: any) {
+            // Se for 404, apenas log de debug, não é erro crítico
+            if (error.response?.status !== 404) {
+              console.warn(`Erro ao buscar cotação para ${item.ticker}:`, error);
+            }
+          }
+        })
+      );
+      
+      setCotacoes(cotacoesMap);
+    } catch (error) {
+      console.error('Erro ao buscar cotações:', error);
+      toast({
+        title: "Erro",
+        description: "Não foi possível carregar as cotações atuais.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoadingCotacoes(false);
+    }
+  };
+
+  // Buscar cotações quando a carteira mudar
+  useEffect(() => {
+    fetchCotacoes();
+  }, [carteira]);
+
+  // Função para obter preço atual de uma ação
+  const getCurrentPrice = (ticker: string): number | null => {
+    const cotacao = cotacoes.get(ticker);
+    return cotacao ? cotacao.fechamento : null;
+  };
+
   // New state for data to be displayed in the table - REPLACED with useMemo
   const processedCarteira = useMemo(() => {
     const augmentedCarteira = carteira.map((item) => {
-      const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
+      const currentPrice = getCurrentPrice(item.ticker);
       const valorInicial = item.custo_total;
-      const valorDeMercadoAbsoluto = Math.abs(item.quantidade * currentPrice);
+      
+      // Se não temos preço atual, usar o preço médio como fallback
+      const precoParaCalculo = currentPrice || item.preco_medio;
+      const valorDeMercadoAbsoluto = Math.abs(item.quantidade * precoParaCalculo);
 
       let resultadoDaPosicao;
       if (item.quantidade > 0) {
@@ -140,6 +204,7 @@ export function StockTable({
         _valorAtualCalculated: valorDeMercadoAbsoluto,
         _resultadoAtualCalculated: resultadoDaPosicao,
         _resultadoPercentualCalculated: resultadoPercentualDaPosicao,
+        _currentPrice: currentPrice,
       };
     });
 
@@ -195,7 +260,7 @@ export function StockTable({
     }
 
     return newProcessedData;
-  }, [carteira, searchTermST, sortConfigST]);
+  }, [carteira, searchTermST, sortConfigST, cotacoes]);
 
   const requestSortST = (key: string) => {
     let direction: "ascending" | "descending" = "ascending";
@@ -311,16 +376,6 @@ export function StockTable({
 
   // Removed local formatCurrency and formatNumber definitions
 
-  const calculateUnrealizedGain = (
-    quantity: number,
-    avgPrice: number,
-    currentPrice: number
-  ) => {
-    const totalCost = quantity * avgPrice;
-    const currentValue = quantity * currentPrice;
-    return currentValue - totalCost;
-  };
-
   if (carteira.length === 0) {
     return (
       <Card>
@@ -366,9 +421,25 @@ export function StockTable({
           <div>
             <CardTitle className="text-xl font-bold text-gray-800 flex items-center gap-2">
               Carteira de Investimentos
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={fetchCotacoes}
+                disabled={loadingCotacoes}
+                title="Atualizar cotações"
+                className="ml-2"
+              >
+                <RefreshCw className={`h-4 w-4 ${loadingCotacoes ? 'animate-spin' : ''}`} />
+              </Button>
             </CardTitle>
             <CardDescription className="text-sm text-muted-foreground">
-              Suas posições em ações com resultados atuais (simulados)
+              Suas posições em ações com cotações reais
+              {loadingCotacoes && (
+                <span className="text-blue-600 ml-2">• Atualizando cotações...</span>
+              )}
+              {!loadingCotacoes && cotacoes.size > 0 && (
+                <span className="text-green-600 ml-2">• {cotacoes.size} cotações carregadas</span>
+              )}
             </CardDescription>
           </div>
         </div>
@@ -440,14 +511,14 @@ export function StockTable({
                     )}
                   </div>
                 </TableHead>
-                <TableHead className="text-right">Preço Atual*</TableHead>{" "}
+                <TableHead className="text-right">Preço Atual</TableHead>{" "}
                 {/* Not sortable */}
                 <TableHead
                   onClick={() => requestSortST("calculated_valorAtual")}
                   className="cursor-pointer hover:bg-muted/50 text-right"
                 >
                   <div className="flex items-center justify-end">
-                    Valor Atual*
+                    Valor Atual
                     {sortConfigST?.key === "calculated_valorAtual" ? (
                       sortConfigST.direction === "ascending" ? (
                         <ArrowUp className="ml-2 h-4 w-4" />
@@ -459,7 +530,7 @@ export function StockTable({
                     )}
                   </div>
                 </TableHead>
-                <TableHead className="text-right">Resultado*</TableHead>{" "}
+                <TableHead className="text-right">Resultado</TableHead>{" "}
                 {/* Not sortable as per current instructions (absolute value) */}
                 <TableHead
                   onClick={() =>
@@ -468,7 +539,7 @@ export function StockTable({
                   className="cursor-pointer hover:bg-muted/50 text-right"
                 >
                   <div className="flex items-center justify-end">
-                    Resultado (%)*
+                    Resultado (%)
                     {sortConfigST?.key === "calculated_resultadoPercentual" ? (
                       sortConfigST.direction === "ascending" ? (
                         <ArrowUp className="ml-2 h-4 w-4" />
@@ -486,14 +557,14 @@ export function StockTable({
             <TableBody>
               {processedCarteira.map((item) => {
                 const typedItem = item as CarteiraItemWithCalc;
-                const currentPrice = getSimulatedCurrentPrice(
-                  typedItem.preco_medio
-                );
+                const currentPrice = typedItem._currentPrice;
                 const valorAtualDisplay = typedItem._valorAtualCalculated;
                 const resultadoAtualDisplay =
                   typedItem._resultadoAtualCalculated;
                 const resultadoPercentualAtualDisplay =
                   typedItem._resultadoPercentualCalculated;
+                const temCotacao = currentPrice !== null;
+                
                 return (
                   <TableRow key={typedItem.ticker}>
                     <TableCell className="font-medium">
@@ -543,7 +614,31 @@ export function StockTable({
                         : "***"}
                     </TableCell>
                     <TableCell className="text-right">
-                      {showValues ? formatCurrency(currentPrice) : "***"}
+                      <div className="flex items-center justify-end gap-1">
+                        {showValues ? (
+                          <>
+                            {currentPrice !== null ? (
+                              formatCurrency(currentPrice)
+                            ) : (
+                              <span className="text-muted-foreground">N/D</span>
+                            )}
+                            {!temCotacao && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-orange-500 cursor-help">⚠</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    Cotação não disponível
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </>
+                        ) : (
+                          "***"
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-right font-medium">
                       {showValues ? formatCurrency(valorAtualDisplay) : "***"}
@@ -677,7 +772,7 @@ export function StockTable({
               0
             );
             const totalCurrentValue = processedCarteira.reduce((sum, item) => {
-              const currentPrice = getSimulatedCurrentPrice(item.preco_medio);
+              const currentPrice = item._currentPrice || item.preco_medio; // Fallback para preço médio
               return sum + Math.abs(item.quantidade * currentPrice);
             }, 0);
             const totalResult = totalCurrentValue - totalInvested;
@@ -822,8 +917,10 @@ export function StockTable({
 
         <div className="mt-4 text-xs text-muted-foreground space-y-1">
           <p>
-            * Preços atuais são simulados para demonstração. Em produção, seriam
-            obtidos de uma API de cotações.
+            Preços atuais obtidos da última cotação disponível na base de dados.
+          </p>
+          <p>
+            Ações sem cotação disponível usam o preço médio como referência.
           </p>
         </div>
       </CardContent>
