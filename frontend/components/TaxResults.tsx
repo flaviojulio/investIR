@@ -33,12 +33,18 @@ import {
   RotateCcw,
   CheckCheck,
   Eye,
-  ExternalLink
+  ExternalLink,
+  CreditCard,
+  BarChart3,
+  Shield,
+  Timer,
+  Lightbulb,
+  PieChart
 } from "lucide-react"
 import type { ResultadoMensal, OperacaoFechada } from "@/lib/types"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import { DarfMonthlyModal } from "@/components/DarfMonthlyModal"
+import { DarfDetailsModal } from "@/components/DarfMonthlyModal"
 
 interface TaxResultsProps {
   resultados: ResultadoMensal[]
@@ -310,9 +316,9 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           <Card className="border-0 shadow-sm bg-gradient-to-br from-red-50 to-orange-100">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-red-800">💸 Para Pagar</CardTitle>
+              <CardTitle className="text-sm font-semibold text-red-800">Para Pagar</CardTitle>
               <div className="p-2 bg-red-200 rounded-lg">
-                <AlertTriangle className="h-5 w-5 text-red-700" />
+                <CreditCard className="h-5 w-5 text-red-700" />
               </div>
             </CardHeader>
             <CardContent>
@@ -323,9 +329,9 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
 
           <Card className="border-0 shadow-sm bg-gradient-to-br from-blue-50 to-blue-100">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-blue-800">📊 Vendas Este Mês</CardTitle>
+              <CardTitle className="text-sm font-semibold text-blue-800">Vendas Este Mês</CardTitle>
               <div className="p-2 bg-blue-200 rounded-lg">
-                <TrendingUp className="h-5 w-5 text-blue-700" />
+                <BarChart3 className="h-5 w-5 text-blue-700" />
               </div>
             </CardHeader>
             <CardContent>
@@ -338,9 +344,9 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
 
           <Card className="border-0 shadow-sm bg-gradient-to-br from-green-50 to-green-100">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-green-800">🛡️ Meses Isentos</CardTitle>
+              <CardTitle className="text-sm font-semibold text-green-800">Meses Isentos</CardTitle>
               <div className="p-2 bg-green-200 rounded-lg">
-                <CheckCircle className="h-5 w-5 text-green-700" />
+                <Shield className="h-5 w-5 text-green-700" />
               </div>
             </CardHeader>
             <CardContent>
@@ -351,9 +357,9 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
 
           <Card className="border-0 shadow-sm bg-gradient-to-br from-yellow-50 to-orange-100">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-orange-800">⏰ DARFs Pendentes</CardTitle>
+              <CardTitle className="text-sm font-semibold text-orange-800">DARFs Pendentes</CardTitle>
               <div className="p-2 bg-orange-200 rounded-lg">
-                <Clock className="h-5 w-5 text-orange-700" />
+                <Timer className="h-5 w-5 text-orange-700" />
               </div>
             </CardHeader>
             <CardContent>
@@ -367,7 +373,7 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
         <Card className="border-0 shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2 text-blue-800">
-              <BookOpen className="h-5 w-5" />
+              <PieChart className="h-5 w-5" />
               Como Funciona o Imposto sobre Ações
             </CardTitle>
             <CardDescription className="text-blue-600">
@@ -431,7 +437,7 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2 text-red-800">
                 <AlertTriangle className="h-5 w-5" />
-                🚨 Ação Necessária: {darfsPendentes} DARF{darfsPendentes > 1 ? 'S' : ''} Pendente{darfsPendentes > 1 ? 's' : ''}
+                Ação Necessária: {darfsPendentes} DARF{darfsPendentes > 1 ? 'S' : ''} Pendente{darfsPendentes > 1 ? 's' : ''}
               </CardTitle>
               <CardDescription className="text-red-600">
                 Pague até o último dia útil do mês seguinte para evitar multa
@@ -503,7 +509,7 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
           <div className="bg-gradient-to-r from-orange-500 to-red-600 p-6 text-white">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="text-3xl">📊</span>
+                <FileText className="h-8 w-8 text-white" />
                 <div>
                   <h2 className="text-xl font-bold">
                     Histórico Mensal de Impostos
@@ -655,8 +661,8 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
         <Card className="border-0 shadow-sm bg-gradient-to-br from-amber-50 to-yellow-50">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2 text-amber-800">
-              <Info className="h-5 w-5" />
-              💡 Dicas Importantes
+              <Lightbulb className="h-5 w-5" />
+              Dicas Importantes
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -687,12 +693,12 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
         (() => {
           // Debug: logar dados enviados ao modal
           // eslint-disable-next-line no-console
-          console.log('[DEBUG] Abrindo DarfMonthlyModal:', {
+          console.log('[DEBUG] Abrindo DarfDetailsModal:', {
             resultadoMensal: selectedResultado,
             operacoesFechadas,
           });
           return (
-            <DarfMonthlyModal
+            <DarfDetailsModal
               isOpen={isDarfModalOpen}
               onClose={() => setIsDarfModalOpen(false)}
               resultadoMensal={selectedResultado}

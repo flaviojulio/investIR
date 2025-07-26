@@ -6,10 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, FileText, CheckCircle, AlertCircle, HelpCircle, UploadCloud, Loader2, Clock, Sparkles } from "lucide-react"
+import { Upload, FileText, CheckCircle, AlertCircle, HelpCircle, UploadCloud, Loader2, Clock, Sparkles, AlertTriangle, FileStack } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { Tooltip, TooltipContent } from "@/components/ui/tooltip"
 import * as XLSX from "xlsx"
 
 interface UploadOperationsProps {
@@ -17,14 +17,25 @@ interface UploadOperationsProps {
 }
 
 export function UploadOperations({ onSuccess }: UploadOperationsProps) {
-  const [currentStep, setCurrentStep] = useState(1) // 1: Instruções, 2: Upload, 3: Processando, 4: Sucesso
+  const [currentStep, setCurrentStep] = useState(1) // 1: Instruções, 2: Aviso B3, 3: Validação, 4: Processamento, 5: Sucesso
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [isDragOver, setIsDragOver] = useState(false)
   const [operationsCount, setOperationsCount] = useState(0)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [avisoB3Aceito, setAvisoB3Aceito] = useState(false)
+  
+  // Estados para resumo final
+  const [resumoImportacao, setResumoImportacao] = useState<{
+    operacoesImportadas: number
+    operacoesIgnoradas: number
+    avisoB3?: string
+    acoesAfetadas: string[]
+    temProblemas: boolean
+  } | null>(null)
+  
   const { toast } = useToast()
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Estados de validação
   const [validationSteps, setValidationSteps] = useState([
@@ -35,34 +46,79 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
 
   // Estados de processamento
   const [processingSteps, setProcessingSteps] = useState([
-    { label: "Importando operações", status: "pending", description: "Salvando suas operações no banco de dados..." },
-    { label: "Calculando posições", status: "pending", description: "Atualizando quantidade e preço médio de cada ação..." },
-    { label: "Processando proventos", status: "pending", description: "Identificando dividendos e bonificações recebidas..." },
-    { label: "Organizando dados", status: "pending", description: "Preparando relatórios e dashboard atualizado..." },
+    { label: "Lendo operações", status: "pending", description: "Extraindo dados do arquivo" },
+    { label: "Validando dados", status: "pending", description: "Verificando consistência das informações" },
+    { label: "Salvando no banco", status: "pending", description: "Armazenando suas operações" },
+    { label: "Calculando carteira", status: "pending", description: "Atualizando posição atual" },
+    { label: "Processando dividendos", status: "pending", description: "Identificando proventos recebidos" },
   ])
 
+  // Função para formatar tamanho do arquivo
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes'
     const k = 1024
-    const sizes = ['Bytes', 'KB', 'MB']
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
 
-  const handleFileSelect = (selectedFile: File) => {
-    const isExcel = selectedFile.type === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" || 
-                   selectedFile.type === "application/vnd.ms-excel" || 
-                   selectedFile.name.endsWith(".xlsx") || 
-                   selectedFile.name.endsWith(".xls")
-    const isJson = selectedFile.type === "application/json" || selectedFile.name.endsWith(".json")
+  // Reset do upload
+  const resetUpload = () => {
+    setCurrentStep(1)
+    setFile(null)
+    setError("")
+    setOperationsCount(0)
+    setAvisoB3Aceito(false)
+    setResumoImportacao(null)
+    setValidationSteps([
+      { label: "Verificando arquivo", status: "pending", description: "Confirmando se é um arquivo válido da B3" },
+      { label: "Analisando estrutura", status: "pending", description: "Verificando colunas e formato dos dados" },
+      { label: "Contando operações", status: "pending", description: "Identificando quantas operações serão importadas" },
+    ])
+    setProcessingSteps([
+      { label: "Lendo operações", status: "pending", description: "Extraindo dados do arquivo" },
+      { label: "Validando dados", status: "pending", description: "Verificando consistência das informações" },
+      { label: "Salvando no banco", status: "pending", description: "Armazenando suas operações" },
+      { label: "Calculando carteira", status: "pending", description: "Atualizando posição atual" },
+      { label: "Processando dividendos", status: "pending", description: "Identificando proventos recebidos" },
+    ])
+  }
+
+  // Função para prosseguir após aceitar aviso B3
+  const prosseguirAposAvisoB3 = () => {
+    setAvisoB3Aceito(true)
+    setCurrentStep(3) // Vai para validação
     
-    if (isExcel || isJson) {
-      setFile(selectedFile)
-      setError('')
-      setCurrentStep(2)
-      setTimeout(() => runValidation(selectedFile, isExcel), 500)
-    } else {
-      setError('Por favor, selecione um arquivo Excel (.xlsx) ou JSON válido exportado da B3')
+    // Inicia a validação automaticamente
+    if (file) {
+      const isExcel = file.name.endsWith(".xlsx") || file.name.endsWith(".xls")
+      setTimeout(() => runValidation(file, isExcel), 500)
+    }
+  }
+
+  // Handle file selection
+  const handleFileSelect = (selectedFile: File) => {
+    setFile(selectedFile)
+    setError("")
+    setCurrentStep(2) // Vai para o aviso da B3
+  }
+
+  // Funções auxiliares
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragOver(true)
+  }
+
+  const handleDragLeave = () => {
+    setIsDragOver(false)
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragOver(false)
+    const droppedFile = e.dataTransfer.files[0]
+    if (droppedFile) {
+      handleFileSelect(droppedFile)
     }
   }
 
@@ -144,7 +200,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
     console.log("🚀 [UPLOAD] Iniciando upload do arquivo:", file.name)
     
     setLoading(true)
-    setCurrentStep(3)
+    setCurrentStep(4) // Vai para processamento (step 4)
     setError("")
     
     // Animação do progresso
@@ -176,6 +232,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
       console.log("📝 [UPLOAD] Tipo MIME:", file.type)
       
       const formData = new FormData()
+      let jsonData: any[] = [] // Declarar no escopo correto
       
       if (isExcel) {
         console.log("🔄 [UPLOAD] Processando arquivo Excel...")
@@ -184,7 +241,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
         
         const workbook = XLSX.read(data, { type: "array" })
         const firstSheet = workbook.Sheets[workbook.SheetNames[0]]
-        let jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" })
+        jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: "" })
         
         console.log("📋 [UPLOAD] Dados convertidos para JSON, total de linhas:", jsonData.length)
         console.log("📋 [UPLOAD] Primeira linha de exemplo (antes da limpeza):", jsonData[0])
@@ -249,7 +306,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
         const fileText = await file.text()
         console.log("📄 [UPLOAD] Arquivo JSON lido, tamanho:", fileText.length, "caracteres")
         
-        let jsonData = JSON.parse(fileText)
+        jsonData = JSON.parse(fileText)
         console.log("📋 [UPLOAD] JSON parseado, total de linhas:", Array.isArray(jsonData) ? jsonData.length : "não é array")
         
         if (Array.isArray(jsonData)) {
@@ -320,7 +377,36 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
       
       console.log("✅ [UPLOAD] Resposta recebida:", response.status, response.data)
       
-      // Verifica se há avisos sobre operações ignoradas
+      // Extrair lista de ações únicas do arquivo importado
+      const acoesAfetadas = Array.from(new Set(
+        (Array.isArray(jsonData) ? jsonData : [])
+          .map((op: any) => op["Código de Negociação"] || op.ticker)
+          .filter((ticker: string) => ticker && ticker.trim())
+      )) as string[]
+      
+      // Preparar resumo da importação
+      const resumo = {
+        operacoesImportadas: jsonData.length - (response.data.operacoes_ignoradas || 0),
+        operacoesIgnoradas: response.data.operacoes_ignoradas || 0,
+        avisoB3: response.data.aviso_b3,
+        acoesAfetadas: acoesAfetadas,
+        temProblemas: (response.data.operacoes_ignoradas > 0) || !!response.data.aviso_b3
+      }
+      
+      setResumoImportacao(resumo)
+      
+      console.log("📊 [UPLOAD] Resumo da importação:", resumo)
+      
+      // Verificar se há aviso específico da B3
+      if (response.data.aviso_b3) {
+        toast({
+          title: "Operações da B3 Processadas",
+          description: response.data.aviso_b3.split('\n')[0], // Primeira linha do aviso
+          variant: "default",
+        })
+      }
+      
+      // Verificar se há avisos gerais sobre operações ignoradas
       if (response.data.operacoes_ignoradas && response.data.operacoes_ignoradas > 0) {
         console.log("⚠️ [UPLOAD] Operações ignoradas:", response.data.operacoes_ignoradas)
         toast({
@@ -331,7 +417,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
       }
 
       // Mostrar tela de sucesso - usuário controla quando sair
-      setCurrentStep(4)
+      setCurrentStep(5)
 
     } catch (error: any) {
       console.error("❌ [UPLOAD] Erro capturado:", error)
@@ -352,41 +438,10 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
         description: errorMessage,
         variant: "destructive",
       })
-      setCurrentStep(2) // Volta para a etapa de upload
+      setCurrentStep(3) // Volta para a etapa de upload
     } finally {
       setLoading(false)
       console.log("🏁 [UPLOAD] Processo finalizado")
-    }
-  }
-
-  const resetUpload = () => {
-    setCurrentStep(1)
-    setFile(null)
-    setError('')
-    setOperationsCount(0)
-    setValidationSteps(validationSteps.map(s => ({ ...s, status: 'pending' })))
-    setProcessingSteps(processingSteps.map(s => ({ ...s, status: 'pending' })))
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(false)
-  }
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(false)
-    const droppedFile = e.dataTransfer.files[0]
-    if (droppedFile) {
-      handleFileSelect(droppedFile)
     }
   }
 
@@ -550,8 +605,70 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
     )
   }
 
-  // Passo 2: Validação do Arquivo
+  // Passo 2: Aviso da B3
   if (currentStep === 2) {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <Card className="shadow-lg">
+          <CardContent className="p-6">
+            
+            {/* Header */}
+            <div className="text-center mb-6">
+              <div className="w-12 h-12 bg-amber-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle className="h-6 w-6 text-white" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-800">Importante: Limitações dos dados da B3</h2>
+              <p className="text-gray-600">Informação sobre o histórico de operações</p>
+            </div>
+
+            {/* Aviso da B3 */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 mb-6">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-6 w-6 text-amber-600 mt-1 flex-shrink-0" />
+                <div>
+                  <h3 className="font-bold text-amber-800 mb-2">Atenção: Histórico limitado da B3</h3>
+                  <p className="text-amber-700 mb-3">
+                    A B3 (Bolsa de Valores brasileira) fornece apenas o histórico de operações 
+                    a partir de <strong>Novembro de 2019</strong>.
+                  </p>
+                  <p className="text-amber-700 mb-3">
+                    Se você comprou ações antes dessa data e as vendeu depois, o saldo pode 
+                    aparecer como negativo no arquivo da B3, pois a compra original não está 
+                    incluída no histórico.
+                  </p>
+                  <p className="text-amber-700">
+                    <strong>O que faremos:</strong> Automaticamente excluiremos operações que 
+                    resultem em saldos negativos e informaremos quais foram ignoradas.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Botões */}
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep(1)}
+                className="flex-1"
+              >
+                Voltar
+              </Button>
+              
+              <Button
+                onClick={prosseguirAposAvisoB3}
+                className="flex-1"
+              >
+                Entendi, continuar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
+  // Passo 3: Validação do Arquivo
+  if (currentStep === 3) {
     return (
       <div className="max-w-2xl mx-auto">
         <Card className="shadow-lg">
@@ -637,8 +754,8 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
     )
   }
 
-  // Passo 3: Processamento
-  if (currentStep === 3) {
+  // Passo 4: Processamento
+  if (currentStep === 4) {
     return (
       <div className="max-w-2xl mx-auto">
         <Card className="shadow-lg">
@@ -701,61 +818,164 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
     )
   }
 
-  // Passo 4: Sucesso
-  if (currentStep === 4) {
+  // Passo 5: Sucesso
+  if (currentStep === 5) {
+    const temProblemas = resumoImportacao?.temProblemas || false
+    const operacoesImportadas = resumoImportacao?.operacoesImportadas || operationsCount
+    const operacoesIgnoradas = resumoImportacao?.operacoesIgnoradas || 0
+    const acoesAfetadas = resumoImportacao?.acoesAfetadas || []
+    
     return (
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-3xl mx-auto">
         <Card className="shadow-lg">
-          <CardContent className="p-6 text-center">
+          <CardContent className="p-8">
             
-            {/* Success Animation */}
-            <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
-              <span className="text-white text-3xl">🎉</span>
+            {/* Header Success */}
+            <div className="text-center mb-8">
+              <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-bounce">
+                <span className="text-white text-3xl">🎉</span>
+              </div>
+              
+              <h2 className="text-3xl font-bold text-gray-800 mb-3">
+                Importação Concluída!
+              </h2>
+              <p className="text-gray-600 text-lg">
+                Aqui está um resumo completo do que aconteceu
+              </p>
             </div>
-            
-            <h2 className="text-3xl font-bold text-gray-800 mb-3">
-              Sucesso! Tudo importado
-            </h2>
-            <p className="text-gray-600 mb-8">
-              Suas operações foram importadas com sucesso. 
-              Sua carteira e histórico estão atualizados!
-            </p>
 
-            {/* Resumo */}
-            <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-8">
-              <h3 className="font-bold text-green-800 mb-4">O que foi atualizado:</h3>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span>{operationsCount} operações importadas</span>
+            {/* Resumo Principal */}
+            <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-xl p-6 mb-6">
+              <div className="flex items-center gap-3 mb-4">
+                <CheckCircle className="h-6 w-6 text-green-600" />
+                <h3 className="text-xl font-bold text-gray-800"> O que deu certo</h3>
+              </div>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                      <span className="text-green-600 text-sm font-bold">{operacoesImportadas}</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-800">Operações Importadas</p>
+                      <p className="text-sm text-gray-600">Compras e vendas adicionadas à sua carteira</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <span className="text-blue-600 text-sm font-bold">{acoesAfetadas.length}</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-gray-800">Ações Diferentes</p>
+                      <p className="text-sm text-gray-600">Tipos de ações que você negociou</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span>Carteira atualizada</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span>Dividendos calculados</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <span>Impostos organizados</span>
+                
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="h-8 w-8 text-green-600" />
+                    <div>
+                      <p className="font-semibold text-gray-800">Carteira Atualizada</p>
+                      <p className="text-sm text-gray-600">Suas posições atuais foram recalculadas</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-3">
+                    <CheckCircle className="h-8 w-8 text-green-600" />
+                    <div>
+                      <p className="font-semibold text-gray-800">Impostos Organizados</p>
+                      <p className="text-sm text-gray-600">IR e DARF calculados automaticamente</p>
+                    </div>
+                  </div>
                 </div>
               </div>
+              
+              {/* Lista de ações */}
+              {acoesAfetadas.length > 0 && (
+                <div className="mt-4 p-4 bg-white/60 rounded-lg">
+                  <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <FileStack className="h-4 w-4 text-blue-600" />
+                    Ações processadas:
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {acoesAfetadas.slice(0, 10).map((ticker, index) => (
+                      <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                        {ticker}
+                      </span>
+                    ))}
+                    {acoesAfetadas.length > 10 && (
+                      <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
+                        +{acoesAfetadas.length - 10} outras
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Ações */}
-            <div className="flex justify-center">
+            {/* Avisos e Problemas */}
+            {temProblemas && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-6 mb-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertTriangle className="h-6 w-6 text-amber-600" />
+                  <h3 className="text-xl font-bold text-gray-800">Pontos de atenção</h3>
+                </div>
+                
+                {operacoesIgnoradas > 0 && (
+                  <div className="mb-4 p-4 bg-white/60 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <span className="text-amber-600 text-sm font-bold">{operacoesIgnoradas}</span>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-800">Operações Ignoradas</p>
+                        <p className="text-sm text-gray-600 mb-2">
+                          Algumas operações não puderam ser importadas
+                        </p>
+                        <div className="text-xs text-amber-700 bg-amber-100 rounded p-2">
+                          <strong>💡 Por que isso acontece?</strong><br/>
+                          • Operações com quantidade zero<br/>
+                          • Dados inconsistentes ou corrompidos<br/>
+                          • Operações anteriores a Nov/2019 (limitação da B3)
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {resumoImportacao?.avisoB3 && (
+                  <div className="p-4 bg-white/60 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="h-6 w-6 text-amber-600 flex-shrink-0 mt-1" />
+                      <div>
+                        <p className="font-semibold text-gray-800 mb-2">Limitação da B3</p>
+                        <div className="text-sm text-gray-700 bg-amber-50 rounded p-3">
+                          {resumoImportacao.avisoB3.split('\n').map((linha, index) => (
+                            <p key={index} className="mb-1">{linha}</p>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Botões de Ação */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button
                 onClick={() => {
                   onSuccess() // Chama onSuccess para fechar modal e atualizar dashboard
                 }}
-                className="px-8 py-3 text-lg flex items-center gap-2"
+                className="px-8 py-3 text-lg flex items-center gap-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
                 size="lg"
               >
                 <Sparkles className="h-5 w-5" />
-                Veja a Mágica Acontecer
-              </Button>
+                Ver Minha Carteira
+              </Button>              
             </div>
           </CardContent>
         </Card>

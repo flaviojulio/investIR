@@ -724,8 +724,18 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
           <div className="p-6">
             {loadingData ? (
               <div className="h-[400px] flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                <p>Carregando gráfico anual...</p>
+                <div className="text-center">
+                  <div className="relative mb-4">
+                    <div className="w-12 h-12 relative mx-auto">
+                      <div className="absolute inset-0 border-3 border-blue-200 rounded-full"></div>
+                      <div className="absolute inset-0 border-3 border-transparent border-t-blue-600 rounded-full animate-spin"></div>
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-blue-600 text-lg">📈</span>
+                    </div>
+                  </div>
+                  <p className="text-gray-600 font-medium">Carregando gráfico anual...</p>
+                </div>
               </div>
             ) : dadosGraficoAnual.length > 0 ? (
               <ResponsiveContainer width="100%" height={400}>
@@ -776,8 +786,18 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
           <div className="p-6">
             {loadingGraficoMensal ? (
               <div className="h-[400px] flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-                <p>Carregando gráfico mensal...</p>
+                <div className="text-center">
+                  <div className="relative mb-4">
+                    <div className="w-12 h-12 relative mx-auto">
+                      <div className="absolute inset-0 border-3 border-purple-200 rounded-full"></div>
+                      <div className="absolute inset-0 border-3 border-transparent border-t-purple-600 rounded-full animate-spin"></div>
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-purple-600 text-lg">📅</span>
+                    </div>
+                  </div>
+                  <p className="text-gray-600 font-medium">Carregando gráfico mensal...</p>
+                </div>
               </div>
             ) : !anoSelecionado ? (
               <div className="h-[400px] flex items-center justify-center">
@@ -820,8 +840,18 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
           <div className="p-6">
             {loadingData ? (
               <div className="h-[400px] flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-2"></div>
-                <p>Carregando gráfico de distribuição...</p>
+                <div className="text-center">
+                  <div className="relative mb-4">
+                    <div className="w-12 h-12 relative mx-auto">
+                      <div className="absolute inset-0 border-3 border-pink-200 rounded-full"></div>
+                      <div className="absolute inset-0 border-3 border-transparent border-t-pink-600 rounded-full animate-spin"></div>
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="text-pink-600 text-lg">🥧</span>
+                    </div>
+                  </div>
+                  <p className="text-gray-600 font-medium">Carregando gráfico de distribuição...</p>
+                </div>
               </div>
             ) : !anoSelecionado ? (
               <div className="h-[400px] flex items-center justify-center">
@@ -1005,8 +1035,16 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
         {loadingData ? (
           <div className="h-[200px] flex items-center justify-center">
             <div className="text-center">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
-              <p>Carregando tabela de proventos...</p>
+              <div className="relative mb-4">
+                <div className="w-12 h-12 relative mx-auto">
+                  <div className="absolute inset-0 border-3 border-indigo-200 rounded-full"></div>
+                  <div className="absolute inset-0 border-3 border-transparent border-t-indigo-600 rounded-full animate-spin"></div>
+                </div>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-indigo-600 text-lg">📋</span>
+                </div>
+              </div>
+              <p className="text-gray-600 font-medium">Carregando tabela de proventos...</p>
             </div>
           </div>
         ) : (
@@ -1221,8 +1259,32 @@ export function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
+        <div className="text-center">
+          {/* Spinner animado com múltiplos elementos */}
+          <div className="relative w-16 h-16 mx-auto mb-6">
+            <div className="absolute inset-0 w-16 h-16 border-4 border-blue-200 rounded-full"></div>
+            <div className="absolute inset-0 w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+            <div className="absolute inset-2 w-12 h-12 border-4 border-purple-300 border-b-transparent rounded-full animate-spin" style={{ animationDelay: '150ms' }}></div>
+          </div>
+          
+          {/* Texto animado */}
+          <div className="space-y-3">
+            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent animate-pulse">
+              Carregando Dashboard...
+            </h2>
+            <p className="text-gray-600 animate-pulse">
+              Preparando seus dados financeiros
+            </p>
+          </div>
+          
+          {/* Pontos de loading animados */}
+          <div className="flex justify-center items-center space-x-2 mt-6">
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+          </div>
+        </div>
       </div>
     )
   }
