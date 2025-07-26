@@ -91,6 +91,10 @@ from dependencies import get_current_user, oauth2_scheme # Import from dependenc
 criar_tabelas() # Creates non-auth tables
 auth.inicializar_autenticacao() # Initializes authentication system (creates auth tables, modifies others, adds admin)
 
+# Executar migrações necessárias
+from database import migrar_resultados_mensais
+migrar_resultados_mensais() # Adiciona coluna irrf_swing se não existir
+
 app = FastAPI(
     title="API de Acompanhamento de Carteiras de Ações e IR",
     description="API para upload de operações de ações e cálculo de imposto de renda",
@@ -854,6 +858,7 @@ async def obter_resultados(mes: str = None, usuario: UsuarioResponse = Depends(g
                     "custo_swing": float(resultado.get("custo_swing", 0)),
                     "ganho_liquido_swing": float(resultado.get("ganho_liquido_swing", 0)),
                     "isento_swing": bool(resultado.get("isento_swing", False)),
+                    "irrf_swing": round(float(resultado.get("irrf_swing", 0)), 3),
                     "prejuizo_acumulado_swing": float(resultado.get("prejuizo_acumulado_swing", 0)),
                     "ir_devido_swing": float(resultado.get("ir_devido_swing", 0)),
                     "ir_pagar_swing": float(resultado.get("ir_pagar_swing", 0)),
@@ -863,7 +868,7 @@ async def obter_resultados(mes: str = None, usuario: UsuarioResponse = Depends(g
                     "custo_day_trade": float(resultado.get("custo_day_trade", 0)),
                     "ganho_liquido_day": float(resultado.get("ganho_liquido_day", 0)),
                     "prejuizo_acumulado_day": float(resultado.get("prejuizo_acumulado_day", 0)),
-                    "irrf_day": float(resultado.get("irrf_day", 0)),
+                    "irrf_day": round(float(resultado.get("irrf_day", 0)), 3),
                     "ir_devido_day": float(resultado.get("ir_devido_day", 0)),
                     "ir_pagar_day": float(resultado.get("ir_pagar_day", 0)),
                     
@@ -1863,6 +1868,48 @@ async def forcar_recalculo_completo(usuario_id: int, admin: UsuarioResponse = De
     except Exception as e:
         logging.error(f"Erro no recálculo completo para usuário {usuario_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro no recálculo: {str(e)}")
+
+@app.post("/api/recalcular-irrf", tags=["Admin"])
+async def recalcular_irrf_teste(usuario: UsuarioResponse = Depends(get_current_user)):
+    """
+    🔧 Endpoint de TESTE para recalcular IRRF corretamente
+    
+    Usa a nova função que calcula Day Trade IRRF (1% sobre ganhos) 
+    e Swing Trade IRRF (0.005% sobre vendas)
+    """
+    try:
+        # Usar a nova função que calcula IRRF corretamente
+        services.recalcular_resultados_corrigido(usuario_id=usuario.id)
+        
+        # Obter resultados para verificar os IRRFs
+        resultados = services.calcular_resultados_mensais(usuario.id)
+        
+        # Verificar se há IRRFs calculados
+        irrf_day_total = sum(r.get('irrf_day', 0) for r in resultados)
+        irrf_swing_total = sum(r.get('irrf_swing', 0) for r in resultados)
+        
+        return {
+            "message": "✅ IRRF recalculado com sucesso",
+            "usuario_id": usuario.id,
+            "meses_processados": len(resultados),
+            "irrf_day_total": round(irrf_day_total, 2),
+            "irrf_swing_total": round(irrf_swing_total, 3),
+            "timestamp": datetime.now().isoformat(),
+            "detalhes_por_mes": [
+                {
+                    "mes": r['mes'],
+                    "irrf_day": round(r.get('irrf_day', 0), 2),
+                    "irrf_swing": round(r.get('irrf_swing', 0), 3),
+                    "vendas_day": round(r.get('vendas_day_trade', 0), 2),
+                    "vendas_swing": round(r.get('vendas_swing', 0), 2)
+                }
+                for r in resultados
+            ]
+        }
+        
+    except Exception as e:
+        logging.error(f"Erro no teste de IRRF para usuário {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro no teste de IRRF: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

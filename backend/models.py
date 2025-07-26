@@ -178,6 +178,7 @@ class ResultadoMensal(BaseModel):
     custo_swing: float = 0.0
     ganho_liquido_swing: float = 0.0
     isento_swing: bool = False
+    irrf_swing: float = 0.0
     ir_devido_swing: float = 0.0 # IR calculated before R$10 rule / final payment value
     ir_pagar_swing: float = 0.0  # Actual tax to be paid for DARF
     darf_codigo_swing: Optional[str] = None
@@ -425,7 +426,6 @@ class EventoCorporativoBase(BaseModel):
         if self.razao and ":" in self.razao:
             try:
                 numerador, denominador = map(float, self.razao.split(":"))
-                print(f"Calculando fator de ajuste: {denominador} / {numerador} para o evento {self.evento}")
                 return denominador / numerador
             except Exception:
                 return 1.0

@@ -2584,95 +2584,72 @@ def _calcular_preco_medio_antes_operacao(ticker: str, usuario_id: int, data_limi
 
 def recalcular_resultados_corrigido(usuario_id: int) -> None:
     """
-    CORREÇÃO: Garantir que resultados mensais sejam sempre criados
+    CORREÇÃO: Calcula resultados mensais incluindo IRRF corretamente
     """
-    logging.info(f"🔄 [RESULTADOS V3] Iniciando para usuário {usuario_id}")
+    logging.info(f"🔄 [RESULTADOS V4] Iniciando para usuário {usuario_id}")
 
     # Limpar resultados antigos
     limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
     
-    from database import get_db
-    
+    # Obter todas as operações do usuário
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT ticker, data_fechamento, resultado, day_trade, valor_compra, valor_venda
-            FROM operacoes_fechadas 
+            SELECT id, ticker, date, operation, quantity, price, fees, usuario_id
+            FROM operacoes 
             WHERE usuario_id = ?
-            ORDER BY data_fechamento
+            ORDER BY date, ticker
         ''', (usuario_id,))
         
-        operacoes_fechadas_raw = cursor.fetchall()
+        operacoes_raw = cursor.fetchall()
     
-    if not operacoes_fechadas_raw:
-        logging.warning(f"Nenhuma operação fechada encontrada para usuário {usuario_id}")
+    if not operacoes_raw:
+        logging.warning(f"Nenhuma operação encontrada para usuário {usuario_id}")
         return
     
-    logging.info(f"📊 Processando {len(operacoes_fechadas_raw)} operações fechadas")
+    # Converter para lista de dicionários
+    operacoes = []
+    for row in operacoes_raw:
+        op_dict = dict(row)
+        # Garantir que a data seja do tipo date se vier como string
+        if isinstance(op_dict['date'], str):
+            op_dict['date'] = datetime.fromisoformat(op_dict['date']).date()
+        operacoes.append(op_dict)
     
-    operacoes_fechadas_db = []
-    for row in operacoes_fechadas_raw:
-        try:
-            op_dict = dict(row)
-            
-            data_fechamento = op_dict.get('data_fechamento')
-            
-            if not data_fechamento:
-                logging.warning(f"   ⚠️ Operação sem data_fechamento: {op_dict.get('ticker', 'N/A')}")
-                continue
-            
-            # Garantir que a data seja uma string válida
-            if isinstance(data_fechamento, str):
-                try:
-                    # Validar formato da data
-                    datetime.fromisoformat(data_fechamento)
-                    op_dict['data_fechamento'] = data_fechamento
-                except ValueError:
-                    logging.warning(f"   ⚠️ Data inválida: {data_fechamento}")
-                    continue
-            elif hasattr(data_fechamento, 'isoformat'):
-                op_dict['data_fechamento'] = data_fechamento.isoformat()
-            else:
-                logging.warning(f"   ⚠️ Tipo de data inválido: {type(data_fechamento)}")
-                continue
-            
-            operacoes_fechadas_db.append(op_dict)
-            
-        except Exception as e:
-            logging.error(f"   ❌ Erro ao processar operação: {e}")
-            continue
+    logging.info(f"📊 Processando {len(operacoes)} operações")
     
-    if not operacoes_fechadas_db:
-        logging.warning(f"Nenhuma operação fechada válida após validação")
-        return
+    # Agrupar operações por data
+    operacoes_por_data = defaultdict(list)
+    for op in operacoes:
+        operacoes_por_data[op['date']].append(op)
     
+    # Calcular resultados mensais com IRRF
     resultados_por_mes = defaultdict(lambda: {
-        "swing_trade": {"resultado": 0.0, "vendas_total": 0.0, "custo_swing": 0.0},
+        "swing_trade": {"resultado": 0.0, "vendas_total": 0.0, "custo_swing": 0.0, "irrf": 0.0},
         "day_trade": {"resultado": 0.0, "vendas_total": 0.0, "irrf": 0.0, "custo_day_trade": 0.0}
     })
-
-    # Processar operações fechadas
-    for op in operacoes_fechadas_db:
+    
+    # Processar cada dia de operações
+    for data, ops_dia in operacoes_por_data.items():
         try:
-            data_fechamento = op['data_fechamento']
-            if len(data_fechamento) >= 7:
-                mes = data_fechamento[:7]  # YYYY-MM
-            else:
-                logging.warning(f"   ⚠️ Data muito curta: {data_fechamento}")
-                continue
+            # Usar a função existente que já calcula IRRF corretamente
+            resultado_swing, resultado_day = _calcular_resultado_dia(ops_dia, usuario_id)
             
-            # Agrupar por tipo
-            if op.get('day_trade', False):
-                resultados_por_mes[mes]['day_trade']['resultado'] += op.get('resultado', 0)
-                resultados_por_mes[mes]['day_trade']['custo_day_trade'] += op.get('valor_compra', 0)
-                resultados_por_mes[mes]['day_trade']['vendas_total'] += op.get('valor_venda', 0)
-            else:
-                resultados_por_mes[mes]['swing_trade']['resultado'] += op.get('resultado', 0)
-                resultados_por_mes[mes]['swing_trade']['vendas_total'] += op.get('valor_venda', 0)
-                resultados_por_mes[mes]['swing_trade']['custo_swing'] += op.get('valor_compra', 0)
-                
+            mes = data.strftime('%Y-%m')
+            
+            # Acumular resultados com IRRF
+            resultados_por_mes[mes]['swing_trade']['resultado'] += resultado_swing.get('ganho_liquido', 0)
+            resultados_por_mes[mes]['swing_trade']['vendas_total'] += resultado_swing.get('vendas_total', 0)
+            resultados_por_mes[mes]['swing_trade']['custo_swing'] += resultado_swing.get('custo_total', 0)
+            resultados_por_mes[mes]['swing_trade']['irrf'] += resultado_swing.get('irrf', 0)
+            
+            resultados_por_mes[mes]['day_trade']['resultado'] += resultado_day.get('ganho_liquido', 0)
+            resultados_por_mes[mes]['day_trade']['vendas_total'] += resultado_day.get('vendas_total', 0)
+            resultados_por_mes[mes]['day_trade']['custo_day_trade'] += resultado_day.get('custo_total', 0)
+            resultados_por_mes[mes]['day_trade']['irrf'] += resultado_day.get('irrf', 0)
+            
         except Exception as e:
-            logging.error(f"❌ Erro ao processar operação {op.get('ticker', 'N/A')}: {e}")
+            logging.error(f"❌ Erro ao processar data {data}: {e}")
             continue
 
     if not resultados_por_mes:
@@ -2707,7 +2684,6 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 vencimento_ano = ano_int
             
             # Último dia do mês de vencimento
-            import calendar
             ultimo_dia = calendar.monthrange(vencimento_ano, vencimento_mes)[1]
             darf_vencimento_swing = date(vencimento_ano, vencimento_mes, ultimo_dia)
             darf_vencimento_day = date(vencimento_ano, vencimento_mes, ultimo_dia)
@@ -2716,6 +2692,7 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
             vendas_swing = res_mes['swing_trade']['vendas_total']
             isento_swing = vendas_swing <= 20000.0
             resultado_swing = res_mes['swing_trade']['resultado']
+            irrf_swing = res_mes['swing_trade']['irrf']  # ✅ NOVO: IRRF swing
             
             ganho_tributavel_swing = resultado_swing if not isento_swing and resultado_swing > 0 else 0
             valor_a_compensar_swing = min(prejuizo_acumulado_swing, ganho_tributavel_swing)
@@ -2726,12 +2703,12 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
 
             # Cálculos day trade
             resultado_day = res_mes['day_trade']['resultado']
+            irrf_day = res_mes['day_trade']['irrf']  # ✅ CORREÇÃO: IRRF day trade real
             valor_a_compensar_day = min(prejuizo_acumulado_day, max(0, resultado_day))
             ganho_final_day = resultado_day - valor_a_compensar_day
             prejuizo_acumulado_day = (prejuizo_acumulado_day - valor_a_compensar_day) + abs(min(0, resultado_day))
 
             imposto_bruto_day = max(0, ganho_final_day) * 0.20
-            irrf_day = res_mes['day_trade']['irrf']
             imposto_day = max(0, imposto_bruto_day - irrf_day)
 
             resultado_dict = {
@@ -2740,6 +2717,7 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 "custo_swing": res_mes['swing_trade']['custo_swing'],
                 "ganho_liquido_swing": resultado_swing,
                 "isento_swing": isento_swing,
+                "irrf_swing": irrf_swing,  # ✅ NOVO: IRRF swing
                 "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
                 "ir_devido_swing": imposto_swing,
                 "ir_pagar_swing": imposto_swing if imposto_swing >= 10 else 0,
@@ -2752,7 +2730,7 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 "custo_day_trade": res_mes['day_trade']['custo_day_trade'],
                 "ganho_liquido_day": resultado_day,
                 "prejuizo_acumulado_day": prejuizo_acumulado_day,
-                "irrf_day": irrf_day,
+                "irrf_day": irrf_day,  # ✅ CORREÇÃO: IRRF day trade real
                 "ir_devido_day": imposto_bruto_day,
                 "ir_pagar_day": imposto_day if imposto_day >= 10 else 0,
                 "darf_codigo_day": "6015",  # Código fixo para day trade
@@ -2766,11 +2744,13 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
             
             salvar_resultado_mensal(resultado_dict, usuario_id=usuario_id)
             
+            logging.info(f"💰 [IRRF] {mes_str}: Swing R${irrf_swing:.2f}, Day R${irrf_day:.2f}")
+            
         except Exception as e:
             logging.error(f"❌ Erro ao processar mês {mes_str}: {e}")
             continue
 
-    logging.info(f"✅ [RESULTADOS V3] {len(resultados_por_mes)} meses processados e salvos")
+    logging.info(f"✅ [RESULTADOS V4] {len(resultados_por_mes)} meses processados com IRRF")
 
 def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
     """

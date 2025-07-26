@@ -1,4 +1,3 @@
-# Função utilitária para migrar a tabela operacoes_fechadas de forma compatível com SQLite
 def migrar_operacoes_fechadas():
     """
     Adiciona colunas na tabela operacoes_fechadas se não existirem, de forma segura para SQLite.
@@ -24,6 +23,26 @@ def migrar_operacoes_fechadas():
                 except Exception as e:
                     print(f"[DB MIGRATION] Erro ao adicionar coluna {nome_col}: {e}")
         conn.commit()
+
+def migrar_resultados_mensais():
+    """
+    Adiciona a coluna irrf_swing na tabela resultados_mensais se não existir.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Verifica se a coluna irrf_swing já existe
+        cursor.execute("PRAGMA table_info(resultados_mensais)")
+        colunas = [row[1] for row in cursor.fetchall()]
+        
+        if "irrf_swing" not in colunas:
+            try:
+                cursor.execute("ALTER TABLE resultados_mensais ADD COLUMN irrf_swing REAL DEFAULT 0.0")
+                print("[DB MIGRATION] ✅ Coluna irrf_swing adicionada à tabela resultados_mensais")
+                conn.commit()
+            except Exception as e:
+                print(f"[DB MIGRATION] ❌ Erro ao adicionar coluna irrf_swing: {e}")
+        else:
+            print("[DB MIGRATION] ✅ Coluna irrf_swing já existe")
 import sqlite3
 from datetime import date, datetime
 from contextlib import contextmanager
@@ -111,6 +130,7 @@ def criar_tabelas():
         custo_swing REAL DEFAULT 0.0,
         ganho_liquido_swing REAL DEFAULT 0.0,
         isento_swing INTEGER DEFAULT 0,
+        irrf_swing REAL DEFAULT 0.0,
         ir_devido_swing REAL DEFAULT 0.0,
         ir_pagar_swing REAL DEFAULT 0.0,
         darf_codigo_swing TEXT,
@@ -579,7 +599,7 @@ def salvar_resultado_mensal(resultado: Dict[str, Any], usuario_id: int) -> int:
             UPDATE resultados_mensais
             SET mes = ?, 
                 vendas_swing = ?, custo_swing = ?, ganho_liquido_swing = ?, isento_swing = ?,
-                ir_devido_swing = ?, ir_pagar_swing = ?, darf_codigo_swing = ?, darf_competencia_swing = ?,
+                irrf_swing = ?, ir_devido_swing = ?, ir_pagar_swing = ?, darf_codigo_swing = ?, darf_competencia_swing = ?,
                 darf_valor_swing = ?, darf_vencimento_swing = ?, status_darf_swing_trade = ?,
                 vendas_day_trade = ?, custo_day_trade = ?, ganho_liquido_day = ?, ir_devido_day = ?,
                 irrf_day = ?, ir_pagar_day = ?, darf_codigo_day = ?, darf_competencia_day = ?,
@@ -589,8 +609,8 @@ def salvar_resultado_mensal(resultado: Dict[str, Any], usuario_id: int) -> int:
             ''', (
                 resultado["mes"], 
                 resultado["vendas_swing"], resultado["custo_swing"], resultado["ganho_liquido_swing"],
-                1 if resultado["isento_swing"] else 0, 
-                resultado["ir_devido_swing"], resultado["ir_pagar_swing"],
+                1 if resultado["isento_swing"] else 0,
+                resultado.get("irrf_swing", 0), resultado["ir_devido_swing"], resultado["ir_pagar_swing"],
                 resultado.get("darf_codigo_swing"), resultado.get("darf_competencia_swing"),
                 resultado.get("darf_valor_swing"), 
                 resultado.get("darf_vencimento_swing").isoformat() if resultado.get("darf_vencimento_swing") else None,
@@ -615,17 +635,18 @@ def salvar_resultado_mensal(resultado: Dict[str, Any], usuario_id: int) -> int:
             cursor.execute('''
             INSERT INTO resultados_mensais (
                 mes, vendas_swing, custo_swing, ganho_liquido_swing, isento_swing,
-                ir_devido_swing, ir_pagar_swing, darf_codigo_swing, darf_competencia_swing,
+                irrf_swing, ir_devido_swing, ir_pagar_swing, darf_codigo_swing, darf_competencia_swing,
                 darf_valor_swing, darf_vencimento_swing, status_darf_swing_trade,
                 vendas_day_trade, custo_day_trade, ganho_liquido_day, ir_devido_day,
                 irrf_day, ir_pagar_day, darf_codigo_day, darf_competencia_day,
                 darf_valor_day, darf_vencimento_day, status_darf_day_trade,
                 prejuizo_acumulado_swing, prejuizo_acumulado_day, usuario_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 resultado["mes"], resultado["vendas_swing"], resultado["custo_swing"], resultado["ganho_liquido_swing"],
-                1 if resultado["isento_swing"] else 0, resultado["ir_devido_swing"], resultado["ir_pagar_swing"],
+                1 if resultado["isento_swing"] else 0,
+                resultado.get("irrf_swing", 0), resultado["ir_devido_swing"], resultado["ir_pagar_swing"],
                 resultado.get("darf_codigo_swing"), resultado.get("darf_competencia_swing"),
                 resultado.get("darf_valor_swing"),
                 resultado.get("darf_vencimento_swing").isoformat() if resultado.get("darf_vencimento_swing") else None,

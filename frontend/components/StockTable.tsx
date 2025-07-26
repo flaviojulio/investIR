@@ -919,9 +919,6 @@ export function StockTable({
           <p>
             Preços atuais obtidos da última cotação disponível na base de dados.
           </p>
-          <p>
-            Ações sem cotação disponível usam o preço médio como referência.
-          </p>
         </div>
       </CardContent>
 

@@ -1,4 +1,3 @@
-import yfinance as yf
 from datetime import datetime, date as datetime_date, timedelta
 from dateutil.relativedelta import relativedelta
 from pydantic import BaseModel, validator, Field
@@ -51,10 +50,10 @@ class Operacao(BaseModel):
 
 def get_historical_prices(ticker: str, start_date: str, end_date: str) -> Dict[str, float]:
     """
-    Fetches historical closing prices for a given stock ticker between two dates.
+    Fetches historical closing prices for a given stock ticker between two dates from our database.
 
     Args:
-        ticker (str): The stock ticker symbol (e.g., "AAPL").
+        ticker (str): The stock ticker symbol (e.g., "BBAS3").
         start_date (str): The start date in "YYYY-MM-DD" format.
         end_date (str): The end date in "YYYY-MM-DD" format.
 
@@ -65,66 +64,68 @@ def get_historical_prices(ticker: str, start_date: str, end_date: str) -> Dict[s
               or an error occurs.
     """
     try:
-        # Append .SA for B3 tickers, conditionally if needed, or always if this service is B3 specific
-        # For this task, we'll always append .SA as per request.
-        # Consider making this conditional if the service should handle international tickers.
-        ticker_sa = f"{ticker}.SA"
-
-        stock = yf.Ticker(ticker_sa)
-        history = stock.history(start=start_date, end=end_date)
-
-        if history.empty:
-            print(f"No data found for ticker {ticker_sa} between {start_date} and {end_date}.")
+        # Import the database function to get quotes by ticker
+        from database import obter_cotacoes_por_ticker
+        
+        # Fetch historical quotes from our database
+        cotacoes = obter_cotacoes_por_ticker(ticker, start_date, end_date)
+        
+        if not cotacoes:
+            print(f"No data found for ticker {ticker} between {start_date} and {end_date} in database.")
             return {}
 
         prices = {}
-        for index, row in history.iterrows():
-            prices[index.strftime('%Y-%m-%d')] = row['Close']
+        for cotacao in cotacoes:
+            # Use the closing price (fechamento)
+            if cotacao.get('fechamento') is not None:
+                # Ensure the date is in string format
+                data = cotacao['data']
+                if hasattr(data, 'isoformat'):
+                    data_str = data.isoformat()
+                else:
+                    data_str = str(data)
+                prices[data_str] = float(cotacao['fechamento'])
 
         return prices
 
     except Exception as e:
-        # It's good to log the original ticker and the modified one if an error occurs.
-        print(f"Error fetching data for ticker {ticker} (as {ticker_sa if 'ticker_sa' in locals() else 'N/A'}): {e}")
+        print(f"Error fetching data for ticker {ticker} from database: {e}")
         return {}
 
 if __name__ == '__main__':
     # Example usage:
-    # Make sure to install yfinance: pip install yfinance
-    # And to run from the backend directory if executing this directly for testing.
+    # Test using our database cotações instead of yfinance
 
     # Test case 1: Valid ticker and date range
-    print("Fetching ITUB4 data (should become ITUB4.SA)...") # Example: ITUB4 is a common Brazilian stock
-    itub4_prices = get_historical_prices("ITUB4", "2023-01-01", "2023-01-10")
-    if itub4_prices:
-        for date, price in itub4_prices.items():
+    print("Fetching BBAS3 data from database...")
+    bbas3_prices = get_historical_prices("BBAS3", "2024-01-01", "2024-01-10")
+    if bbas3_prices:
+        for date, price in bbas3_prices.items():
             print(f"Date: {date}, Closing Price: {price}")
     else:
-        print("No data retrieved for ITUB4 or error occurred.")
+        print("No data retrieved for BBAS3 or error occurred.")
 
-    print("\nFetching PETR4 data (should become PETR4.SA)...")
+    print("Fetching PETR4 data from database...")
     # Test case 2: Valid ticker (Brazilian stock) and date range
-    petr4_prices = get_historical_prices("PETR4", "2023-01-01", "2023-01-10") # Input without .SA
+    petr4_prices = get_historical_prices("PETR4", "2024-01-01", "2024-01-10")
     if petr4_prices:
         for date, price in petr4_prices.items():
             print(f"Date: {date}, Closing Price: {price}")
     else:
         print("No data retrieved for PETR4 or error occurred.")
 
-    print("\nFetching NONEXISTENT data (should become NONEXISTENT.SA)...")
+    print("\nFetching NONEXISTENT data from database...")
     # Test case 3: Invalid ticker
-    invalid_prices = get_historical_prices("NONEXISTENT", "2023-01-01", "2023-01-10")
+    invalid_prices = get_historical_prices("NONEXISTENT", "2024-01-01", "2024-01-10")
     if not invalid_prices:
-        print("Correctly handled invalid ticker (NONEXISTENT.SA): No data retrieved.")
+        print("Correctly handled invalid ticker (NONEXISTENT): No data retrieved.")
     else:
         print("Error: Data retrieved for invalid ticker.")
 
     print("\nFetching AAPL data for a future range (expecting empty)...")
     # Test case 4: Date range with no data (e.g., future dates or non-trading days only)
-    # For yfinance, requesting a future start date might immediately return empty or error
-    # depending on library version and how it handles such requests.
-    # Let's test with a very recent period where data might not be fully populated yet, or a known non-trading period.
-    # Or simply a range where a specific stock didn't trade.
+    # For database, requesting a future start date will return empty if no data exists
+    # Let's test with a future period where data might not be available yet.
     # For simplicity, using a very short future period.
     # Note: AAPL will become AAPL.SA which might not exist or have different data.
     # This test case might change behavior.
@@ -225,7 +226,6 @@ def get_holdings_on_date(operations: List[Operacao], target_date_str: str) -> Di
         id_acao = obter_id_acao_por_ticker(ticker_symbol)
         if id_acao:
             raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(id_acao, target_d)
-            print(f"Eventos retornados para {ticker_symbol} até {target_d}: {raw_events_data}")
             # raw_events_data returns List[Dict[str, Any]], suitable for EventoCorporativoInfo(**event_data)
             events_by_ticker[ticker_symbol] = [EventoCorporativoInfo(**event_data) for event_data in raw_events_data]
 
@@ -468,8 +468,8 @@ def calculate_portfolio_history(
     date_series = _generate_date_series(start_date, end_date, period_frequency)
     equity_curve = []
 
-    # Pre-fetch all historical prices needed to minimize API calls
-    # Collect all unique tickers and the overall date range for yfinance
+    # Pre-fetch all historical prices needed to minimize database queries
+    # Collect all unique tickers and the overall date range for database queries
     all_tickers = list(set(op.ticker for op in operations))
 
     # Store all historical prices in a nested dict: {ticker: {date_str: price}}
@@ -477,10 +477,9 @@ def calculate_portfolio_history(
 
     if all_tickers and date_series:
         # Fetch prices for the entire range needed for the equity curve
-        # Note: yfinance fetches up to, but not including, end_date for daily.
+        # Note: database cotações are fetched for specific date ranges.
         # For our purpose, we need data *on* end_date of series.
-        # So, fetch from series_start_date to series_end_date + 1 day if daily.
-        # Or, rely on get_historical_prices to fetch for specific start/end.
+        # get_historical_prices will fetch for specific start/end dates.
         # Let's fetch for each ticker for the whole period of the date_series.
         series_first_date = date_series[0]
         series_last_date = date_series[-1]
@@ -593,25 +592,26 @@ if __name__ == '__main__':
     print("\n--- Testing calculate_portfolio_history ---")
 
     # Mock operations data including price and fees
-    # Prices for AAPL around Jan 2023: ~125-145
-    # Prices for MSFT around Jan 2023: ~220-240
-    # Prices for GOOG around Jan 2023: ~85-95
+    # Using Brazilian stocks that are in our database
+    # Prices for BBAS3 around 2024: ~20-25
+    # Prices for PETR4 around 2024: ~35-40
+    # Prices for VALE3 around 2024: ~60-70
     sample_portfolio_ops_data = [
-        {'ticker': 'AAPL', 'date': '2023-01-02', 'operation_type': 'buy', 'quantity': 10, 'price': 130.0, 'fees': 5.0}, # Invest: 1305
-        {'ticker': 'MSFT', 'date': '2023-01-02', 'operation_type': 'buy', 'quantity': 5, 'price': 230.0, 'fees': 5.0},   # Invest: 1155
-        # Total invested early Jan: 1305 + 1155 = 2460
-        {'ticker': 'AAPL', 'date': '2023-01-16', 'operation_type': 'sell', 'quantity': 3, 'price': 140.0, 'fees': 3.0},  # Return: 3*140 - 3 = 417
-        {'ticker': 'GOOG', 'date': '2023-01-20', 'operation_type': 'buy', 'quantity': 8, 'price': 90.0, 'fees': 4.0},    # Invest: 8*90 + 4 = 724
+        {'ticker': 'BBAS3', 'date': '2024-01-02', 'operation_type': 'buy', 'quantity': 100, 'price': 22.0, 'fees': 5.0}, # Invest: 2205
+        {'ticker': 'PETR4', 'date': '2024-01-02', 'operation_type': 'buy', 'quantity': 50, 'price': 37.0, 'fees': 5.0},   # Invest: 1855
+        # Total invested early Jan: 2205 + 1855 = 4060
+        {'ticker': 'BBAS3', 'date': '2024-01-16', 'operation_type': 'sell', 'quantity': 30, 'price': 23.0, 'fees': 3.0},  # Return: 30*23 - 3 = 687
+        {'ticker': 'VALE3', 'date': '2024-01-20', 'operation_type': 'buy', 'quantity': 20, 'price': 65.0, 'fees': 4.0},    # Invest: 20*65 + 4 = 1304
     ]
 
-    # For yfinance, use common tickers that have data for these dates.
-    # AAPL, MSFT, GOOGL are good.
-    # Need to ensure yfinance can fetch these.
-    # To run this test, yfinance must be able to connect and get data.
+    # For database, use common tickers that have data for these dates.
+    # BBAS3, PETR4, VALE3 are good Brazilian stocks in our database.
+    # Need to ensure database has these tickers.
+    # To run this test, database must contain the required historical data.
 
     # Test 1: Monthly frequency
-    print("\nTest 1: Monthly frequency (Jan 2023)")
-    history_monthly = calculate_portfolio_history(sample_portfolio_ops_data, "2023-01-01", "2023-01-31", "monthly")
+    print("\nTest 1: Monthly frequency (Jan 2024)")
+    history_monthly = calculate_portfolio_history(sample_portfolio_ops_data, "2024-01-01", "2024-01-31", "monthly")
     if history_monthly and history_monthly['equity_curve']:
         print(f"Equity Curve (Monthly): {history_monthly['equity_curve']}")
         print(f"Profitability (Monthly): {history_monthly['profitability']}")
@@ -620,8 +620,8 @@ if __name__ == '__main__':
         print(f"Result: {history_monthly}")
 
     # Test 2: Daily frequency (short period to avoid too much output/API calls)
-    print("\nTest 2: Daily frequency (Jan 1 to Jan 10, 2023)")
-    history_daily = calculate_portfolio_history(sample_portfolio_ops_data, "2023-01-01", "2023-01-10", "daily")
+    print("\nTest 2: Daily frequency (Jan 1 to Jan 10, 2024)")
+    history_daily = calculate_portfolio_history(sample_portfolio_ops_data, "2024-01-01", "2024-01-10", "daily")
     if history_daily and history_daily['equity_curve']:
         print(f"Equity Curve (Daily):")
         for entry in history_daily['equity_curve']:
@@ -633,16 +633,16 @@ if __name__ == '__main__':
 
     # Test 3: No operations
     print("\nTest 3: No operations")
-    history_no_ops = calculate_portfolio_history([], "2023-01-01", "2023-01-31", "monthly")
+    history_no_ops = calculate_portfolio_history([], "2024-01-01", "2024-01-31", "monthly")
     print(f"Result (No Ops): {history_no_ops}")
     # Expected: Empty equity curve, zero profitability.
 
     # Test 4: Operations outside the requested period
     print("\nTest 4: Operations outside period")
     ops_outside_period = [
-        {'ticker': 'AAPL', 'date': '2022-12-01', 'operation_type': 'buy', 'quantity': 10, 'price': 120.0, 'fees': 5.0}
+        {'ticker': 'BBAS3', 'date': '2023-12-01', 'operation_type': 'buy', 'quantity': 100, 'price': 20.0, 'fees': 5.0}
     ]
-    history_ops_outside = calculate_portfolio_history(ops_outside_period, "2023-01-01", "2023-01-31", "monthly")
+    history_ops_outside = calculate_portfolio_history(ops_outside_period, "2024-01-01", "2024-01-31", "monthly")
     print(f"Result (Ops Outside): {history_ops_outside}")
      # Expected: Equity curve might show 0 if no holdings from before enter the period,
      # or if it reflects value of prior holdings. Profitability should be 0 for the period itself.
@@ -651,13 +651,13 @@ if __name__ == '__main__':
 
     # Test 5: Start date after end date
     print("\nTest 5: Start date after end date")
-    history_bad_dates = calculate_portfolio_history(sample_portfolio_ops_data, "2023-02-01", "2023-01-01", "monthly")
+    history_bad_dates = calculate_portfolio_history(sample_portfolio_ops_data, "2024-02-01", "2024-01-01", "monthly")
     print(f"Result (Bad Dates): {history_bad_dates}")
     # Expected: Specific error message or empty result for equity curve.
 
     # Test 6: Very short period (e.g. one day) - daily
     print("\nTest 6: Single day period (daily)")
-    history_one_day_daily = calculate_portfolio_history(sample_portfolio_ops_data, "2023-01-02", "2023-01-02", "daily")
+    history_one_day_daily = calculate_portfolio_history(sample_portfolio_ops_data, "2024-01-02", "2024-01-02", "daily")
     if history_one_day_daily and history_one_day_daily['equity_curve']:
         print(f"Equity Curve (One Day Daily): {history_one_day_daily['equity_curve']}")
         print(f"Profitability (One Day Daily): {history_one_day_daily['profitability']}")
@@ -667,9 +667,9 @@ if __name__ == '__main__':
     # Test 7: Very short period (e.g. one day) - monthly
     # The date series generator should handle this by giving the last day of that month.
     print("\nTest 7: Single day period (monthly)")
-    history_one_day_monthly = calculate_portfolio_history(sample_portfolio_ops_data, "2023-01-02", "2023-01-02", "monthly")
+    history_one_day_monthly = calculate_portfolio_history(sample_portfolio_ops_data, "2024-01-02", "2024-01-02", "monthly")
     if history_one_day_monthly and history_one_day_monthly['equity_curve']:
-         print(f"Equity Curve (One Day Monthly): {history_one_day_monthly['equity_curve']}") # Should be value at 2023-01-31
+         print(f"Equity Curve (One Day Monthly): {history_one_day_monthly['equity_curve']}") # Should be value at 2024-01-31
          print(f"Profitability (One Day Monthly): {history_one_day_monthly['profitability']}")
     else:
         print("Failed to get one-day monthly history or empty result.")
@@ -678,11 +678,11 @@ if __name__ == '__main__':
     # Test 8: Profitability with only sells (e.g. liquidating an old position not bought in period)
     print("\nTest 8: Profitability with only sells in period")
     ops_only_sells_in_period = [
-        # Assume AAPL was bought before 2023-01-01
-        {'ticker': 'AAPL', 'date': '2022-12-01', 'operation_type': 'buy', 'quantity': 10, 'price': 120.0, 'fees': 5.0}, # Outside period
-        {'ticker': 'AAPL', 'date': '2023-01-16', 'operation_type': 'sell', 'quantity': 5, 'price': 140.0, 'fees': 3.0} # Sell in period
+        # Assume BBAS3 was bought before 2024-01-01
+        {'ticker': 'BBAS3', 'date': '2023-12-01', 'operation_type': 'buy', 'quantity': 100, 'price': 20.0, 'fees': 5.0}, # Outside period
+        {'ticker': 'BBAS3', 'date': '2024-01-16', 'operation_type': 'sell', 'quantity': 50, 'price': 23.0, 'fees': 3.0} # Sell in period
     ]
-    history_only_sells = calculate_portfolio_history(ops_only_sells_in_period, "2023-01-01", "2023-01-31", "monthly")
+    history_only_sells = calculate_portfolio_history(ops_only_sells_in_period, "2024-01-01", "2024-01-31", "monthly")
     if history_only_sells and history_only_sells['equity_curve']:
         print(f"Equity Curve (Only Sells): {history_only_sells['equity_curve']}")
         print(f"Profitability (Only Sells): {history_only_sells['profitability']}")
@@ -690,12 +690,12 @@ if __name__ == '__main__':
         print("Failed to get 'only sells' history or empty result.")
         print(f"Result: {history_only_sells}")
 
-    # Test 9: Ticker symbol that yfinance might not find for historical prices
-    print("\nTest 9: Ticker with no historical price data from yfinance")
+    # Test 9: Ticker symbol that database might not find for historical prices
+    print("\nTest 9: Ticker with no historical price data from database")
     ops_bad_ticker = [
-        {'ticker': 'NONEXISTENTTICKERXYZ', 'date': '2023-01-02', 'operation_type': 'buy', 'quantity': 10, 'price': 10.0, 'fees': 1.0}
+        {'ticker': 'NONEXISTENTTICKERXYZ', 'date': '2024-01-02', 'operation_type': 'buy', 'quantity': 10, 'price': 10.0, 'fees': 1.0}
     ]
-    history_bad_ticker = calculate_portfolio_history(ops_bad_ticker, "2023-01-01", "2023-01-05", "daily")
+    history_bad_ticker = calculate_portfolio_history(ops_bad_ticker, "2024-01-01", "2024-01-05", "daily")
     if history_bad_ticker:
         print(f"Equity Curve (Bad Ticker): {history_bad_ticker['equity_curve']}") # Expect value 0 for this ticker
         print(f"Profitability (Bad Ticker): {history_bad_ticker['profitability']}")
@@ -706,10 +706,10 @@ if __name__ == '__main__':
     # Test 10: Operations that result in zero holdings by the end of a period.
     print("\nTest 10: Operations resulting in zero holdings")
     ops_zero_holdings = [
-        {'ticker': 'AAPL', 'date': '2023-01-02', 'operation_type': 'buy', 'quantity': 10, 'price': 130.0, 'fees': 5.0},
-        {'ticker': 'AAPL', 'date': '2023-01-10', 'operation_type': 'sell', 'quantity': 10, 'price': 135.0, 'fees': 5.0}
+        {'ticker': 'BBAS3', 'date': '2024-01-02', 'operation_type': 'buy', 'quantity': 100, 'price': 22.0, 'fees': 5.0},
+        {'ticker': 'BBAS3', 'date': '2024-01-10', 'operation_type': 'sell', 'quantity': 100, 'price': 23.0, 'fees': 5.0}
     ]
-    history_zero_holdings = calculate_portfolio_history(ops_zero_holdings, "2023-01-01", "2023-01-15", "daily")
+    history_zero_holdings = calculate_portfolio_history(ops_zero_holdings, "2024-01-01", "2024-01-15", "daily")
     if history_zero_holdings and 'equity_curve' in history_zero_holdings:
         print(f"Equity Curve (Zero Holdings by Jan 15):")
         for entry in history_zero_holdings['equity_curve']:
@@ -722,9 +722,9 @@ if __name__ == '__main__':
     # Test 11: Using datetime objects directly for dates in Operacao (if supported by model)
     print("\nTest 11: Using datetime.date objects in input operations")
     ops_with_date_objects = [
-        {'ticker': 'MSFT', 'date': datetime_date(2023,1,5), 'operation_type': 'buy', 'quantity': 2, 'price': 220.0, 'fees': 1.0}
+        {'ticker': 'PETR4', 'date': datetime_date(2024,1,5), 'operation_type': 'buy', 'quantity': 50, 'price': 37.0, 'fees': 1.0}
     ]
-    history_date_obj = calculate_portfolio_history(ops_with_date_objects, "2023-01-01", "2023-01-10", "daily")
+    history_date_obj = calculate_portfolio_history(ops_with_date_objects, "2024-01-01", "2024-01-10", "daily")
     if history_date_obj and history_date_obj['equity_curve']:
         print(f"Equity Curve (Date Objects):")
         for entry in history_date_obj['equity_curve']:
@@ -768,7 +768,7 @@ def calculate_average_price_up_to_date(
         # Let's assume obter_operacoes_por_usuario_ticker_ate_data returns list of dicts.
         raw_ops = obter_operacoes_por_usuario_ticker_ate_data(user_id, ticker, target_date.isoformat())
         # Parse into OperacaoModel instances. Note: OperacaoModel is from `models.py`
-        # The Operacao model in this file is for yfinance and portfolio history.
+        # The Operacao model in this file is for database and portfolio history.
         # We need to be careful about which Operacao model we are using.
         # For consistency, let's use the one from `models.py` if it's suitable.
         # The main `Operacao` model from `models.py` has aliases like 'Data do Negócio'.

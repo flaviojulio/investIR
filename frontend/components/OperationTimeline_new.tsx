@@ -1,0 +1,721 @@
+"use client";
+import React, { useState, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  DollarSign, 
+  Gift,
+  GitBranch,
+  GitMerge,
+  Coins,
+  Search,
+  Filter,
+  X,
+  ChevronDown,
+  ChevronRight,
+  Target,
+  Building2
+} from "lucide-react";
+
+interface OperacaoDetalhe {
+  id: number;
+  date: string;
+  ticker: string;
+  operation: string;
+  quantity: number;
+  price: number;
+  fees?: number;
+}
+
+// Sistema de cores consistente e acessível
+const COLORS = {
+  buy: {
+    bg: "bg-emerald-50",
+    border: "border-emerald-200",
+    text: "text-emerald-700",
+    icon: "text-emerald-600",
+    dot: "bg-emerald-500"
+  },
+  sell: {
+    bg: "bg-orange-50", 
+    border: "border-orange-200",
+    text: "text-orange-700",
+    icon: "text-orange-600",
+    dot: "bg-orange-500"
+  },
+  dividend: {
+    bg: "bg-blue-50",
+    border: "border-blue-200",
+    text: "text-blue-700",
+    icon: "text-blue-600",
+    dot: "bg-blue-500"
+  },
+  jcp: {
+    bg: "bg-cyan-50",
+    border: "border-cyan-200",
+    text: "text-cyan-700",
+    icon: "text-cyan-600",
+    dot: "bg-cyan-500"
+  },
+  rendimento: {
+    bg: "bg-teal-50",
+    border: "border-teal-200",
+    text: "text-teal-700",
+    icon: "text-teal-600",
+    dot: "bg-teal-500"
+  },
+  bonificacao: {
+    bg: "bg-yellow-50",
+    border: "border-yellow-200",
+    text: "text-yellow-700",
+    icon: "text-yellow-600",
+    dot: "bg-yellow-500"
+  },
+  desdobramento: {
+    bg: "bg-indigo-50",
+    border: "border-indigo-200",
+    text: "text-indigo-700",
+    icon: "text-indigo-600",
+    dot: "bg-indigo-500"
+  },
+  agrupamento: {
+    bg: "bg-purple-50",
+    border: "border-purple-200",
+    text: "text-purple-700",
+    icon: "text-purple-600",
+    dot: "bg-purple-500"
+  },
+  default: {
+    bg: "bg-gray-50",
+    border: "border-gray-200",
+    text: "text-gray-700",
+    icon: "text-gray-600",
+    dot: "bg-gray-500"
+  }
+};
+
+// Configuração de filtros
+type FilterKey = "all" | "buy" | "sell" | "proventos" | "events";
+
+const FILTER_CONFIG: Record<FilterKey, { label: string; icon: React.ReactNode; color: string; types?: string[] }> = {
+  all: {
+    label: "Todos",
+    icon: <Filter className="w-4 h-4 text-gray-600" />,
+    color: "bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-200",
+    types: []
+  },
+  buy: {
+    label: "Compras",
+    icon: <TrendingUp className="w-4 h-4 text-emerald-600" />,
+    color: "bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-200",
+    types: ["buy"]
+  },
+  sell: {
+    label: "Vendas",
+    icon: <TrendingDown className="w-4 h-4 text-orange-600" />,
+    color: "bg-orange-100 text-orange-700 border-orange-200 hover:bg-orange-200",
+    types: ["sell"]
+  },
+  proventos: {
+    label: "Proventos",
+    icon: <DollarSign className="w-4 h-4 text-blue-600" />, 
+    color: "bg-blue-100 text-blue-700 border-blue-200 hover:bg-blue-200",
+    types: ["dividend", "jcp", "rendimento"]
+  },
+  events: {
+    label: "Eventos Corporativos",
+    icon: <Building2 className="w-4 h-4 text-indigo-600" />,
+    color: "bg-indigo-100 text-indigo-700 border-indigo-200 hover:bg-indigo-200",
+    types: ["bonificacao", "desdobramento", "agrupamento"]
+  }
+};
+
+// Props do componente
+interface Props {
+  items: any[];
+}
+
+// Utilitários
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat('pt-BR', {
+    style: 'currency', 
+    currency: 'BRL'
+  }).format(value);
+}
+
+function formatDate(dateString: string) {
+  const date = new Date(dateString + 'T00:00:00');
+  return date.toLocaleDateString('pt-BR');
+}
+
+function getColorScheme(operation: string) {
+  return COLORS[operation as keyof typeof COLORS] || COLORS.default;
+}
+
+function getIcon(operation: string) {
+  switch (operation.toLowerCase()) {
+    case 'buy':
+      return <TrendingUp className="w-4 h-4" />;
+    case 'sell':
+      return <TrendingDown className="w-4 h-4" />;
+    case 'dividend':
+    case 'jcp':
+    case 'rendimento':
+      return <DollarSign className="w-4 h-4" />;
+    case 'bonificacao':
+      return <Gift className="w-4 h-4" />;
+    case 'desdobramento':
+      return <GitBranch className="w-4 h-4" />;
+    case 'agrupamento':
+      return <GitMerge className="w-4 h-4" />;
+    default:
+      return <Coins className="w-4 h-4" />;
+  }
+}
+
+function getOperationLabel(operation: string) {
+  const labels: { [key: string]: string } = {
+    'buy': 'Compra',
+    'sell': 'Venda',
+    'dividend': 'Dividendo',
+    'jcp': 'JCP',
+    'rendimento': 'Rendimento',
+    'bonificacao': 'Bonificação',
+    'desdobramento': 'Desdobramento',
+    'agrupamento': 'Agrupamento'
+  };
+  return labels[operation] || operation;
+}
+
+// Função para gerar explicação humanizada dos eventos corporativos
+function getEventoExplicacao(tipoEvento: string, razao: string, ticker: string): string {
+  if (!razao || !razao.includes(':')) {
+    return `A empresa ${ticker} realizou um evento corporativo que afetou suas ações.`;
+  }
+
+  const [numerador, denominador] = razao.split(':').map(n => parseInt(n.trim()));
+  const tipo = tipoEvento?.toLowerCase();
+
+  if (tipo === 'desdobramento') {
+    if (denominador > numerador) {
+      // Ex: 1:4 = cada 1 ação vira 4
+      const multiplicador = denominador / numerador;
+      return `🎯 Suas ações foram multiplicadas! Cada ${numerador} ação que você tinha se transformou em ${denominador} ações. Resultado: você ficou com ${multiplicador}x mais ações, mas o preço de cada uma diminuiu proporcionalmente. Seu patrimônio total permanece o mesmo.`;
+    } else {
+      // Ex: 4:1 = cada 4 ações vira 1 (tecnicamente um agrupamento)
+      const divisor = numerador / denominador;
+      return `📉 Suas ações foram reagrupadas. Cada ${numerador} ações que você tinha se transformaram em ${denominador} ação${denominador > 1 ? 's' : ''}. Resultado: você ficou com menos ações (÷${divisor}), mas o preço de cada uma aumentou proporcionalmente.`;
+    }
+  }
+  
+  if (tipo === 'agrupamento') {
+    const divisor = numerador / denominador;
+    return `📉 Suas ações foram reagrupadas. Cada ${numerador} ações que você tinha se transformaram em ${denominador} ação${denominador > 1 ? 's' : ''}. Resultado: você ficou com menos ações físicas (÷${divisor}), mas o preço de cada uma aumentou proporcionalmente. Seu patrimônio total permanece o mesmo.`;
+  }
+  
+  if (tipo === 'bonificacao' || tipo === 'bonificação') {
+    const percentual = (numerador / denominador * 100).toFixed(1);
+    return `🎁 Você ganhou ações gratuitas! Para cada ${denominador} ações que você possuía, recebeu ${numerador} ação${numerador > 1 ? 's' : ''} adicional${numerador > 1 ? 's' : ''} de presente da empresa. Isso representa um bônus de ${percentual}% sobre sua posição.`;
+  }
+
+  return `A empresa ${ticker} realizou um evento corporativo na proporção ${razao} que pode ter alterado a quantidade ou características de suas ações.`;
+}
+
+// Função para distribuir items de forma balanceada na timeline
+function distributeItemsBalanced(items: any[]): any[] {
+  const sortedItems = [...items].sort((a, b) => {
+    // Para proventos, usar data_ex; para outros, usar date ou data_fechamento
+    const dateA = a.data_ex || a.date || a.data_fechamento || '';
+    const dateB = b.data_ex || b.date || b.data_fechamento || '';
+    
+    const timeA = new Date(dateA).getTime();
+    const timeB = new Date(dateB).getTime();
+    
+    // Primeiro ordenar por data (mais recente primeiro)
+    if (timeA !== timeB) {
+      return timeB - timeA;
+    }
+    
+    return 0;
+  });
+
+  // Estratégia de distribuição inteligente
+  return sortedItems.map((item, index) => {
+    let side: 'left' | 'right';
+    
+    // Regras de distribuição:
+    // 1. Proventos sempre à direita para diferenciação visual
+    if (['dividend', 'jcp', 'rendimento'].includes(item.operation)) {
+      side = 'right';
+    }
+    // 2. Operações de compra/venda alternam para balance visual
+    else {
+      side = index % 2 === 0 ? 'left' : 'right';
+    }
+    
+    return {
+      ...item,
+      visualBranch: side
+    };
+  });
+}
+
+// Componente de filtro individual
+interface FilterButtonProps {
+  filterKey: FilterKey;
+  config: { label: string; icon: React.ReactNode; color: string };
+  isActive: boolean;
+  onClick: (key: FilterKey) => void;
+  count?: number;
+}
+
+function FilterButton({ filterKey, config, isActive, onClick, count = 0 }: FilterButtonProps) {
+  return (
+    <button
+      onClick={() => onClick(filterKey)}
+      className={`
+        flex items-center gap-2 px-3 py-2 rounded-lg font-medium text-sm
+        border transition-all duration-200 min-w-[80px] justify-center
+        ${isActive 
+          ? config.color.replace('hover:', '') 
+          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+        }
+      `}
+    >
+      {config.icon}
+      <span>{config.label}</span>
+      {count > 0 && (
+        <span className={`
+          text-xs px-1.5 py-0.5 rounded-full font-bold
+          ${isActive 
+            ? 'bg-white/20 text-current' 
+            : 'bg-gray-200 text-gray-600'
+          }
+        `}>
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// Componente de busca
+interface SearchInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  onClear: () => void;
+}
+
+function SearchInput({ value, onChange, onClear }: SearchInputProps) {
+  return (
+    <div className="relative">
+      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+      <input
+        type="text"
+        placeholder="Buscar por ticker ou nome da ação..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full pl-10 pr-10 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+      />
+      {value && (
+        <button
+          onClick={onClear}
+          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Componente para operação individual
+interface OperationCardProps {
+  item: any;
+  idx: number;
+}
+
+function OperationCard({ item, idx }: OperationCardProps) {
+  const operation = item.operation?.toLowerCase() || '';
+  const colors = getColorScheme(operation);
+  const isProvento = ['dividend', 'jcp', 'rendimento'].includes(operation);
+  const isEventoCorporativo = ['bonificacao', 'desdobramento', 'agrupamento'].includes(operation);
+  const isRight = item.visualBranch === "right";
+  
+  // Usar campos corretos para exibição
+  const displayTicker = item.ticker_acao || item.ticker;
+  const displayNomeAcao = item.nome_acao;
+  const displayDate = item.data_ex || item.date;
+  const displayQuantity = item.quantidade_na_data_ex || item.quantity;
+  const displayPrice = item.valor_unitario_provento || item.price;
+  const displayValorTotal = item.valor_total_recebido;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: isRight ? 50 : -50 }}
+      animate={{ opacity: 1, x: 0 }}
+      className={`flex ${isRight ? 'justify-end' : 'justify-start'} mb-4`}
+    >
+      <div className={`flex items-center ${isRight ? 'flex-row-reverse' : 'flex-row'} gap-3 max-w-md`}>
+        {/* Indicador da linha do tempo */}
+        <div className={`flex-shrink-0 w-3 h-3 rounded-full ${colors.dot} border-2 border-white shadow-lg`} />
+        
+        {/* Card da operação */}
+        <motion.div
+          whileHover={{ scale: 1.02 }}
+          className={`
+            ${colors.bg} ${colors.border} border rounded-lg p-3 shadow-sm
+            ${isEventoCorporativo ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white border-indigo-400' : ''}
+            max-w-xs cursor-pointer transition-all duration-200 hover:shadow-md
+          `}
+        >
+          {/* Header do card */}
+          <div className={`flex items-center justify-between mb-2 ${isEventoCorporativo ? 'text-white' : ''}`}>
+            <div className="flex items-center gap-2">
+              <div className={isEventoCorporativo ? "text-white" : colors.icon}>
+                {getIcon(operation)}
+              </div>
+              <span className={`font-semibold text-sm ${isEventoCorporativo ? "text-white" : "text-gray-900"}`}>
+                {displayTicker}
+              </span>
+              {/* Não exibir nome_acao para eventos corporativos para evitar repetição */}
+              {!isEventoCorporativo && displayNomeAcao && (
+                <span className="text-xs truncate ml-2 max-w-24 text-gray-500">
+                  {displayNomeAcao}
+                </span>
+              )}
+            </div>
+            
+            <div className="flex items-center justify-between">
+              {isEventoCorporativo ? (
+                <div className="flex-1 mt-2">
+                  {/* Layout específico para eventos corporativos */}
+                  <div className="space-y-3">
+                    {/* Proporção em destaque */}
+                    {(item as any).razao && (
+                      <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 border border-white/30">
+                        <div className="text-sm font-bold text-white">
+                          📊 Proporção: {(item as any).razao}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Explicação humanizada em destaque */}
+                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3 border border-white/30">
+                      <div className="text-sm font-medium text-white mb-1">
+                        💡 O que isso significa:
+                      </div>
+                      <div className="text-sm text-white/95 leading-relaxed">
+                        {getEventoExplicacao(item.operation, (item as any).razao || '', displayTicker)}
+                      </div>
+                    </div>
+                    
+                    {/* Removido texto de data para eventos corporativos, pois já está no título do card */}
+                  </div>
+                </div>
+              ) : isProvento ? (
+                <div className="flex-1">
+                  <div className="space-y-2">
+                    {/* Mostrar valor total recebido se disponível - DESTAQUE PRINCIPAL */}
+                    {displayValorTotal ? (
+                      <div className="space-y-2">
+                        {/* VALOR TOTAL RECEBIDO - DESTAQUE MÁXIMO */}
+                        <div className="bg-gradient-to-r from-emerald-50 to-green-50 border-2 border-emerald-300 rounded-lg p-3 shadow-sm">
+                          <div className="text-2xl font-bold text-emerald-800 mb-1">
+                            {formatCurrency(displayValorTotal)}
+                          </div>
+                          <div className="text-xs font-semibold text-emerald-600 uppercase tracking-wide">
+                            💰 TOTAL RECEBIDO
+                          </div>
+                        </div>
+                        
+                        {/* Detalhes do cálculo - visual secundário */}
+                        <div className="bg-gray-50 px-2 py-1 rounded text-xs text-gray-500 border-l-2 border-gray-300">
+                          <div>📊 {displayQuantity} ações × {formatCurrency(displayPrice)}</div>
+                          <div className="text-gray-400">💸 Valor unitário do provento</div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Fallback para quando não há valor_total_recebido */
+                      <div className="text-sm text-gray-700">
+                        <span className="font-medium">{displayQuantity} ações a </span>
+                        <span className="font-semibold">{formatCurrency(displayPrice)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-700">
+                  <span className="font-medium">{displayQuantity} ações a </span>
+                  <span className="font-semibold">{formatCurrency(displayPrice)}</span>
+                </div>
+              )}
+            </div>
+            
+            {!isProvento && !isEventoCorporativo && displayQuantity && displayPrice && (
+              <div className="text-right">
+                <span className="text-xs text-gray-500">Total: </span>
+                <span className="text-sm font-semibold text-gray-900">
+                  {formatCurrency(displayQuantity * displayPrice)}
+                </span>
+                
+                {/* Mostrar resultado se for uma venda com resultado */}
+                {operation === 'sell' && item.resultado !== undefined && (
+                  <div className="mt-2 pt-2 border-t border-gray-200">
+                    <div className="flex items-center justify-end gap-1">
+                      {item.resultado >= 0 ? (
+                        <TrendingUp className="w-4 h-4 text-green-600" />
+                      ) : (
+                        <TrendingDown className="w-4 h-4 text-red-600" />
+                      )}
+                      <span className="text-xs text-gray-500">Resultado: </span>
+                      <span className={`text-sm font-bold ${item.resultado >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {item.resultado >= 0 ? '+' : ''}{formatCurrency(item.resultado)}
+                      </span>
+                    </div>
+                    {item.percentual_lucro !== undefined && (
+                      <div className="text-xs text-gray-500 text-right">
+                        ({item.percentual_lucro >= 0 ? '+' : ''}{item.percentual_lucro.toFixed(2)}%)
+                      </div>
+                    )}
+                    {item.day_trade && (
+                      <div className="text-xs text-center mt-1">
+                        <span className="bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full font-medium">
+                          Day Trade
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {/* Footer com data e tipo */}
+          <div className={`text-xs ${isEventoCorporativo ? 'text-white/80' : 'text-gray-500'} flex items-center justify-between`}>
+            <span className={`${colors.text} font-medium capitalize`}>
+              {getOperationLabel(operation)}
+            </span>
+            <span className="font-mono">
+              {formatDate(displayDate)}
+            </span>
+          </div>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+interface TimelineItem {
+  id: number;
+  date: string;
+  ticker: string;
+  operation: string; // More flexible than 'buy' | 'sell' to allow dividends, etc.
+  quantity: number;
+  price: number;
+  fees: number;
+  usuario_id?: number;
+  corretora_id?: number | null;
+  corretora_nome?: string | null;
+  visualBranch?: "left" | "right";
+  // Campos adicionais para posições encerradas
+  resultado?: number;
+  percentual_lucro?: number;
+  valor_compra?: number;
+  valor_venda?: number;
+  day_trade?: boolean;
+  data_fechamento?: string;
+  operacoes?: OperacaoDetalhe[]; // Add the operacoes property
+  
+  // Campos específicos para proventos (da API)
+  ticker_acao?: string;
+  nome_acao?: string;
+  tipo?: string;
+  valor?: number;
+  data_ex?: string;
+  quantidade_na_data_ex?: number;
+  valor_total_recebido?: number;
+  
+  // Campos específicos para eventos corporativos
+  razao?: string;
+}
+
+export default function OperationTimeline({ items = [] }: Props) {
+  const [activeFilter, setActiveFilter] = useState<FilterKey>("all");
+  const [searchTerm, setSearchTerm] = useState("");
+
+
+  // Filtrar e buscar items
+  const filteredItems = useMemo(() => {
+    let filtered = items;
+
+    // Aplicar filtro por categoria
+    if (activeFilter !== "all") {
+      const filterTypes = FILTER_CONFIG[activeFilter]?.types || [];
+      filtered = filtered.filter(item => 
+        filterTypes.includes(item.operation?.toLowerCase())
+      );
+    }
+
+    // Aplicar busca por ticker
+    if (searchTerm) {
+      const searchLower = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(item => {
+        // Para proventos da API, usar ticker_acao; para outros, usar ticker
+        const ticker = item.ticker_acao || item.ticker || '';
+        const nomeAcao = item.nome_acao || '';
+        
+        const tickerMatch = ticker.toLowerCase().includes(searchLower);
+        const nomeAcaoMatch = nomeAcao.toLowerCase().includes(searchLower);
+        return tickerMatch || nomeAcaoMatch;
+      });
+    }
+
+    return filtered;
+  }, [items, activeFilter, searchTerm]);
+
+  // Calcular contadores para os filtros
+  const filterCounts = useMemo(() => {
+    const counts: Record<FilterKey, number> = {
+      all: items.length,
+      buy: 0,
+      sell: 0,
+      proventos: 0, 
+      events: 0
+    };
+
+    items.forEach(item => {
+      const operation = item.operation?.toLowerCase();
+      if (FILTER_CONFIG.buy.types?.includes(operation)) {
+        counts.buy++;
+      }
+      if (FILTER_CONFIG.sell.types?.includes(operation)) {
+        counts.sell++;
+      }
+      if (FILTER_CONFIG.proventos.types?.includes(operation)) {
+        counts.proventos++;
+      }
+      if (FILTER_CONFIG.events.types?.includes(operation)) {
+        counts.events++;
+      }
+    });
+
+    return counts;
+  }, [items]);
+
+  const handleFilterChange = (filterKey: FilterKey) => {
+    setActiveFilter(filterKey);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+  };
+
+  const handleSearchClear = () => {
+    setSearchTerm("");
+  };
+
+  return (
+    <div className="w-full max-w-4xl mx-auto p-6">
+      {/* Header com filtros e busca */}
+      <div className="mb-8 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex flex-col w-full gap-4">
+            <div className="flex w-full justify-center">
+              <div className="min-w-[180px] w-full max-w-md">
+                <SearchInput 
+                  value={searchTerm}
+                  onChange={handleSearchChange}
+                  onClear={handleSearchClear}
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3 justify-center w-full pt-1">
+              {Object.entries(FILTER_CONFIG).map(([key, config]) => (
+                <FilterButton
+                  key={key}
+                  filterKey={key as FilterKey}
+                  config={config}
+                  isActive={activeFilter === key}
+                  onClick={handleFilterChange}
+                  count={filterCounts[key as FilterKey]}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Resultados */}
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          <span>
+            {filteredItems.length === items.length 
+              ? `${items.length} operações`
+              : `${filteredItems.length} de ${items.length} operações`
+            }
+            {searchTerm && (
+              <span className="ml-1">
+                para "<span className="font-medium text-gray-700">{searchTerm}</span>"
+              </span>
+            )}
+          </span>
+          
+          {(activeFilter !== "all" || searchTerm) && (
+            <button
+              onClick={() => {
+                setActiveFilter("all");
+                setSearchTerm("");
+              }}
+              className="text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Limpar filtros
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Timeline */}
+      {filteredItems.length > 0 ? (
+        <div className="relative">
+          <div className="absolute left-1/2 top-0 bottom-0 w-0.5 bg-gradient-to-b from-gray-200 via-gray-300 to-gray-200 transform -translate-x-px" />
+          
+          <div className="space-y-4">
+            {distributeItemsBalanced(filteredItems).map((item, idx) => {
+              return <OperationCard key={item.id || idx} item={item} idx={idx} />;
+            })}
+          </div>
+          
+          <div className="absolute left-1/2 bottom-0 transform -translate-x-1/2 translate-y-4">
+            <div className="w-2 h-2 rounded-full bg-gray-300" />
+          </div>
+        </div>
+      ) : (
+        <div className="text-center py-12">
+          <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+            <Search className="w-6 h-6 text-gray-400" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            Nenhuma operação encontrada
+          </h3>
+          <p className="text-gray-500 max-w-sm mx-auto">
+            {searchTerm 
+              ? `Não foram encontradas operações para "${searchTerm}". Tente outro termo de busca.`
+              : "Não há operações para o filtro selecionado."
+            }
+          </p>
+          {(activeFilter !== "all" || searchTerm) && (
+            <button
+              onClick={() => {
+                setActiveFilter("all");
+                setSearchTerm("");
+              }}
+              className="mt-4 text-blue-600 hover:text-blue-700 font-medium"
+            >
+              Ver todas as operações
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
