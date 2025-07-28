@@ -224,7 +224,7 @@ export function DarfComprehensiveModal({
 
   const tipoLabel = tipo === "daytrade" ? "Day Trade" : "Swing Trade";
   const darfCodigo = "6015"; // Código fixo para IR sobre ganho de capital
-  const darfCompetencia = mes.replace('-', ''); // Formato MMAAAA
+  const darfCompetencia = mes; // Formato MM-AAAA
   const darfVencimento = calcularVencimentoDarf();
 
   // Função para obter estilo do badge do status
@@ -434,8 +434,8 @@ export function DarfComprehensiveModal({
               <div className="mt-3 bg-white border border-green-200 rounded p-3 text-sm">
                 <div className="text-green-800">
                   <strong>💡 Como usar:</strong> Utilize o código <strong>{darfCodigo}</strong> no site da Receita Federal 
-                  ou no aplicativo para gerar o DARF. A competência deve ser preenchida como <strong>{darfCompetencia}</strong> 
-                  e o vencimento é <strong>{formatDate(darfVencimento)}</strong>.
+                  ou no aplicativo para gerar o DARF. A competência deve ser preenchida como <strong>{darfCompetencia}</strong> e
+                   o vencimento é <strong>{formatDate(darfVencimento)}</strong>.
                 </div>
               </div>
             </div>

@@ -489,19 +489,15 @@ export function deveGerarDarf(
 
   // ✅ PRIORIDADE MÁXIMA: Se a API já calculou deve_gerar_darf, usar esse valor
   if (operacao.deve_gerar_darf !== undefined) {
-    const deveGerar = Boolean(operacao.deve_gerar_darf);
-    console.log(`🎯 [DEVE GERAR DARF] ${operacao.ticker}: API diz deve_gerar_darf=${deveGerar} → ${deveGerar}`);
-    return deveGerar;
+    return Boolean(operacao.deve_gerar_darf);
   }
 
   // ✅ FALLBACK: Se não há resultado mensal, usar status da operação
   if (!resultadoMensal) {
-    const baseadoNoStatus = (
+    return (
       operacao.status_ir === "Tributável Day Trade" ||
       operacao.status_ir === "Tributável Swing"
     );
-    console.log(`🔄 [DEVE GERAR DARF] ${operacao.ticker}: Baseado no status → ${baseadoNoStatus}`);
-    return baseadoNoStatus;
   }
 
   // ✅ ÚLTIMO FALLBACK: Verificar valor tributável do backend
@@ -509,10 +505,7 @@ export function deveGerarDarf(
     ? resultadoMensal.ir_devido_day || 0
     : resultadoMensal.ir_devido_swing || 0;
 
-  const deveGerarPorValor = valorTributavel > 0;
-  console.log(`📊 [DEVE GERAR DARF] ${operacao.ticker}: Valor tributável=${valorTributavel} → ${deveGerarPorValor}`);
-  return deveGerarPorValor;
-  return false;
+  return valorTributavel > 0;
 }
 
 /**

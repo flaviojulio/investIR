@@ -344,7 +344,7 @@ const TableHeader = ({
         onClick={() => requestSort("id")}
       >
         <Hash className="h-4 w-4 mr-1 text-indigo-500" />
-        Operação
+        ID
         {sortConfig.key === "id" ? (
           sortConfig.direction === "ascending" ? (
             <ArrowUp className="ml-1 h-3 w-3 text-indigo-600" />
@@ -1520,10 +1520,11 @@ export default function OperacoesEncerradasTable(
   const sortedOperacoes = useMemo(() => {
     let ops = [...processedOperacoes];
     
-    // First, sort by ID descending to get consistent ordering for sequential numbering
-    ops.sort((a, b) => (b.id || 0) - (a.id || 0));
+    // First, sort by ID ascending to get consistent ordering for sequential numbering
+    // This way older operations get lower numbers (#1, #2, #3...)
+    ops.sort((a, b) => (a.id || 0) - (b.id || 0));
     
-    // Add sequential index (starting from 1)
+    // Add sequential index (starting from 1 for oldest operations)
     const opsWithIndex = ops.map((op, index) => ({
       ...op,
       sequentialIndex: index + 1

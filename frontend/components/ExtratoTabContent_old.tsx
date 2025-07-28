@@ -1,10 +1,15 @@
 "use client";
 import React, { useMemo } from "react";
 import OperationTimeline from "./OperationTimeline";
+import OperationTable from "./OperationTable";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Calendar } from "lucide-react";
 import type { Operacao, OperacaoFechada, EventoCorporativoInfo } from "@/lib/types";
 import type { ProventoRecebidoUsuario } from '@/lib/types';
 import { useEffect, useState } from 'react';
+
 import { getProventosUsuarioDetalhado, getEventosCorporativosUsuario } from '@/lib/api';
 
 interface Props {
@@ -20,6 +25,9 @@ export default function ExtratoTabContent({
   proventos: proventosProp = [],
   eventos: eventosProp = []
 }: Props) {
+  // Estado para controlar a visualização (timeline ou tabela)
+  const [viewMode, setViewMode] = useState<'timeline' | 'table'>('timeline');
+  
   // Estado para proventos detalhados
   const [proventos, setProventos] = useState<ProventoRecebidoUsuario[]>(proventosProp);
   const [proventosLoaded, setProventosLoaded] = useState(false);
@@ -99,38 +107,38 @@ export default function ExtratoTabContent({
     return op.toLowerCase();
   }
 
-  // Mapeia operações abertas (excluindo operações que fazem parte de posições fechadas)
+  // Mapeia TODAS as operações (compras e vendas individuais) - COM resultados consolidados
   const mappedOperacoes = useMemo(() => {
+    console.log('🔍 [ExtratoTabContent] mappedOperacoes - operacoesAbertas recebidas:', operacoesAbertas.length, 'itens');
+    console.log('🔍 [ExtratoTabContent] operacoesFechadas recebidas:', operacoesFechadas.length, 'itens');
+    
     if (!Array.isArray(operacoesAbertas)) return [];
-    
-    // Criar um set de operações de venda que fazem parte de posições fechadas
-    const vendasQueFormamPosicoesFechadas = new Set();
-    
-    operacoesFechadas?.forEach(fechada => {
-      // Para cada posição fechada, marcar a venda correspondente para filtro
-      const chaveVenda = `${fechada.ticker}-${fechada.data_fechamento}-${fechada.quantidade}-sell`;
-      vendasQueFormamPosicoesFechadas.add(chaveVenda);
-    });
+
+    // Criar mapa de operações fechadas por ticker e data para enriquecer vendas
+    const resultadosMap = new Map<string, any>();
+    if (Array.isArray(operacoesFechadas)) {
+      operacoesFechadas.forEach(opFechada => {
+        const key = `${opFechada.ticker}_${opFechada.data_fechamento}`;
+        resultadosMap.set(key, opFechada);
+      });
+    }
 
     const result = operacoesAbertas
       .filter(op => {
         // Type assertion to handle imported CSV data with Portuguese property names
         const opAny = op as any;
         const normalizedOp = normalizeOperation(op.operation || opAny["Tipo de Movimentação"] || "");
-        const opDate = (op.date || opAny["Data do Negócio"] || "").toString().trim().slice(0, 10);
-        const opTicker = (op.ticker || opAny["Código de Negociação"] || "").toString().toUpperCase().trim();
-        const opQuantity = Number(op.quantity || opAny["Quantidade"] || 0);
         
-        // Criar chave única da operação
-        const chaveOperacao = `${opTicker}-${opDate}-${opQuantity}-${normalizedOp}`;
+        console.log('🔍 [ExtratoTabContent] Processando operação:', {
+          ticker: (op.ticker || opAny["Código de Negociação"] || "").toString().toUpperCase().trim(),
+          operation: normalizedOp,
+          originalOperation: op.operation || opAny["Tipo de Movimentação"]
+        });
         
-        // Filtrar operações que são proventos (serão tratadas separadamente)
+        // Filtrar apenas proventos (serão tratadas separadamente)
+        // Manter TODAS as compras e vendas (não filtrar por posições fechadas)
         if (["dividend", "jcp", "rendimento"].includes(normalizedOp)) {
-          return false;
-        }
-        
-        // Filtrar vendas que fazem parte de posições fechadas
-        if (vendasQueFormamPosicoesFechadas.has(chaveOperacao)) {
+          console.log('🔍 [ExtratoTabContent] Operação filtrada por ser provento');
           return false;
         }
         
@@ -141,7 +149,7 @@ export default function ExtratoTabContent({
         const rawOperation = op.operation || anyOp["Tipo de Movimentação"] || "";
         const normalizedOperation = normalizeOperation(rawOperation);
         
-        const mappedOp = {
+        const baseOp = {
           ...op,
           id: op.id || Math.floor(Math.random() * 1000000),
           date: (op.date || anyOp["Data do Negócio"] || "").toString().trim().slice(0, 10),
@@ -153,10 +161,39 @@ export default function ExtratoTabContent({
           category: normalizedOperation,
           visualBranch: "left" as const
         };
+
+        // Se for uma venda, tentar enriquecer com resultado da operação fechada
+        if (normalizedOperation === 'sell') {
+          const key = `${baseOp.ticker}_${baseOp.date}`;
+          const operacaoFechada = resultadosMap.get(key);
+          
+          if (operacaoFechada) {
+            console.log('🎯 [ExtratoTabContent] Enriquecendo venda com resultado:', {
+              ticker: baseOp.ticker,
+              date: baseOp.date,
+              resultado: operacaoFechada.resultado
+            });
+            
+            return {
+              ...baseOp,
+              resultado: operacaoFechada.resultado,
+              percentual_lucro: operacaoFechada.percentual_lucro,
+              day_trade: operacaoFechada.day_trade,
+              valor_compra: operacaoFechada.valor_compra,
+              valor_venda: operacaoFechada.valor_venda,
+              // Adicionar informações extras para a interface
+              temResultado: true
+            };
+          }
+        }
         
-        return mappedOp;
-      })
-      .filter(op => !["dividend", "jcp", "rendimento"].includes(op.operation));
+        return baseOp;
+      });
+    
+    console.log('🔍 [ExtratoTabContent] Todas as operações mapeadas (compras e vendas com resultados):', result.length, 'itens');
+    console.log('🔍 [ExtratoTabContent] Resultado final das operações:', result);
+    
+    return result;
     
     return result;
   }, [operacoesAbertas, operacoesFechadas]);
@@ -205,35 +242,6 @@ export default function ExtratoTabContent({
     console.log('✅ [ExtratoTabContent] Proventos mapeados para timeline:', result.length, 'itens');
     return result;
   }, [proventos]);
-
-  // Mapeia posições encerradas
-  const mappedPosicoesFechadas = useMemo(() => {
-    if (!Array.isArray(operacoesFechadas)) return [];
-    
-    const result = operacoesFechadas.map((op) => {
-      const mappedFechada = {
-        id: Math.floor(Math.random() * 1000000), // Generate numeric ID
-        date: op.data_fechamento,
-        ticker: op.ticker,
-        operation: 'fechamento',
-        quantity: op.quantidade,
-        price: op.valor_venda / op.quantidade, // Calculate unit price from total value
-        fees: 0,
-        visualBranch: 'left' as const,
-        resultado: op.resultado,
-        valor_compra: op.valor_compra,
-        valor_venda: op.valor_venda,
-        day_trade: op.day_trade,
-        percentual_lucro: op.percentual_lucro,
-        data_fechamento: op.data_fechamento,
-        operacoes: op.operacoes_relacionadas || []      
-      };
-      
-      return mappedFechada;
-    });
-    
-    return result;
-  }, [operacoesFechadas]);
 
   // Mapeia eventos corporativos (apenas das ações que o usuário possuía na data do evento)
   const mappedEventos = useMemo(() => {
@@ -364,20 +372,128 @@ export default function ExtratoTabContent({
   const timelineItems = useMemo(() => {
     const ops = mappedOperacoes;
     const provs = mappedProventos;
-    const fechadas = mappedPosicoesFechadas;
     const evts = mappedEventos;
     
-    const all = [...ops, ...provs, ...fechadas, ...evts];
-    const sorted = all.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    console.log('🔍 [ExtratoTabContent] Combinando itens para timeline:');
+    console.log('  - Operações (compras/vendas com resultados):', ops.length);
+    console.log('  - Proventos:', provs.length);
+    console.log('  - Eventos corporativos:', evts.length);
+    
+    const all = [...ops, ...provs, ...evts];
+    
+    // Ordenação simples por data (sem necessidade de lógica especial para posições fechadas)
+    const sorted = all.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      
+      return dateA - dateB;
+    });
+    
+    console.log('✅ [ExtratoTabContent] Total de itens na timeline:', sorted.length);
     
     return sorted;
-  }, [mappedOperacoes, mappedProventos, mappedPosicoesFechadas, mappedEventos]);
+  }, [mappedOperacoes, mappedProventos, mappedEventos]);
 
   return (
     <div className="flex flex-col items-center justify-center w-full">
-      <div className="w-full max-w-5xl">
-        <h3 className="text-lg font-semibold mb-4 text-center">Extrato da Sua Carteira</h3>
-        <OperationTimeline items={timelineItems} />
+      <div className="w-full max-w-6xl">
+        {/* Cabeçalho com controles de visualização */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-4">
+          <div>
+            <h3 className="text-xl font-semibold text-gray-900">Extrato da Sua Carteira</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              Visualize todas as suas operações, proventos e eventos corporativos
+            </p>
+          </div>
+          
+          {/* Controles de visualização */}
+          <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
+            <Button
+              variant={viewMode === 'timeline' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('timeline')}
+              className={`flex items-center gap-2 transition-all ${
+                viewMode === 'timeline' 
+                  ? 'bg-white shadow-sm text-gray-800' 
+                  : 'hover:bg-gray-200'
+              }`}
+            >
+              <span>�</span>
+              <span className="hidden sm:inline">Timeline</span>
+            </Button>
+            <Button
+              variant={viewMode === 'table' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('table')}
+              className={`flex items-center gap-2 transition-all ${
+                viewMode === 'table' 
+                  ? 'bg-white shadow-sm text-gray-800' 
+                  : 'hover:bg-gray-200'
+              }`}
+            >
+              <span>📋</span>
+              <span className="hidden sm:inline">Tabela</span>
+            </Button>
+          </div>
+        </div>
+
+        {/* Estatísticas rápidas */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Total de Operações</p>
+                <p className="text-2xl font-bold text-gray-900">{timelineItems.length}</p>
+              </div>
+              <span className="text-2xl">📈</span>
+            </div>
+          </Card>
+          
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Operações</p>
+                <p className="text-2xl font-bold text-blue-600">{mappedOperacoes.length}</p>
+              </div>
+              <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
+                <div className="h-4 w-4 bg-blue-500 rounded-full"></div>
+              </div>
+            </div>
+          </Card>
+          
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Operações Encerradas</p>
+                <p className="text-2xl font-bold text-orange-600">{mappedOperacoes.filter(op => op.operation === 'sell').length}</p>
+              </div>
+              <div className="h-8 w-8 bg-orange-100 rounded-full flex items-center justify-center">
+                <div className="h-4 w-4 bg-orange-500 rounded-full"></div>
+              </div>
+            </div>
+          </Card>
+          
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Proventos</p>
+                <p className="text-2xl font-bold text-blue-600">{mappedProventos.length}</p>
+              </div>
+              <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
+                <div className="h-4 w-4 bg-blue-500 rounded-full"></div>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Conteúdo principal - Timeline ou Tabela */}
+        <div className="w-full">
+          {viewMode === 'timeline' ? (
+            <OperationTimeline items={timelineItems} />
+          ) : (
+            <OperationTable items={timelineItems} />
+          )}
+        </div>
       </div>
     </div>
   );

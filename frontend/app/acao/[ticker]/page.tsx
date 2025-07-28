@@ -482,7 +482,7 @@ export default function AcaoDetalhePage() {
                   </TableBody>
                 </Table>
               </div>
-            ) : operacoesDoTicker.length === 0 ? (
+            ) : operacoes.length === 0 ? (
               <div className="p-8 text-center">
                 <div className="text-6xl mb-4">📊</div>
                 <p className="text-gray-600 text-lg">Nenhuma operação encontrada para {ticker}</p>

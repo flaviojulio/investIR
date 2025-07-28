@@ -799,7 +799,7 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
             </div>
 
             {/* Dica durante processamento */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
               <div className="flex items-start gap-3">
                 <span className="text-blue-500 text-xl">💡</span>
                 <div>
@@ -808,6 +808,23 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
                     Estamos organizando todas suas operações, calculando sua carteira atual 
                     e identificando os dividendos que você recebeu. Em alguns instantes 
                     sua carteira estará completamente atualizada!
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Aviso discreto sobre limitações da B3 */}
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="font-semibold text-amber-800 text-sm">Importante: Limitações da B3</h4>
+                  <p className="text-xs text-amber-700">
+                    A B3 fornece apenas o histórico a partir de <strong>Novembro de 2019</strong>. 
+                    Se você comprou ações antes dessa data e as vendeu depois, o saldo pode aparecer 
+                    como negativo no arquivo, pois a compra original não está incluída. 
+                    <span className="font-medium"> Automaticamente excluiremos operações que resultem 
+                    em saldos negativos e informaremos quais foram ignoradas.</span>
                   </p>
                 </div>
               </div>
