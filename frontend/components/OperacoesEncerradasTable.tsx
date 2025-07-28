@@ -15,9 +15,11 @@ import {
   type PrejuizoAcumuladoInfo,
 } from "@/lib/fiscal-utils";
 
+import { useOperacoesOtimizadas } from "@/hooks/useOperacoesOtimizadas";
+
 import { DarfComprehensiveModal } from "@/components/DarfComprehensiveModal";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -40,6 +42,7 @@ import {
   ChevronsUpDown,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Building2,
   TrendingUp,
   TrendingDown,
@@ -68,6 +71,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
+
+// Tipo para operação com índice sequencial
+type OperacaoComIndice = OperacaoFechada & {
+  sequentialIndex: number;
+};
 import { DarfDetailsModal } from "@/components/DarfDetailsModal";
 
 const getPrecoMedioCompra = (op: OperacaoFechada): number => {
@@ -154,63 +162,58 @@ const getMonthName = (dateString: string): string => {
   return months[date.getMonth()];
 };
 
-// DARF status helper
+// DARF status helper - Optimized to prevent browser freezing
 const getDarfStatusForOperation = (
   op: OperacaoFechada,
   darfStatusMap?: Map<string, string>,
   resultadosMensais?: ResultadoMensal[]
 ): string | null => {
-  // ✅ NOVA VERIFICAÇÃO: Só mostra DARF se realmente deve gerar
-  const mesOperacao = op.data_fechamento.substring(0, 7);
-  const resultadoMensal = resultadosMensais?.find(
-    (rm) => rm.mes === mesOperacao
-  );
+  try {
+    // Early validation to prevent errors
+    if (!op || !op.data_fechamento || !op.ticker) {
+      return null;
+    }
 
-  if (!deveGerarDarf(op, resultadoMensal)) {
-    console.log(`🚫 [DARF] ${op.ticker}: Não deve gerar DARF`, {
-      valorTributavel: op.day_trade
-        ? resultadoMensal?.ir_devido_day || 0
-        : resultadoMensal?.ir_devido_swing || 0,
-    });
-    return null; // Não deve mostrar badge de DARF
-  }
+    // Use cached API field first (most efficient)
+    if (op.deve_gerar_darf !== undefined && !op.deve_gerar_darf) {
+      return null;
+    }
 
-  // Só mostra DARF para operações que realmente devem tributar
-  if (
-    op.status_ir !== "Tributável Day Trade" &&
-    op.status_ir !== "Tributável Swing"
-  ) {
+    // Quick status check to avoid expensive operations
+    if (
+      op.status_ir !== "Tributável Day Trade" &&
+      op.status_ir !== "Tributável Swing"
+    ) {
+      return null;
+    }
+
+    const operationKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}`;
+
+    // PRIORITY 1: User manual status (fastest)
+    if (darfStatusMap?.has(operationKey)) {
+      return darfStatusMap.get(operationKey) || null;
+    }
+
+    // PRIORITY 2: Backend status (cached lookup)
+    const mesOperacao = op.data_fechamento.substring(0, 7);
+    const resultadoMensal = resultadosMensais?.find(rm => rm.mes === mesOperacao);
+    
+    if (resultadoMensal) {
+      const statusBackend = op.day_trade
+        ? resultadoMensal.status_darf_day_trade
+        : resultadoMensal.status_darf_swing_trade;
+
+      if (statusBackend) {
+        return statusBackend.toLowerCase();
+      }
+    }
+
+    // PRIORITY 3: Default status
+    return "pendente";
+  } catch (error) {
+    console.error('[getDarfStatusForOperation] Error:', error);
     return null;
   }
-
-  const operationKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}`;
-
-  // ✅ PRIORIDADE 1: Status manual do usuário
-  if (darfStatusMap && darfStatusMap.has(operationKey)) {
-    const status = darfStatusMap.get(operationKey);
-    console.log("🎯 [DARF STATUS] Status do mapa encontrado:", status);
-    return status || null;
-  }
-
-  // ✅ PRIORIDADE 2: Status do backend
-  if (resultadoMensal) {
-    const statusBackend = op.day_trade
-      ? resultadoMensal.status_darf_day_trade
-      : resultadoMensal.status_darf_swing_trade;
-
-    console.log("🎯 [DARF STATUS] Status do backend:", {
-      mesOperacao,
-      isDayTrade: op.day_trade,
-      statusBackend,
-    });
-
-    if (statusBackend) {
-      return statusBackend.toLowerCase(); // "Pago" → "pago"
-    }
-  }
-
-  // ✅ PRIORIDADE 3: Status padrão
-  return "pendente";
 };
 
 interface OperacoesEncerradasTableProps {
@@ -336,7 +339,23 @@ const TableHeader = ({
   <div className="bg-gradient-to-r from-gray-50 to-indigo-50 border border-indigo-200 rounded-t-xl">
     <div className="grid grid-cols-12 gap-4 py-4 px-6 text-sm font-semibold text-gray-700">
       <div className="col-span-1"></div>
-      <div className="col-span-3 flex items-center gap-1">
+      <div
+        className="col-span-1 cursor-pointer hover:text-indigo-600 flex items-center transition-colors group"
+        onClick={() => requestSort("id")}
+      >
+        <Hash className="h-4 w-4 mr-1 text-indigo-500" />
+        Operação
+        {sortConfig.key === "id" ? (
+          sortConfig.direction === "ascending" ? (
+            <ArrowUp className="ml-1 h-3 w-3 text-indigo-600" />
+          ) : (
+            <ArrowDown className="ml-1 h-3 w-3 text-indigo-600" />
+          )
+        ) : (
+          <ChevronsUpDown className="ml-1 h-3 w-3 opacity-40 group-hover:opacity-70" />
+        )}
+      </div>
+      <div className="col-span-2 flex items-center gap-1">
         <Sparkles className="h-4 w-4 text-indigo-500" />
         Ativo
       </div>
@@ -392,8 +411,382 @@ const TableHeader = ({
   </div>
 );
 
+// Subcomponent: ExpandedContent - Optimized to prevent browser freezing
+const ExpandedContent = React.memo(({ 
+  op, 
+  isProfit, 
+  getStatusBadge, 
+  getDarfBadge, 
+  getDarfStatusForOperation, 
+  shouldShowDarf, 
+  darfStatusMap, 
+  handleOpenDarfModal, 
+  operacoesFechadas, 
+  resultadosMensais 
+}: {
+  op: OperacaoFechada;
+  isProfit: boolean;
+  getStatusBadge: any;
+  getDarfBadge: any;
+  getDarfStatusForOperation: any;
+  shouldShowDarf: any;
+  darfStatusMap: Map<string, string>;
+  handleOpenDarfModal: any;
+  operacoesFechadas: OperacaoFechada[];
+  resultadosMensais?: ResultadoMensal[];
+}) => {
+  // Early return if data is invalid to prevent rendering issues
+  if (!op || !op.ticker || !op.data_fechamento) {
+    return <div className="p-4 text-red-500 text-sm">Dados da operação inválidos</div>;
+  }
+
+  // 🚀 OTIMIZAÇÃO: Usar dados pré-calculados se disponíveis
+  const prejuizoInfo = useMemo(() => {
+    if (isProfit) return null;
+    
+    // Usar dados pré-calculados se disponíveis
+    if (op.prejuizo_acumulado_ate !== undefined) {
+      return {
+        prejuizoAteOperacao: op.prejuizo_acumulado_ate,
+        prejuizoAnterior: Math.max(0, op.prejuizo_acumulado_ate - Math.abs(op.resultado || 0))
+      };
+    }
+    
+    // Fallback para cálculo tradicional (apenas se necessário)
+    try {
+      return calcularPrejuizoAcumuladoAteOperacao(op, operacoesFechadas);
+    } catch (error) {
+      console.error('[ExpandedContent] Error calculating prejuizo info:', error);
+      return null;
+    }
+  }, [op.prejuizo_acumulado_ate, op.resultado, isProfit]); // Dependências otimizadas
+
+  const compensacaoDetalhes = useMemo(() => {
+    if (!isProfit) return null;
+    
+    // Usar dados pré-calculados se disponíveis
+    if (op.detalhes_compensacao) {
+      return {
+        lucroOperacao: Math.max(0, op.resultado || 0),
+        prejuizoAnteriorDisponivel: op.detalhes_compensacao.valor_compensado,
+        valorCompensado: op.detalhes_compensacao.valor_compensado,
+        lucroTributavel: op.detalhes_compensacao.lucro_tributavel,
+        prejuizoRestante: 0, // Será calculado se necessário
+        operacoesAnteriores: [],
+        historicoPrejuizos: []
+      };
+    }
+    
+    // Fallback para cálculo tradicional (apenas se necessário)
+    if (!["Lucro Compensado", "Tributável Day Trade", "Tributável Swing"].includes(op.status_ir || "")) {
+      return null;
+    }
+    
+    try {
+      return calcularDetalhesCompensacao(op, operacoesFechadas);
+    } catch (error) {
+      console.error('[ExpandedContent] Error calculating compensation details:', error);
+      return null;
+    }
+  }, [op.detalhes_compensacao, op.resultado, op.status_ir, isProfit]); // Dependências otimizadas
+
+  const prejuizoRestante = useMemo(() => {
+    // Skip if no compensation details or no compensation value
+    if (!compensacaoDetalhes?.valorCompensado || compensacaoDetalhes.valorCompensado <= 0) {
+      return null;
+    }
+    
+    // Para dados otimizados, não precisamos calcular separadamente
+    if (op.detalhes_compensacao) {
+      return null; // Dados já estão nos detalhes de compensação
+    }
+    
+    try {
+      return calcularPrejuizoRestanteAposCompensacao(op, operacoesFechadas);
+    } catch (error) {
+      console.error('[ExpandedContent] Error calculating prejuizo restante:', error);
+      return null;
+    }
+  }, [compensacaoDetalhes?.valorCompensado, op.detalhes_compensacao]); // Dependências otimizadas
+
+  // Check if this is a DARF operation (optimized check)
+  const isDarfOperation = useMemo(() => {
+    // 🚀 OTIMIZAÇÃO: Usar campo pré-calculado se disponível
+    if (op.deve_gerar_darf !== undefined) {
+      return Boolean(op.deve_gerar_darf);
+    }
+    
+    // Fallback para verificação tradicional
+    try {
+      return shouldShowDarf(op);
+    } catch (error) {
+      console.error('[ExpandedContent] Error checking DARF operation:', error);
+      return false;
+    }
+  }, [op.deve_gerar_darf, op.status_ir]);
+  
+  return (
+    <div className="bg-gradient-to-br from-gray-50 via-blue-50/30 to-indigo-50/30 py-6 px-6 border-t border-indigo-200">
+      <div className="grid grid-cols-12 gap-6 text-sm">
+        {/* Operation Details Card */}
+        <div className="col-span-6 lg:col-span-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-10 w-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+              <BarChart3 className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-bold text-gray-800 text-lg">
+                Detalhes da Operação
+              </p>
+              <p className="text-sm text-gray-600">
+                Dados completos da negociação
+              </p>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-md border border-indigo-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-3 border-b border-indigo-100">
+              <h4 className="font-semibold text-indigo-800 text-sm flex items-center gap-2">
+                <Hash className="h-4 w-4" />
+                Informações da Negociação
+                <span
+                  className={`px-2 py-1 rounded-full text-xs font-medium border ${
+                    op.day_trade
+                      ? "bg-orange-100 text-orange-800 border-orange-300"
+                      : "bg-blue-100 text-blue-800 border-blue-300"
+                  }`}
+                >
+                  {op.day_trade ? "Day Trade" : "Swing Trade"}
+                </span>
+              </h4>
+            </div>
+            <div className="p-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col p-3 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
+                  <div className="flex items-center gap-1 mb-1">
+                    <Calendar className="h-3 w-3 text-purple-600" />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-purple-600">
+                      Data de Fechamento
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold text-purple-900">
+                    {formatDate(op.data_fechamento)}
+                  </span>
+                </div>
+                <div className="flex flex-col p-3 bg-gradient-to-br from-orange-50 to-amber-50 rounded-lg border border-orange-200">
+                  <div className="flex items-center gap-1 mb-1">
+                    <Hash className="h-3 w-3 text-orange-600" />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-orange-600">
+                      Quantidade
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold text-orange-800">
+                    {formatNumber(op.quantidade)}
+                  </span>
+                </div>
+                <div className="flex flex-col p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
+                  <div className="flex items-center gap-1 mb-1">
+                    <TrendingUp className="h-3 w-3 text-green-600" />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-green-600">
+                      Preço Médio de Compra
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold text-green-800">
+                    {formatCurrency(getPrecoMedioCompra(op))}
+                  </span>
+                </div>
+                <div className="flex flex-col p-3 bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg border border-cyan-200">
+                  <div className="flex items-center gap-1 mb-1">
+                    <TrendingDown className="h-3 w-3 text-cyan-600" />
+                    <span className="text-xs font-semibold uppercase tracking-wide text-cyan-600">
+                      Preço Médio de Venda
+                    </span>
+                  </div>
+                  <span className="text-sm font-bold text-cyan-800">
+                    {formatCurrency(getPrecoMedioVenda(op))}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-4">
+                <div
+                  className={`flex flex-col rounded-xl border-2 shadow-lg ${
+                    isProfit
+                      ? "p-3 bg-gradient-to-br from-green-100 to-emerald-100 border-green-300"
+                      : "p-2 bg-gradient-to-br from-red-100 to-rose-100 border-red-300"
+                  }`}
+                >
+                  <div
+                    className={`flex items-center justify-center gap-2 ${
+                      isProfit ? "mb-3" : "mb-2"
+                    }`}
+                  >
+                    {isProfit ? (
+                      <TrendingUp className="h-5 w-5 text-green-700" />
+                    ) : (
+                      <TrendingDown className="h-4 w-4 text-red-700" />
+                    )}
+                    <span
+                      className={`font-semibold uppercase tracking-wide ${
+                        isProfit
+                          ? "text-sm text-green-700"
+                          : "text-xs text-red-700"
+                      }`}
+                    >
+                      Resultado Final da Operação
+                    </span>
+                  </div>
+                  <div className="text-center">
+                    <span
+                      className={`font-black ${
+                        isProfit
+                          ? "text-2xl text-green-800"
+                          : "text-lg text-red-800"
+                      }`}
+                    >
+                      {isProfit ? "+" : "-"}
+                      {formatCurrency(Math.abs(op.resultado)) + " "}
+                      {(() => {
+                        const valorInvestido = op.valor_compra || 0;
+                        const percentual =
+                          valorInvestido > 0
+                            ? (op.resultado / valorInvestido) * 100
+                            : 0;
+
+                        return valorInvestido > 0 ? (
+                          <span
+                            className={`text-xs font-semibold ${
+                              isProfit ? "text-green-700" : "text-red-700"
+                            }`}
+                          >
+                            ({isProfit ? "+" : ""}
+                            {percentual.toFixed(2)}%)
+                          </span>
+                        ) : null;
+                      })()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Fiscal Details Card */}
+        <div className="col-span-12 lg:col-span-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-10 w-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
+              <FileText className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <p className="font-bold text-gray-800 text-lg">
+                Informações Fiscais
+              </p>
+              <p className="text-sm text-gray-600">
+                Situação tributária e Imposto de Renda
+              </p>
+            </div>
+          </div>
+          <div className="bg-white rounded-xl shadow-md border border-purple-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-50 to-pink-50 px-4 py-3 border-b border-purple-100">
+              <h4 className="font-semibold text-purple-800 text-sm flex items-center gap-2">
+                <Calculator className="h-4 w-4" />
+                Situação tributária
+              </h4>
+            </div>
+            <div className="p-4">
+              <div className="space-y-4">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col p-4 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 shadow-sm">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Shield className="h-4 w-4 text-indigo-600" />
+                      <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
+                        Status Fiscal
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3 mb-3 flex-wrap">
+                      {getStatusBadge("", isProfit, op, operacoesFechadas)}
+                      {shouldShowDarf(op) && (() => {
+                      try {
+                        const darfStatus = getDarfStatusForOperation(op, darfStatusMap, resultadosMensais);
+                        return getDarfBadge(darfStatus, op);
+                      } catch (error) {
+                        console.error('[ExpandedContent] Error rendering DARF badge:', error);
+                        return null;
+                      }
+                    })()}
+                    </div>
+                    <div className="text-xs text-indigo-700 leading-relaxed space-y-1">
+                      <div>
+                        <span className="font-semibold">Tributação:</span>{" "}
+                        {op.status_ir === "Isento" && "Operação isenta de imposto de renda"}
+                        {op.status_ir === "Tributável Day Trade" && "Sujeita a IR de 20% sobre o lucro"}
+                        {op.status_ir === "Tributável Swing" && "Sujeita a IR de 15% sobre o lucro"}
+                        {op.status_ir === "Prejuízo Acumulado" && "Prejuízo para compensação em outras operações"}
+                        {op.status_ir === "Lucro Compensado" && "Lucro compensado por prejuízos em outras operações de mesmo tipo"}
+                        {!op.status_ir && "Status não definido"}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Restante do conteúdo fiscal será lazy loaded conforme necessário */}
+                  {!isProfit && prejuizoInfo && (
+                    <div className="flex flex-col p-4 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl border border-orange-200 shadow-sm">
+                      <div className="flex items-center gap-2 mb-3">
+                        <Info className="h-4 w-4 text-orange-600" />
+                        <span className="text-xs font-semibold uppercase tracking-wide text-orange-600">
+                          Acúmulo de Prejuízo ({op.day_trade ? "Day Trade" : "Swing Trade"})
+                        </span>
+                      </div>
+                      <div className="bg-white/60 rounded-lg p-3 border border-orange-300/50 mt-4">
+                        <div className="text-center">
+                          <div className="text-xs text-orange-600 mb-1">
+                            Prejuízo Acumulado até esta Operação ({op.day_trade ? "Day Trade" : "Swing Trade"})
+                          </div>
+                          <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1">
+                            {formatCurrency(prejuizoInfo.prejuizoAteOperacao)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* DARF Button - Simplified event handling to prevent accordion interference */}
+                  {isDarfOperation && (
+                    <div className="flex items-center justify-center mt-2">
+                      <Button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenDarfModal(op);
+                        }}
+                        className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Ver Detalhes Completos do DARF
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // Custom memoization comparison to prevent unnecessary re-renders for DARF operations
+  return (
+    prevProps.op.ticker === nextProps.op.ticker &&
+    prevProps.op.data_fechamento === nextProps.op.data_fechamento &&
+    prevProps.op.resultado === nextProps.op.resultado &&
+    prevProps.op.status_ir === nextProps.op.status_ir &&
+    prevProps.op.deve_gerar_darf === nextProps.op.deve_gerar_darf &&
+    prevProps.isProfit === nextProps.isProfit &&
+    prevProps.darfStatusMap.size === nextProps.darfStatusMap.size
+  );
+});
+
 // Subcomponent: OperationRow
-const OperationRow = ({
+const OperationRow = React.memo(({
   op,
   index,
   isExpanded,
@@ -410,18 +803,9 @@ const OperationRow = ({
 }: OperationRowProps) => {
   // ✅ Usar a interface oficial
   const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
-  console.log("🔍 [DEBUG] Campos da operação:", {
-    // Campos diretos do backend
-    preco_medio_compra: op.preco_medio_compra,
-    preco_medio_venda: op.preco_medio_venda,
-    // Campos calculados
-    getPrecoMedioCompra: getPrecoMedioCompra(op),
-    getPrecoMedioVenda: getPrecoMedioVenda(op),
-  });
 
   return (
     <div
-      key={rowKey}
       className={`border-b border-gray-100 last:border-b-0 hover:bg-gradient-to-r hover:from-indigo-50/50 hover:to-purple-50/50 transition-all duration-200 ${
         index % 2 === 0 ? "bg-white" : "bg-gray-50/30"
       }`}
@@ -439,7 +823,13 @@ const OperationRow = ({
           )}
         </div>
 
-        <div className="col-span-3 flex items-center">
+        <div className="col-span-1 flex items-center">
+          <span className="text-sm text-gray-600 font-medium">
+            #{(op as OperacaoComIndice).sequentialIndex || index + 1}
+          </span>
+        </div>
+
+        <div className="col-span-2 flex items-center">
           <div className="flex items-center space-x-3">
             <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
               <span className="text-white font-semibold text-lg">
@@ -495,592 +885,151 @@ const OperationRow = ({
               op,
               operacoesFechadas
             )}
-            {shouldShowDarf(op) &&
-              getDarfBadge(
-                getDarfStatusForOperation(op, darfStatusMap, resultadosMensais), // ✅ Ordem correta
-                op
-              )}
+            {shouldShowDarf(op) && (() => {
+              try {
+                const darfStatus = getDarfStatusForOperation(op, darfStatusMap, resultadosMensais);
+                return getDarfBadge(darfStatus, op);
+              } catch (error) {
+                console.error('[OperationRow] Error rendering DARF badge:', error);
+                return null;
+              }
+            })()}
           </div>
         </div>
       </div>
 
-      {/* Expanded Row */}
+      {/* Expanded Row - Lazy Loaded with error boundary */}
       {isExpanded && (
-        <div className="bg-gradient-to-br from-gray-50 via-blue-50/30 to-indigo-50/30 py-6 px-6 border-t border-indigo-200">
-          <div className="grid grid-cols-12 gap-6 text-sm">
-            {/* Operation Details Card */}
-            <div className="col-span-6 lg:col-span-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <BarChart3 className="h-5 w-5 text-white" />
+        <div className="expanded-content-wrapper">
+          {(() => {
+            try {
+              return (
+                <ExpandedContent
+                  op={op}
+                  isProfit={isProfit}
+                  getStatusBadge={getStatusBadge}
+                  getDarfBadge={getDarfBadge}
+                  getDarfStatusForOperation={getDarfStatusForOperation}
+                  shouldShowDarf={shouldShowDarf}
+                  darfStatusMap={darfStatusMap}
+                  handleOpenDarfModal={handleOpenDarfModal}
+                  operacoesFechadas={operacoesFechadas}
+                  resultadosMensais={resultadosMensais}
+                />
+              );
+            } catch (error) {
+              console.error('[OperationRow] Error rendering expanded content:', error);
+              return (
+                <div className="p-4 bg-red-50 border border-red-200 rounded">
+                  <p className="text-red-700 text-sm">Erro ao carregar detalhes da operação</p>
+                  <p className="text-red-600 text-xs mt-1">Tente recarregar a página</p>
                 </div>
-                <div>
-                  <p className="font-bold text-gray-800 text-lg">
-                    Detalhes da Operação
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Dados completos da negociação
-                  </p>
-                </div>
-              </div>
-              <div className="bg-white rounded-xl shadow-md border border-indigo-100 overflow-hidden">
-                <div className="bg-gradient-to-r from-indigo-50 to-blue-50 px-4 py-3 border-b border-indigo-100">
-                  <h4 className="font-semibold text-indigo-800 text-sm flex items-center gap-2">
-                    <Hash className="h-4 w-4" />
-                    Informações da Negociação
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium border ${
-                        op.day_trade
-                          ? "bg-orange-100 text-orange-800 border-orange-300"
-                          : "bg-blue-100 text-blue-800 border-blue-300"
-                      }`}
-                    >
-                      {op.day_trade ? "Day Trade" : "Swing Trade"}
-                    </span>
-                  </h4>
-                </div>
-                <div className="p-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex flex-col p-3 bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border border-purple-200">
-                      <div className="flex items-center gap-1 mb-1">
-                        <Calendar className="h-3 w-3 text-purple-600" />
-                        <span className="text-xs font-semibold uppercase tracking-wide text-purple-600">
-                          Data de Fechamento
-                        </span>
-                      </div>
-                      <span className="text-sm font-bold text-purple-900">
-                        {formatDate(op.data_fechamento)}
-                      </span>
-                    </div>
-                    <div className="flex flex-col p-3 bg-gradient-to-br from-orange-50 to-amber-50 rounded-lg border border-orange-200">
-                      <div className="flex items-center gap-1 mb-1">
-                        <Hash className="h-3 w-3 text-orange-600" />
-                        <span className="text-xs font-semibold uppercase tracking-wide text-orange-600">
-                          Quantidade
-                        </span>
-                      </div>
-                      <span className="text-sm font-bold text-orange-800">
-                        {formatNumber(op.quantidade)}
-                      </span>
-                    </div>
-                    {/* Card de Preço de Compra */}
-                    <div className="flex flex-col p-3 bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200">
-                      <div className="flex items-center gap-1 mb-1">
-                        <TrendingUp className="h-3 w-3 text-green-600" />
-                        <span className="text-xs font-semibold uppercase tracking-wide text-green-600">
-                          Preço Médio de Compra
-                        </span>
-                      </div>
-                      <span className="text-sm font-bold text-green-800">
-                        {formatCurrency(getPrecoMedioCompra(op))}
-                      </span>
-                    </div>
-
-                    {/* Card de Preço de Venda */}
-                    <div className="flex flex-col p-3 bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg border border-cyan-200">
-                      <div className="flex items-center gap-1 mb-1">
-                        <TrendingDown className="h-3 w-3 text-cyan-600" />
-                        <span className="text-xs font-semibold uppercase tracking-wide text-cyan-600">
-                          Preço Médio de Venda
-                        </span>
-                      </div>
-                      <span className="text-sm font-bold text-cyan-800">
-                        {formatCurrency(getPrecoMedioVenda(op))}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* ✅ RESULTADO FINAL COM PERCENTUAL CORRIGIDO */}
-                  <div className="mt-4">
-                    <div
-                      className={`flex flex-col rounded-xl border-2 shadow-lg ${
-                        isProfit
-                          ? "p-3 bg-gradient-to-br from-green-100 to-emerald-100 border-green-300"
-                          : "p-2 bg-gradient-to-br from-red-100 to-rose-100 border-red-300"
-                      }`}
-                    >
-                      <div
-                        className={`flex items-center justify-center gap-2 ${
-                          isProfit ? "mb-3" : "mb-2"
-                        }`}
-                      >
-                        {isProfit ? (
-                          <TrendingUp className="h-5 w-5 text-green-700" />
-                        ) : (
-                          <TrendingDown className="h-4 w-4 text-red-700" />
-                        )}
-                        <span
-                          className={`font-semibold uppercase tracking-wide ${
-                            isProfit
-                              ? "text-sm text-green-700"
-                              : "text-xs text-red-700"
-                          }`}
-                        >
-                          Resultado Final da Operação
-                        </span>
-                      </div>
-                      <div className="text-center">
-                        <span
-                          className={`font-black ${
-                            isProfit
-                              ? "text-2xl text-green-800"
-                              : "text-lg text-red-800"
-                          }`}
-                        >
-                          {isProfit ? "+" : "-"}
-                          {formatCurrency(Math.abs(op.resultado)) + " "}
-                          {/* ✅ PERCENTUAL COM LÓGICA CORRIGIDA */}
-                          {(() => {
-                            const valorInvestido = op.valor_compra || 0;
-                            const percentual =
-                              valorInvestido > 0
-                                ? (op.resultado / valorInvestido) * 100
-                                : 0;
-
-                            return valorInvestido > 0 ? (
-                              <span
-                                className={`text-xs font-semibold ${
-                                  isProfit ? "text-green-700" : "text-red-700"
-                                }`}
-                              >
-                                ({isProfit ? "+" : ""}
-                                {percentual.toFixed(2)}%)
-                              </span>
-                            ) : null;
-                          })()}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Fiscal Details Card */}
-            <div className="col-span-12 lg:col-span-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <FileText className="h-5 w-5 text-white" />
-                </div>
-                <div>
-                  <p className="font-bold text-gray-800 text-lg">
-                    Informações Fiscais
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Situação tributária e Imposto de Renda
-                  </p>
-                </div>
-              </div>
-              <div className="bg-white rounded-xl shadow-md border border-purple-100 overflow-hidden">
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 px-4 py-3 border-b border-purple-100">
-                  <h4 className="font-semibold text-purple-800 text-sm flex items-center gap-2">
-                    <Calculator className="h-4 w-4" />
-                    Situação tributária
-                  </h4>
-                </div>
-                <div className="p-4">
-                  <div className="space-y-4">
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-col p-4 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-200 shadow-sm">
-                        <div className="flex items-center gap-2 mb-3">
-                          <Shield className="h-4 w-4 text-indigo-600" />
-                          <span className="text-xs font-semibold uppercase tracking-wide text-indigo-600">
-                            Status Fiscal
-                          </span>
-                        </div>
-
-                        {/* Badges */}
-                        <div className="flex items-center gap-3 mb-3 flex-wrap">
-                          {getStatusBadge(
-                            "", // Não precisamos mais passar status, função usa getFinalStatus
-                            isProfit,
-                            op,
-                            operacoesFechadas
-                          )}
-                          {shouldShowDarf(op) &&
-                            getDarfBadge(
-                              getDarfStatusForOperation(
-                                op,
-                                darfStatusMap,
-                                resultadosMensais
-                              ), // ✅ Ordem correta
-                              op
-                            )}
-                        </div>
-                        {/* Descrições */}
-                        <div className="text-xs text-indigo-700 leading-relaxed space-y-1">
-                          <div>
-                            <span className="font-semibold">Tributação:</span>{" "}
-                            {op.status_ir === "Isento" &&
-                              "Operação isenta de imposto de renda"}
-                            {op.status_ir === "Tributável Day Trade" &&
-                              "Sujeita a IR de 20% sobre o lucro"}
-                            {op.status_ir === "Tributável Swing" &&
-                              "Sujeita a IR de 15% sobre o lucro"}
-                            {op.status_ir === "Prejuízo Acumulado" &&
-                              "Prejuízo para compensação em outras operações"}
-                            {op.status_ir === "Lucro Compensado" &&
-                              "Lucro compensado por prejuízos em outras operações de mesmo tipo"}
-                            {!op.status_ir &&
-                              (() => {
-                                console.log(
-                                  "[DEBUG] Operação sem status_ir definido:",
-                                  op
-                                );
-                                return "Status não definido";
-                              })()}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Prejuízo Accumulation Card */}
-                      {!isProfit && (
-                        <div className="flex flex-col p-4 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl border border-orange-200 shadow-sm">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Info className="h-4 w-4 text-orange-600" />
-                            <span className="text-xs font-semibold uppercase tracking-wide text-orange-600">
-                              Acúmulo de Prejuízo (
-                              {op.day_trade ? "Day Trade" : "Swing Trade"})
-                            </span>
-                          </div>
-                          <div className="text-xs text-orange-700 leading-relaxed space-y-3">
-                            {(() => {
-                              const tipoOperacao = op.day_trade
-                                ? "day trade"
-                                : "swing trade";
-
-                              // ✅ NOVO: Usar função específica para calcular prejuízo acumulado até esta operação
-                              const prejuizoInfo = calcularPrejuizoAcumuladoAteOperacao(
-                                op,
-                                operacoesFechadas
-                              );
-
-                              return (
-                                <>
-                                  {/* Card principal com prejuízo acumulado até esta operação */}
-                                  <div className="bg-white/60 rounded-lg p-3 border border-orange-300/50 mt-4">
-                                    <div className="flex items-center justify-center gap-3 mb-2">
-                                      <div className="text-center flex-1">
-                                        <div className="text-xs text-orange-600 mb-1">
-                                          Prejuízo Acumulado até esta Operação{" "}
-                                          ({op.day_trade ? "Day Trade" : "Swing Trade"})
-                                        </div>
-                                        <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1">
-                                          {formatCurrency(prejuizoInfo.prejuizoAteOperacao)}
-                                        </div>
-                                        <div className="text-xs text-gray-600 mt-1">
-                                          {prejuizoInfo.operacoesAnteriores.length > 0
-                                            ? `Baseado em ${prejuizoInfo.operacoesAnteriores.length + 1} operação(ões) ${tipoOperacao}`
-                                            : `Primeira operação ${tipoOperacao} com prejuízo`}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    
-                                    {/* Detalhamento adicional se houver operações anteriores */}
-                                    {prejuizoInfo.operacoesAnteriores.length > 0 && (
-                                      <div className="mt-3 pt-3 border-t border-orange-200">
-                                        <div className="grid grid-cols-2 gap-3 text-xs">
-                                          <div className="text-center">
-                                            <div className="text-orange-600">Prejuízo Anterior Disponível</div>
-                                            <div className="font-semibold text-orange-800">
-                                              {formatCurrency(prejuizoInfo.prejuizoAnterior)}
-                                            </div>
-                                            <div className="text-xs text-gray-500 mt-1">
-                                              (Já descontadas compensações)
-                                            </div>
-                                          </div>
-                                          <div className="text-center">
-                                            <div className="text-red-600">Esta Operação</div>
-                                            <div className="font-semibold text-red-800">
-                                              {formatCurrency(Math.abs(op.resultado))}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-
-                                  {/* ✅ SEÇÃO: Explicação da segregação por tipo */}
-                                  <div className="bg-blue-100 border border-blue-200 rounded-lg p-3">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <Info className="h-3 w-3 text-blue-600" />
-                                      <span className="text-xs font-semibold text-blue-700">
-                                        Como o Prejuízo é Calculado
-                                      </span>
-                                    </div>
-                                    <div className="text-xs text-blue-700 space-y-2">
-                                      <div>
-                                        • <strong>Segregação por tipo:</strong> Prejuízos {op.day_trade ? "Day Trade" : "Swing Trade"} só 
-                                        compensam lucros de <strong>{op.day_trade ? "Day Trade" : "Swing Trade"}</strong>
-                                      </div>
-                                      <div>
-                                        • <strong>Ordem cronológica:</strong> Calculamos operação por operação, na sequência temporal
-                                      </div>
-                                      <div>
-                                        • <strong>Compensação automática:</strong> Quando há um lucro, ele consome prejuízos anteriores disponíveis
-                                      </div>
-                                      <div className="bg-blue-50 p-2 rounded mt-2">
-                                        <strong>📊 Valor mostrado:</strong> Prejuízo líquido disponível até esta operação, 
-                                        já descontadas todas as compensações que ocorreram antes dela.
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Explicação da compensação futura */}
-                                  <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                                    <div className="flex items-start gap-2">
-                                      <div className="text-green-600 mt-0.5">
-                                        ✨
-                                      </div>
-                                      <div className="text-green-700 text-xs leading-relaxed">
-                                        <div className="font-semibold mb-1">
-                                          Compensação futura:
-                                        </div>
-                                        <div>
-                                          Quando você tiver lucros em operações
-                                          de{" "}
-                                          <span className="font-bold">
-                                            {tipoOperacao}
-                                          </span>
-                                          , este saldo de{" "}
-                                          <span className="font-bold text-red-700">
-                                            {formatCurrency(prejuizoInfo.prejuizoAteOperacao)}
-                                          </span>{" "}
-                                          será automaticamente descontado,
-                                          reduzindo ou eliminando o imposto a
-                                          pagar.
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* ✅ PROFIT COMPENSATION CARD - CORRIGIDO COM SEGREGAÇÃO */}
-                      {isProfit &&
-                        (op.status_ir === "Lucro Compensado" ||
-                          op.status_ir === "Tributável Day Trade" ||
-                          op.status_ir === "Tributável Swing") &&
-                        (() => {
-                          const detalhes = calcularDetalhesCompensacao(
-                            op,
-                            operacoesFechadas
-                          );
-                          const tipoOperacao = op.day_trade
-                            ? "Day Trade"
-                            : "Swing Trade";
-
-                          // Se não há compensação, não mostrar o card
-                          if (detalhes.valorCompensado <= 0) return null;
-
-                          // ✅ NOVA FUNCIONALIDADE: Calcular prejuízo restante
-                          const infoRestante = calcularPrejuizoRestanteAposCompensacao(
-                            op,
-                            operacoesFechadas
-                          );
-
-                          return (
-                            <div className="flex flex-col p-4 bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200 shadow-sm">
-                              <div className="flex items-center gap-2 mb-4">
-                                {detalhes.lucroTributavel === 0 ? (
-                                  <>
-                                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                                    <span className="text-sm font-bold uppercase tracking-wide text-green-700">
-                                      ✅ Compensação Total de Prejuízo
-                                    </span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Info className="h-5 w-5 text-orange-600" />
-                                    <span className="text-sm font-bold uppercase tracking-wide text-orange-700">
-                                      ⚖️ Compensação Parcial de Prejuízo
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-
-                              <div className="text-xs leading-relaxed space-y-3">
-                                {/* ✅ ITEM 4: Card de compensação com segregação */}
-                                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <span className="text-yellow-600">⚖️</span>
-                                    <span className="font-semibold text-yellow-800">
-                                      Compensação {tipoOperacao}
-                                    </span>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <div className="text-xs">
-                                      • <strong>Tipo de operação:</strong>{" "}
-                                      {tipoOperacao}
-                                    </div>
-                                    <div className="text-xs">
-                                      • <strong>Lucro da operação:</strong>{" "}
-                                      {formatCurrency(detalhes.lucroOperacao)}
-                                    </div>
-                                    <div className="text-xs">
-                                      •{" "}
-                                      <strong>
-                                        Prejuízo disponível (mesmo tipo):
-                                      </strong>{" "}
-                                      {formatCurrency(
-                                        detalhes.prejuizoAnteriorDisponivel
-                                      )}
-                                    </div>
-                                    <div className="text-xs">
-                                      • <strong>Valor compensado:</strong>{" "}
-                                      {formatCurrency(detalhes.valorCompensado)}
-                                    </div>
-                                    <div className="text-xs">
-                                      • <strong>Prejuízo restante ({infoRestante.tipoOperacao}):</strong>{" "}
-                                      <span className={`font-semibold ${
-                                        infoRestante.prejuizoRestante > 0 
-                                          ? "text-orange-700" 
-                                          : "text-green-700"
-                                      }`}>
-                                        {formatCurrency(infoRestante.prejuizoRestante)}
-                                        {infoRestante.prejuizoRestante === 0 && " ✅"}
-                                      </span>
-                                    </div>
-                                    <div className="text-xs">
-                                      •{" "}
-                                      <strong>
-                                        Lucro tributável restante:
-                                      </strong>{" "}
-                                      {formatCurrency(detalhes.lucroTributavel)}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Card de explicação da regra fiscal */}
-                                <div className="text-xs bg-blue-100 border border-blue-200 rounded p-3">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-blue-600">💡</span>
-                                    <strong className="text-blue-800">
-                                      Regra Fiscal Importante:
-                                    </strong>
-                                  </div>
-                                  <div className="text-blue-700">
-                                    Prejuízos de <strong>Day Trade</strong> só
-                                    compensam lucros de{" "}
-                                    <strong>Day Trade</strong>.<br />
-                                    Prejuízos de <strong>Swing Trade</strong> só
-                                    compensam lucros de{" "}
-                                    <strong>Swing Trade</strong>.<br />
-                                    <em>
-                                      Não há compensação cruzada entre os tipos.
-                                    </em>
-                                  </div>
-                                </div>
-
-                                {/* ✅ NOVO: Card informativo sobre prejuízo restante */}
-                                {infoRestante.prejuizoRestante > 0 && (
-                                  <div className="text-xs bg-orange-50 border border-orange-200 rounded p-3">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-orange-600">💰</span>
-                                      <strong className="text-orange-800">
-                                        Prejuízo Ainda Disponível:
-                                      </strong>
-                                    </div>
-                                    <div className="text-orange-700">
-                                      Após esta compensação, você ainda tem{" "}
-                                      <strong>{formatCurrency(infoRestante.prejuizoRestante)}</strong>{" "}
-                                      em prejuízos de <strong>{infoRestante.tipoOperacao}</strong>{" "}
-                                      disponíveis para compensar futuros lucros do mesmo tipo.
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Card quando não há mais prejuízo */}
-                                {infoRestante.prejuizoRestante === 0 && infoRestante.prejuizoAntes > 0 && (
-                                  <div className="text-xs bg-green-50 border border-green-200 rounded p-3">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-green-600">✅</span>
-                                      <strong className="text-green-800">
-                                        Prejuízo Totalmente Utilizado:
-                                      </strong>
-                                    </div>
-                                    <div className="text-green-700">
-                                      Esta operação utilizou todo o prejuízo acumulado de{" "}
-                                      <strong>{infoRestante.tipoOperacao}</strong>. Não há mais{" "}
-                                      prejuízos deste tipo disponíveis para compensações futuras.
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Status final */}
-                                <div
-                                  className={`rounded-xl p-3 ${
-                                    detalhes.lucroTributavel === 0
-                                      ? "bg-green-100 border border-green-300"
-                                      : "bg-blue-100 border border-blue-300"
-                                  }`}
-                                >
-                                  <div className="text-center">
-                                    <div
-                                      className={`font-bold text-sm ${
-                                        detalhes.lucroTributavel === 0
-                                          ? "text-green-800"
-                                          : "text-blue-800"
-                                      }`}
-                                    >
-                                      {detalhes.lucroTributavel === 0
-                                        ? "🎉 OPERAÇÃO TOTALMENTE COMPENSADA"
-                                        : "📊 COMPENSAÇÃO PARCIAL APLICADA"}
-                                    </div>
-                                    {detalhes.lucroTributavel === 0 ? (
-                                      <div className="text-xs text-green-700 mt-1">
-                                        Imposto de Renda:{" "}
-                                        <strong>R$ 0,00</strong>
-                                      </div>
-                                    ) : (
-                                      <div className="text-xs text-blue-700 mt-1">
-                                        IR sobre{" "}
-                                        {formatCurrency(
-                                          detalhes.lucroTributavel
-                                        )}{" "}
-                                        ={" "}
-                                        <strong>
-                                          {formatCurrency(
-                                            detalhes.lucroTributavel *
-                                              (op.day_trade ? 0.2 : 0.15)
-                                          )}
-                                        </strong>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                      {/* DARF Button */}
-                      {shouldShowDarf(op) && (
-                        <div className="flex items-center justify-center mt-2">
-                          <Button
-                            onClick={(e) => {
-                              e.stopPropagation(); // ✅ Prevenir chamadas duplicadas por bubbling
-                              handleOpenDarfModal(op);
-                            }}
-                            className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-                          >
-                            <FileText className="h-4 w-4 mr-2" />
-                            Ver Detalhes Completos do DARF
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+              );
+            }
+          })()}
         </div>
       )}
+    </div>
+  );
+});
+
+// Subcomponent: PaginationControls
+interface PaginationControlsProps {
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  itemsPerPage: number;
+  onPageChange: (page: number) => void;
+}
+
+const PaginationControls = ({
+  currentPage,
+  totalPages,
+  totalItems,
+  itemsPerPage,
+  onPageChange,
+}: PaginationControlsProps) => {
+  const startItem = (currentPage - 1) * itemsPerPage + 1;
+  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+
+  const getVisiblePages = () => {
+    const delta = 2;
+    const range = [];
+    const rangeWithDots = [];
+
+    for (let i = Math.max(2, currentPage - delta); i <= Math.min(totalPages - 1, currentPage + delta); i++) {
+      range.push(i);
+    }
+
+    if (currentPage - delta > 2) {
+      rangeWithDots.push(1, '...');
+    } else {
+      rangeWithDots.push(1);
+    }
+
+    rangeWithDots.push(...range);
+
+    if (currentPage + delta < totalPages - 1) {
+      rangeWithDots.push('...', totalPages);
+    } else if (totalPages > 1) {
+      rangeWithDots.push(totalPages);
+    }
+
+    return rangeWithDots;
+  };
+
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 py-4 px-6 bg-gradient-to-r from-gray-50 to-indigo-50 border-t border-indigo-200">
+      <div className="text-sm text-gray-600">
+        Mostrando <span className="font-medium">{startItem}</span> a <span className="font-medium">{endItem}</span> de <span className="font-medium">{totalItems}</span> operações
+      </div>
+      
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="h-8 w-8 p-0 border-indigo-200 hover:border-indigo-300 hover:bg-indigo-50"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        
+        <div className="flex items-center gap-1">
+          {getVisiblePages().map((page, index) => (
+            <div key={index}>
+              {page === '...' ? (
+                <span className="px-2 py-1 text-sm text-gray-400">...</span>
+              ) : (
+                <Button
+                  variant={currentPage === page ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => onPageChange(page as number)}
+                  className={`h-8 w-8 p-0 ${
+                    currentPage === page
+                      ? "bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700"
+                      : "border-indigo-200 hover:border-indigo-300 hover:bg-indigo-50"
+                  }`}
+                >
+                  {page}
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+        
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="h-8 w-8 p-0 border-indigo-200 hover:border-indigo-300 hover:bg-indigo-50"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 };
@@ -1208,15 +1157,9 @@ export default function OperacoesEncerradasTable(
 ) {
   // Handler for DARF status change
   const handleDarfStatusChange = (operationKey: string, newStatus: string) => {
-    console.log("🔄 [DARF STATUS] Atualizando:", { operationKey, newStatus });
-
     setDarfStatusMap((prev) => {
       const updated = new Map(prev);
       updated.set(operationKey, newStatus);
-      console.log(
-        "🔄 [DARF STATUS] Map atualizado:",
-        Array.from(updated.entries())
-      );
       return updated;
     });
 
@@ -1237,15 +1180,6 @@ export default function OperacoesEncerradasTable(
     useState<ResultadoMensal | null>(null);
 
   const handleOpenDarfModal = (op: OperacaoFechada) => {
-    console.log("📂 [DARF MODAL] Abrindo modal para operação:", {
-      ticker: op.ticker,
-      data_abertura: op.data_abertura,
-      data_fechamento: op.data_fechamento,
-      quantidade: op.quantidade,
-      operationKey: `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}`,
-      status_ir: op.status_ir,
-    });
-
     setSelectedOpForDarf(op);
     setIsDarfModalOpen(true);
   };
@@ -1275,135 +1209,154 @@ export default function OperacoesEncerradasTable(
   const [darfStatusMap, setDarfStatusMap] = useState<Map<string, string>>(
     new Map()
   );
-  // Helper to render DARF badge
-  // ✅ CORREÇÃO 3: Badge do DARF com ícones e cores corretas
-  const getDarfBadge = (darfStatus: string | null, op: OperacaoFechada) => {
+  // ✅ COMPONENTE BADGE DARF - Implementação simplificada
+  const DarfBadge = ({ darfStatus, op }: { darfStatus: string | null; op: OperacaoFechada }) => {
     if (!darfStatus) return null;
 
-    let color = "gray";
-    let bg = "bg-gray-100";
-    let text = "DARF";
-    let icon = "📄";
-
-    // Extrair mês da data de fechamento e converter para 3 letras
     const mesOperacao = getMonthName(op.data_fechamento);
 
     if (darfStatus === "pago") {
-      color = "green";
-      bg = "bg-green-100";
-      text = `DARF ${mesOperacao}`;
-      icon = "✅";
-    } else if (darfStatus === "pendente") {
-      color = "amber";
-      bg = "bg-amber-100";
-      text = `DARF ${mesOperacao}`;
-      icon = "⏳";
-    } else if (darfStatus === "vencido") {
-      color = "red";
-      bg = "bg-red-100";
-      text = "DARF Vencido";
-      icon = "⚠️";
+      return (
+        <span className="px-2 py-1 rounded-full text-xs font-semibold border border-green-300 bg-green-100 text-green-700 ml-1 flex items-center gap-1">
+          <span>✅</span>
+          DARF {mesOperacao}
+        </span>
+      );
+    }
+    
+    if (darfStatus === "pendente") {
+      return (
+        <span className="px-2 py-1 rounded-full text-xs font-semibold border border-yellow-300 bg-yellow-100 text-yellow-700 ml-1 flex items-center gap-1">
+          <span>⏳</span>
+          DARF {mesOperacao}
+        </span>
+      );
+    }
+    
+    if (darfStatus === "vencido") {
+      return (
+        <span className="px-2 py-1 rounded-full text-xs font-semibold border border-red-300 bg-red-100 text-red-700 ml-1 flex items-center gap-1">
+          <span>⚠️</span>
+          DARF Vencido
+        </span>
+      );
     }
 
     return (
-      <span
-        className={`px-2 py-1 rounded-full text-xs font-semibold border border-${color}-300 ${bg} text-${color}-700 ml-1 flex items-center gap-1`}
-      >
-        <span>{icon}</span>
-        {text}
+      <span className="px-2 py-1 rounded-full text-xs font-semibold border border-gray-300 bg-gray-100 text-gray-700 ml-1 flex items-center gap-1">
+        <span>📄</span>
+        DARF
       </span>
     );
   };
 
-  // Helper to render status badge
+  // Wrapper function para compatibilidade
+  const getDarfBadge = (darfStatus: string | null, op: OperacaoFechada) => {
+    return <DarfBadge darfStatus={darfStatus} op={op} />;
+  };
+
+  // Helper to render status badge - Simplified without circular dependencies
   const getStatusBadge = (
     status: string,
     isProfit: boolean,
     op: OperacaoFechada,
     operacoesFechadas: OperacaoFechada[]
   ) => {
-    const badges = [];
+    try {
+      const badges = [];
 
-    // ✅ USAR LÓGICA UNIFICADA para determinar status final
-    const statusFinal = getFinalStatus(op);
-    
-    // ✅ SIMPLIFICAÇÃO: Backend já corrigiu, badges mais limpos sem DT/ST
-    const isDayTradeReal = Boolean(op.day_trade);
-    
-    console.log(`🎯 [GET STATUS BADGE] ${op.ticker}:`, {
-      statusPassado: status,
-      statusDaApi: op.status_ir,
-      statusFinal,
-      isProfit,
-      isDayTradeReal
-    });
-
-    // Badge principal do status fiscal - versão simplificada
-    let color = "gray";
-    let bg = "bg-gray-100";
-    let text = statusFinal;
-
-    if (statusFinal === "Isento") {
-      color = "green";
-      bg = "bg-green-100";
-      text = "Isento";
-    } else if (statusFinal === "Tributável Day Trade") {
-      color = "orange";
-      bg = "bg-orange-100";
-      text = "Tributável";
-    } else if (statusFinal === "Tributável Swing") {
-      color = "blue";
-      bg = "bg-blue-100";
-      text = "Tributável";
-    } else if (statusFinal === "Prejuízo Acumulado") {
-      color = "red";
-      bg = "bg-red-100";
-      text = "Prejuízo";
-    } else if (statusFinal === "Lucro Compensado") {
-      color = "emerald";
-      bg = "bg-emerald-100";
-      text = "Compensado";
-    }
-
-    console.log(`🎨 [BADGE VISUAL] ${op.ticker}: ${statusFinal} → ${text} (${color})`);
-
-    // Badge principal
-    badges.push(
-      <span
-        key="status-principal"
-        className={`px-2 py-1 rounded-full text-xs font-semibold border border-${color}-300 ${bg} text-${color}-700`}
-      >
-        {text}
-      </span>
-    );
-
-    // ✅ LÓGICA EXISTENTE: Badge adicional para compensação parcial
-    if (
-      isProfit &&
-      (statusFinal === "Tributável Day Trade" ||
-        statusFinal === "Tributável Swing")
-    ) {
-      const compensacaoInfo = getCompensacaoInfo(op, operacoesFechadas);
-
-      if (compensacaoInfo.ehCompensacaoParcial) {
-        badges.push(
-          <span
-            key="compensacao-parcial"
-            className="px-2 py-1 rounded-full text-xs font-semibold border border-purple-300 bg-purple-100 text-purple-700 ml-1"
-          >
-            Compensado Parcial
+      // ✅ USAR LÓGICA UNIFICADA para determinar status final
+      const statusFinal = op.status_ir || "";
+      
+      // ✅ COMPONENTE BADGE STATUS - Implementação direta
+      const StatusBadge = ({ status }: { status: string }) => {
+        if (status === "Isento") {
+          return (
+            <span className="px-2 py-1 rounded-full text-xs font-semibold border border-green-300 bg-green-100 text-green-700">
+              Isento
+            </span>
+          );
+        }
+        
+        if (status === "Tributável Day Trade") {
+          return (
+            <span className="px-2 py-1 rounded-full text-xs font-semibold border border-orange-300 bg-orange-100 text-orange-700">
+              Tributável
+            </span>
+          );
+        }
+        
+        if (status === "Tributável Swing") {
+          return (
+            <span className="px-2 py-1 rounded-full text-xs font-semibold border border-blue-300 bg-blue-100 text-blue-700">
+              Tributável
+            </span>
+          );
+        }
+        
+        if (status === "Prejuízo Acumulado") {
+          return (
+            <span className="px-2 py-1 rounded-full text-xs font-semibold border border-red-300 bg-red-100 text-red-700">
+              Prejuízo
+            </span>
+          );
+        }
+        
+        if (status === "Lucro Compensado") {
+          return (
+            <span className="px-2 py-1 rounded-full text-xs font-semibold border border-green-300 bg-green-100 text-green-700">
+              Compensado
+            </span>
+          );
+        }
+        
+        return (
+          <span className="px-2 py-1 rounded-full text-xs font-semibold border border-gray-300 bg-gray-100 text-gray-700">
+            {status || "N/A"}
           </span>
         );
-      }
-    }
+      };
 
-    return <div className="flex items-center gap-1 flex-wrap">{badges}</div>;
+      // Badge principal
+      badges.push(
+        <StatusBadge key="status-principal" status={statusFinal} />
+      );
+
+      // ✅ LÓGICA EXISTENTE: Badge adicional para compensação parcial
+      if (
+        isProfit &&
+        (statusFinal === "Tributável Day Trade" ||
+          statusFinal === "Tributável Swing")
+      ) {
+        try {
+          const compensacaoInfo = getCompensacaoInfo(op, operacoesFechadas);
+
+          if (compensacaoInfo?.ehCompensacaoParcial) {
+            const CompensacaoPartialBadge = () => (
+              <span className="px-2 py-1 rounded-full text-xs font-semibold border border-purple-300 bg-purple-100 text-purple-700 ml-1">
+                Compensado Parcial
+              </span>
+            );
+            badges.push(
+              <CompensacaoPartialBadge key="compensacao-parcial" />
+            );
+          }
+        } catch (error) {
+          console.error('[getStatusBadge] Error calculating compensation info:', error);
+        }
+      }
+
+      return <div className="flex items-center gap-1 flex-wrap">{badges}</div>;
+    } catch (error) {
+      console.error('[getStatusBadge] Error rendering status badge:', error);
+      return <div className="text-xs text-gray-500">Erro</div>;
+    }
   };
 
   // Expanded rows state and handler
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
 
-  const toggleRow = (rowKey: string) => {
+  const toggleRow = useCallback((rowKey: string) => {
     setExpandedRows((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(rowKey)) {
@@ -1413,7 +1366,7 @@ export default function OperacoesEncerradasTable(
       }
       return newSet;
     });
-  };
+  }, []);
 
   const {
     operacoesFechadas = [],
@@ -1421,69 +1374,56 @@ export default function OperacoesEncerradasTable(
     onUpdateDashboard = () => {},
   } = props;
 
-  const operacoesComStatusCorrigido = useOperacoesComStatusCorrigido(
-    operacoesFechadas,
-    resultadosMensais
-  );
+  // 🚀 USAR NOVA API OTIMIZADA
+  const { operacoes: operacoesOtimizadas, isLoading: isLoadingOtimizadas, error: errorOtimizadas } = useOperacoesOtimizadas();
+  
+  // Fallback para API antiga se necessário (SEMPRE chamar o hook)
+  const operacoesFallback = useOperacoesComStatusCorrigido(operacoesFechadas, resultadosMensais);
+  
+  // Escolher qual usar baseado na disponibilidade
+  const operacoesComStatusCorrigido = operacoesOtimizadas.length > 0 
+    ? operacoesOtimizadas 
+    : operacoesFallback;
 
-  // ✅ LOG PARA DEBUG: Ver dados que chegam do banco
-  React.useEffect(() => {
-    if (operacoesComStatusCorrigido && operacoesComStatusCorrigido.length > 0) {
-      console.log('📊 [DADOS DO BANCO] Todas as operações:', operacoesComStatusCorrigido.map(op => ({
-        ticker: op.ticker,
-        status_ir: op.status_ir,
-        resultado: op.resultado,
-        data_fechamento: op.data_fechamento,
-        day_trade: op.day_trade
-      })));
-      
-      // Filtrar apenas operações com "Lucro Compensado"
-      const compensadas = operacoesComStatusCorrigido.filter(op => op.status_ir === "Lucro Compensado");
-      if (compensadas.length > 0) {
-        console.log('💚 [OPERAÇÕES COMPENSADAS] Encontradas no banco:', compensadas);
-      }
-    }
-  }, [operacoesComStatusCorrigido]);
+  console.log('🚀 [TABELA] Usando operações:', {
+    otimizadas: operacoesOtimizadas.length,
+    fallback: operacoesFallback.length,
+    isLoading: isLoadingOtimizadas,
+    error: errorOtimizadas,
+    usando: operacoesOtimizadas.length > 0 ? 'otimizada' : 'fallback'
+  });
 
-  // Helper to determine final status of operation (unified logic)
+  // Performance: Logs de debug removidos para melhorar performance com muitas operações
+
+  // Helper to determine final status of operation (unified logic) - Simplified
   const getFinalStatus = (op: OperacaoFechada): string => {
-    const statusApi = op.status_ir || "";
-    
-    console.log(`🔍 [GET FINAL STATUS] ${op.ticker}:`, {
-      statusDaApi: statusApi,
-      resultado: op.resultado,
-      data_fechamento: op.data_fechamento,
-      day_trade: op.day_trade,
-      deve_gerar_darf: op.deve_gerar_darf,
-      valor_ir_pagar: op.valor_ir_pagar,
-      prejuizo_anterior_disponivel: op.prejuizo_anterior_disponivel
-    });
-    
-    // ✅ CORREÇÃO FINAL: Confiar COMPLETAMENTE nos dados da API
-    // O backend já fez TODA a lógica de compensação, detecção de inconsistências
-    // e cálculo correto. O frontend só deve exibir os dados.
-    
-    console.log(`✅ [STATUS FINAL] ${op.ticker}: Usando status da API → ${statusApi}`);
-    return statusApi; // Usar status já calculado e corrigido da API
+    try {
+      const statusApi = op.status_ir || "";
+      
+      // ✅ CORREÇÃO FINAL: Confiar COMPLETAMENTE nos dados da API
+      // O backend já fez TODA a lógica de compensação, detecção de inconsistências
+      // e cálculo correto. O frontend só deve exibir os dados.
+      return statusApi; // Usar status já calculado e corrigido da API
+    } catch (error) {
+      console.error('[getFinalStatus] Error getting final status:', error);
+      return "";
+    }
   };
 
-  // Helper to determine if operation should show DARF
-  const shouldShowDarf = (op: OperacaoFechada): boolean => {
-    const finalStatus = getFinalStatus(op);
-    
-    console.log(`🚨 [SHOULD SHOW DARF] ${op.ticker}:`, {
-      finalStatus,
-      deve_gerar_darf: op.deve_gerar_darf,
-      valor_ir_pagar: op.valor_ir_pagar,
-      statusDaApi: op.status_ir
-    });
-    
-    // ✅ CORREÇÃO FINAL: Confiar no campo 'deve_gerar_darf' da API
-    // O backend já calculou tudo corretamente
-    const deveGerar = Boolean(op.deve_gerar_darf);
-    
-    console.log(`✅ [SHOULD SHOW DARF] ${op.ticker}: deve_gerar_darf=${deveGerar} → ${deveGerar ? 'true' : 'false'}`);
-    return deveGerar;
+  // Helper to determine if operation should show DARF - Optimized
+  const shouldShowDarf = (op: any): boolean => {
+    try {
+      // 🚀 OTIMIZAÇÃO: Priorizar campo pré-calculado da API otimizada
+      if (op.deve_gerar_darf !== undefined) {
+        return Boolean(op.deve_gerar_darf);
+      }
+      
+      // Fallback para lógica tradicional
+      return Boolean(op.deve_gerar_darf);
+    } catch (error) {
+      console.error('[shouldShowDarf] Error checking DARF requirement:', error);
+      return false;
+    }
   };
 
   // States and memos...
@@ -1494,6 +1434,10 @@ export default function OperacoesEncerradasTable(
   const [filterType, setFilterType] = useState("all");
   const [filterMonth, setFilterMonth] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
+  
+  // Pagination state - Reduzido para melhor performance
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   // Add any other states needed for sorting, expansion, etc. (not shown for brevity)
 
   // Unique months and statuses for filters
@@ -1556,7 +1500,7 @@ export default function OperacoesEncerradasTable(
   const [sortConfig, setSortConfig] = useState<{
     key: string;
     direction: "ascending" | "descending";
-  }>({ key: "data_fechamento", direction: "descending" });
+  }>({ key: "id", direction: "descending" });
 
   const requestSort = (key: string) => {
     setSortConfig((prev) => {
@@ -1572,13 +1516,35 @@ export default function OperacoesEncerradasTable(
     });
   };
 
-  // Add sorting to processedOperacoes
+  // Add sorting to processedOperacoes with sequential index
   const sortedOperacoes = useMemo(() => {
-    const ops = [...processedOperacoes];
-    if (!sortConfig.key) return ops;
-    return ops.sort((a, b) => {
-      let aValue = (a as any)[sortConfig.key];
-      let bValue = (b as any)[sortConfig.key];
+    let ops = [...processedOperacoes];
+    
+    // First, sort by ID descending to get consistent ordering for sequential numbering
+    ops.sort((a, b) => (b.id || 0) - (a.id || 0));
+    
+    // Add sequential index (starting from 1)
+    const opsWithIndex = ops.map((op, index) => ({
+      ...op,
+      sequentialIndex: index + 1
+    }));
+    
+    // Then apply user-requested sorting
+    if (!sortConfig.key) return opsWithIndex;
+    
+    return opsWithIndex.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+      
+      // Handle special case for sequential index
+      if (sortConfig.key === "id") {
+        aValue = a.sequentialIndex;
+        bValue = b.sequentialIndex;
+      } else {
+        aValue = (a as any)[sortConfig.key];
+        bValue = (b as any)[sortConfig.key];
+      }
+      
       if (typeof aValue === "string" && typeof bValue === "string") {
         if (sortConfig.direction === "ascending") {
           return aValue.localeCompare(bValue);
@@ -1596,6 +1562,17 @@ export default function OperacoesEncerradasTable(
       return 0;
     });
   }, [processedOperacoes, sortConfig]);
+
+  // Pagination logic
+  const totalPages = Math.ceil(sortedOperacoes.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedOperacoes = sortedOperacoes.slice(startIndex, endIndex);
+
+  // Reset to first page when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterType, filterMonth, filterStatus]);
 
   const totalResultadoOperacoes = processedOperacoes.reduce(
     (acc, op) => acc + op.resultado,
@@ -1795,7 +1772,7 @@ export default function OperacoesEncerradasTable(
             />
           </div>
         </CardHeader>
-        <CardContent className="p-6">
+        <CardContent className="p-6 pb-0">
           <Filters
             searchTerm={searchTerm}
             setSearchTerm={setSearchTerm}
@@ -1809,35 +1786,39 @@ export default function OperacoesEncerradasTable(
             uniqueStatuses={uniqueStatuses}
           />
           <TableHeader sortConfig={sortConfig} requestSort={requestSort} />
-          <div className="border border-indigo-200 border-t-0 rounded-b-xl overflow-hidden">
-            {sortedOperacoes.map((op, index) => (
-              <OperationRow
-                key={`${op.ticker}-${
-                  op.data_fechamento
-                }-${index}-${getDarfStatusForOperation(
-                  op,
-                  darfStatusMap,
-                  resultadosMensais
-                )}`} // ✅ Ordem correta
-                op={op}
-                index={index}
-                isExpanded={expandedRows.has(
-                  `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`
-                )}
-                toggleRow={toggleRow}
-                isProfit={op.resultado >= 0}
-                getStatusBadge={getStatusBadge}
-                getDarfBadge={getDarfBadge}
-                getDarfStatusForOperation={getDarfStatusForOperation}
-                shouldShowDarf={shouldShowDarf}
-                darfStatusMap={darfStatusMap}
-                handleOpenDarfModal={handleOpenDarfModal}
-                operacoesFechadas={operacoesComStatusCorrigido}
-                resultadosMensais={resultadosMensais} // ✅ Apenas uma vez
-              />
-            ))}
+          <div className="border border-indigo-200 border-t-0 overflow-hidden">
+            {paginatedOperacoes.map((op, index) => {
+              const globalIndex = startIndex + index;
+              return (
+                <OperationRow
+                  key={`${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${globalIndex}`} // Simplified key without DARF status
+                  op={op}
+                  index={globalIndex}
+                  isExpanded={expandedRows.has(
+                    `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${globalIndex}`
+                  )}
+                  toggleRow={toggleRow}
+                  isProfit={op.resultado >= 0}
+                  getStatusBadge={getStatusBadge}
+                  getDarfBadge={getDarfBadge}
+                  getDarfStatusForOperation={getDarfStatusForOperation}
+                  shouldShowDarf={shouldShowDarf}
+                  darfStatusMap={darfStatusMap}
+                  handleOpenDarfModal={handleOpenDarfModal}
+                  operacoesFechadas={operacoesComStatusCorrigido}
+                  resultadosMensais={resultadosMensais} // ✅ Apenas uma vez
+                />
+              );
+            })}
           </div>
         </CardContent>
+        <PaginationControls
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={sortedOperacoes.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+        />
       </Card>
 
       {isDarfModalOpen && selectedOpForDarf && (

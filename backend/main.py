@@ -48,6 +48,7 @@ from services import (
     gerar_resumo_operacoes_fechadas, # Added for summary
     deletar_todas_operacoes_service, # Added for bulk delete
     atualizar_status_darf_service, # Added for DARF status update
+    obter_operacoes_fechadas_otimizado_service, # Added for optimized API
     remover_item_carteira_service, # Added for deleting single portfolio item
     listar_operacoes_por_ticker_service, # Added for fetching operations by ticker
     calcular_resultados_por_ticker_service, # Added for ticker results
@@ -78,6 +79,7 @@ from services import (
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import auth # Keep this for other auth functions
+from validacao_b3 import validar_operacoes_b3, gerar_aviso_b3, gerar_relatorio_detalhado_b3
 # auth.get_db removed from here
 
 # Import the new router
@@ -738,7 +740,9 @@ async def upload_operacoes(
         print("🔍 [BACKEND] Validando operações...")
         try:
             operacoes = []
-            operacoes_ignoradas = 0
+            operacoes_ignoradas_validacao = 0
+            operacoes_processadas = []
+            
             for i, op in enumerate(operacoes_json):
                 print(f"🔄 [BACKEND] Processando operação {i+1}/{len(operacoes_json)}: {op}")
                 try:
@@ -748,27 +752,53 @@ async def upload_operacoes(
                     # Ignora operações com quantidade zero ou negativa
                     if processed_op.get("quantity", 0) <= 0:
                         print(f"⚠️ [BACKEND] Operação {i+1} ignorada: quantidade inválida ({processed_op.get('quantity', 0)})")
-                        operacoes_ignoradas += 1
+                        operacoes_ignoradas_validacao += 1
                         continue
                     
                     operacao_create = OperacaoCreate(**processed_op)
                     operacoes.append(operacao_create)
+                    operacoes_processadas.append(processed_op)  # Para validação B3
                     print(f"✅ [BACKEND] Operação {i+1} validada com sucesso")
                 except Exception as e:
                     print(f"❌ [BACKEND] Erro ao processar operação {i+1}: {e}")
                     print(f"❌ [BACKEND] Operação problemática: {op}")
                     print(f"⚠️ [BACKEND] Ignorando operação {i+1} e continuando...")
-                    operacoes_ignoradas += 1
+                    operacoes_ignoradas_validacao += 1
                     continue
             
             print(f"✅ [BACKEND] {len(operacoes)} operações processadas com sucesso")
-            if operacoes_ignoradas > 0:
-                print(f"⚠️ [BACKEND] {operacoes_ignoradas} operações ignoradas por problemas de validação")
+            if operacoes_ignoradas_validacao > 0:
+                print(f"⚠️ [BACKEND] {operacoes_ignoradas_validacao} operações ignoradas por problemas de validação")
             
             # Se não há operações válidas, retorna erro
             if len(operacoes) == 0:
                 print("❌ [BACKEND] Nenhuma operação válida encontrada")
                 raise HTTPException(status_code=400, detail="Nenhuma operação válida encontrada no arquivo")
+            
+            # NOVA VALIDAÇÃO B3 - Verificar saldos negativos
+            print("🏛️ [BACKEND] Executando validação B3 para saldos negativos...")
+            operacoes_b3_validas, relatorio_b3 = validar_operacoes_b3(operacoes_processadas)
+            
+            # Log do relatório B3
+            relatorio_detalhado = gerar_relatorio_detalhado_b3(relatorio_b3)
+            print(relatorio_detalhado)
+            
+            # Atualizar lista de operações com as validadas pela B3
+            if len(operacoes_b3_validas) < len(operacoes):
+                print(f"⚠️ [BACKEND] Validação B3: {len(operacoes_b3_validas)}/{len(operacoes)} operações validadas")
+                
+                # Recriar lista de OperacaoCreate com operações válidas B3
+                operacoes_finais = []
+                for op_valida in operacoes_b3_validas:
+                    try:
+                        operacao_create = OperacaoCreate(**op_valida)
+                        operacoes_finais.append(operacao_create)
+                    except Exception as e:
+                        print(f"❌ [BACKEND] Erro ao recriar operação B3: {e}")
+                        continue
+                
+                operacoes = operacoes_finais
+                print(f"✅ [BACKEND] {len(operacoes)} operações finais após validação B3")
                 
         except HTTPException as e:
             raise e
@@ -788,9 +818,21 @@ async def upload_operacoes(
             )
             
             # Adiciona informações sobre operações ignoradas
-            if operacoes_ignoradas > 0:
-                resultado["operacoes_ignoradas"] = operacoes_ignoradas
-                resultado["aviso"] = f"{operacoes_ignoradas} operações foram ignoradas por problemas de validação (quantidade zero ou inválida)"
+            total_operacoes_ignoradas = operacoes_ignoradas_validacao + relatorio_b3.get('total_operacoes_ignoradas', 0)
+            
+            if total_operacoes_ignoradas > 0:
+                resultado["operacoes_ignoradas"] = total_operacoes_ignoradas
+                
+                # Gerar aviso específico da B3 se houver
+                aviso_b3 = gerar_aviso_b3(relatorio_b3)
+                if aviso_b3:
+                    resultado["aviso_b3"] = aviso_b3
+                    resultado["aviso"] = aviso_b3
+                else:
+                    resultado["aviso"] = f"{total_operacoes_ignoradas} operações foram ignoradas por problemas de validação"
+                
+                # Adicionar relatório B3 para debug
+                resultado["relatorio_b3"] = relatorio_b3
             
             print(f"✅ [BACKEND] Processamento concluído: {resultado}")
         except Exception as e:
@@ -1233,6 +1275,45 @@ async def obter_resumo_operacoes_fechadas(usuario: UsuarioResponse = Depends(get
         user_id_for_log = usuario.id if usuario else "Unknown" # Use .id
         logging.error(f"Error in /api/operacoes/fechadas/resumo for user {user_id_for_log}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error in /api/operacoes/fechadas/resumo. Check logs.")
+
+@app.get("/api/operacoes/fechadas/otimizado", response_model=List[Dict[str, Any]])
+async def obter_operacoes_fechadas_otimizado(usuario: UsuarioResponse = Depends(get_current_user)):
+    """
+    🚀 API OTIMIZADA: Retorna operações fechadas com todos os cálculos já feitos no backend
+    - Performance: O(n) vs O(n²) do frontend atual
+    - Prejuízo acumulado pré-calculado
+    - Detalhes de compensação pré-calculados
+    - Status DARF otimizado
+    - Estatísticas por mês cached
+    """
+    try:
+        logging.info(f"🚀 [API OTIMIZADA] Buscando operações otimizadas para usuário {usuario.id}")
+        
+        operacoes_otimizadas = obter_operacoes_fechadas_otimizado_service(usuario.id)
+        
+        logging.info(f"🚀 [API OTIMIZADA] Retornando {len(operacoes_otimizadas)} operações com cálculos pré-feitos")
+        
+        return operacoes_otimizadas
+        
+    except Exception as e:
+        logging.error(f"🚀 [API OTIMIZADA] Erro para usuário {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
+@app.get("/api/test/auth")
+async def test_auth(usuario: UsuarioResponse = Depends(get_current_user)):
+    """
+    🧪 Endpoint de teste para verificar autenticação
+    """
+    try:
+        return {
+            "status": "authenticated", 
+            "user_id": usuario.id,
+            "username": usuario.nome,
+            "message": "Autenticação funcionando"
+        }
+    except Exception as e:
+        logging.error(f"🧪 [TEST AUTH] Erro: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
     
 @app.delete("/api/admin/reset-financial-data", response_model=Dict[str, str])
 async def resetar_banco(admin: Dict = Depends(get_admin_user)):
@@ -1910,6 +1991,45 @@ async def recalcular_irrf_teste(usuario: UsuarioResponse = Depends(get_current_u
     except Exception as e:
         logging.error(f"Erro no teste de IRRF para usuário {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro no teste de IRRF: {str(e)}")
+
+@app.post("/api/recalcular-status-ir", tags=["Debug"])
+async def recalcular_status_ir_endpoint(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    🔧 ENDPOINT: Recalcula status IR das operações para o usuário logado
+    """
+    try:
+        logging.info(f"🔧 [STATUS IR] Recalculando para usuário {usuario.id}")
+        
+        # Recalcular resultados mensais primeiro
+        recalcular_resultados_corrigido(usuario_id=usuario.id)
+        
+        # Atualizar status IR das operações
+        atualizar_status_ir_operacoes_fechadas(usuario_id=usuario.id)
+        
+        # Verificar quantas operações foram atualizadas
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT COUNT(*) as total, 
+                       COUNT(CASE WHEN status_ir IS NOT NULL THEN 1 END) as com_status
+                FROM operacoes_fechadas 
+                WHERE usuario_id = ?
+            """, (usuario.id,))
+            stats = cursor.fetchone()
+        
+        return {
+            "status": "sucesso",
+            "usuario_id": usuario.id,
+            "operacoes_total": stats[0],
+            "operacoes_com_status": stats[1],
+            "message": "Status IR recalculado com sucesso"
+        }
+        
+    except Exception as e:
+        logging.error(f"❌ [STATUS IR] Erro usuário {usuario.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao recalcular status IR: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

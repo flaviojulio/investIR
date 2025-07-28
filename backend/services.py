@@ -2893,3 +2893,200 @@ def atualizar_status_ir_operacoes_fechadas(usuario_id: int):
         logging.error(f"❌ Erro geral ao atualizar status IR: {e}")
         raise
 
+def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str, Any]]:
+    """
+    🚀 SERVIÇO OTIMIZADO: Retorna operações fechadas com todos os cálculos pré-feitos
+    
+    Performance: O(n) - cálculos feitos uma vez no backend vs O(n²) no frontend
+    
+    Retorna:
+    - Operações fechadas base
+    - Prejuízo acumulado pré-calculado
+    - Detalhes de compensação pré-calculados
+    - Status DARF otimizado
+    - Estatísticas mensais cached
+    """
+    try:
+        logging.info(f"🚀 [OTIMIZADO] Iniciando cálculos otimizados para usuário {usuario_id}")
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # 1. Buscar todas as operações fechadas
+            cursor.execute("""
+                SELECT * FROM operacoes_fechadas 
+                WHERE usuario_id = ?
+                ORDER BY data_fechamento DESC
+            """, (usuario_id,))
+            
+            operacoes_raw = cursor.fetchall()
+            operacoes = [dict(op) for op in operacoes_raw]
+            
+            if not operacoes:
+                logging.info(f"🚀 [OTIMIZADO] Nenhuma operação encontrada para usuário {usuario_id}")
+                return []
+            
+            # 2. Buscar resultados mensais uma vez
+            resultados_mensais = obter_resultados_mensais(usuario_id=usuario_id)
+            resultados_map = {rm["mes"]: rm for rm in resultados_mensais}
+            
+            logging.info(f"🚀 [OTIMIZADO] Processando {len(operacoes)} operações com {len(resultados_mensais)} resultados mensais")
+            
+            # 3. Pré-calcular dados por tipo para otimização
+            operacoes_por_tipo = {
+                "day_trade": [op for op in operacoes if op.get("day_trade", False)],
+                "swing_trade": [op for op in operacoes if not op.get("day_trade", False)]
+            }
+            
+            # 4. Calcular prejuízos acumulados uma vez por tipo
+            prejuizos_acumulados = _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo)
+            
+            # 5. Calcular compensações uma vez por tipo  
+            compensacoes_detalhadas = _calcular_compensacoes_otimizado(operacoes_por_tipo)
+            
+            # 6. Enriquecer cada operação com dados pré-calculados
+            operacoes_otimizadas = []
+            
+            for op in operacoes:
+                op_key = f"{op['ticker']}-{op['data_fechamento']}-{op['quantidade']}"
+                tipo = "day_trade" if op.get("day_trade", False) else "swing_trade"
+                
+                # Dados base da operação
+                operacao_otimizada = dict(op)
+                
+                # Adicionar prejuízo acumulado pré-calculado
+                operacao_otimizada["prejuizo_acumulado_ate"] = prejuizos_acumulados.get(tipo, {}).get(op_key, 0)
+                
+                # Adicionar detalhes de compensação pré-calculados
+                compensacao = compensacoes_detalhadas.get(op_key, {})
+                operacao_otimizada["detalhes_compensacao"] = {
+                    "valor_compensado": compensacao.get("valor_compensado", 0),
+                    "lucro_tributavel": compensacao.get("lucro_tributavel", op.get("resultado", 0) if op.get("resultado", 0) > 0 else 0),
+                    "tem_compensacao": compensacao.get("valor_compensado", 0) > 0,
+                    "eh_compensacao_parcial": compensacao.get("eh_parcial", False)
+                }
+                
+                # Status DARF otimizado
+                mes_operacao = op["data_fechamento"][:7]
+                resultado_mensal = resultados_map.get(mes_operacao)
+                operacao_otimizada["deve_gerar_darf"] = _deve_gerar_darf_otimizado(op, resultado_mensal)
+                
+                # Estatísticas do mês (cached)
+                if resultado_mensal:
+                    operacao_otimizada["estatisticas_mes"] = {
+                        "prejuizo_acumulado_swing": resultado_mensal.get("prejuizo_acumulado_swing", 0),
+                        "prejuizo_acumulado_day": resultado_mensal.get("prejuizo_acumulado_day", 0),
+                        "ir_devido_swing": resultado_mensal.get("ir_devido_swing", 0),
+                        "ir_devido_day": resultado_mensal.get("ir_devido_day", 0)
+                    }
+                else:
+                    operacao_otimizada["estatisticas_mes"] = {
+                        "prejuizo_acumulado_swing": 0,
+                        "prejuizo_acumulado_day": 0,
+                        "ir_devido_swing": 0,
+                        "ir_devido_day": 0
+                    }
+                
+                operacoes_otimizadas.append(operacao_otimizada)
+            
+            logging.info(f"🚀 [OTIMIZADO] Concluído! {len(operacoes_otimizadas)} operações enriquecidas com dados pré-calculados")
+            
+            return operacoes_otimizadas
+            
+    except Exception as e:
+        logging.error(f"🚀 [OTIMIZADO] Erro para usuário {usuario_id}: {e}", exc_info=True)
+        raise
+
+def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[Dict]]) -> Dict[str, Dict[str, float]]:
+    """
+    Calcula prejuízos acumulados de forma otimizada por tipo
+    Complexidade: O(n) vs O(n²) do frontend
+    """
+    resultado = {}
+    
+    for tipo, operacoes in operacoes_por_tipo.items():
+        resultado[tipo] = {}
+        prejuizo_acumulado = 0.0
+        
+        # Ordenar por data para cálculo cronológico
+        operacoes_ordenadas = sorted(operacoes, key=lambda x: x["data_fechamento"])
+        
+        for op in operacoes_ordenadas:
+            # Acumular prejuízo se for negativo
+            if op.get("resultado", 0) < 0:
+                prejuizo_acumulado += abs(op.get("resultado", 0))
+            
+            # Salvar prejuízo acumulado até esta operação
+            op_key = f"{op['ticker']}-{op['data_fechamento']}-{op['quantidade']}"
+            resultado[tipo][op_key] = prejuizo_acumulado
+    
+    return resultado
+
+def _calcular_compensacoes_otimizado(operacoes_por_tipo: Dict[str, List[Dict]]) -> Dict[str, Dict[str, Any]]:
+    """
+    Calcula compensações de forma otimizada
+    Complexidade: O(n) vs O(n²) frontend
+    """
+    resultado = {}
+    
+    for tipo, operacoes in operacoes_por_tipo.items():
+        # Ordenar por data para cálculo cronológico
+        operacoes_ordenadas = sorted(operacoes, key=lambda x: x["data_fechamento"])
+        
+        prejuizo_disponivel = 0.0
+        
+        for op in operacoes_ordenadas:
+            op_key = f"{op['ticker']}-{op['data_fechamento']}-{op['quantidade']}"
+            resultado_op = op.get("resultado", 0)
+            
+            if resultado_op < 0:
+                # Acumular prejuízo
+                prejuizo_disponivel += abs(resultado_op)
+                resultado[op_key] = {
+                    "valor_compensado": 0,
+                    "lucro_tributavel": 0,
+                    "eh_parcial": False
+                }
+            elif resultado_op > 0:
+                # Calcular compensação para lucro
+                valor_compensado = min(resultado_op, prejuizo_disponivel)
+                lucro_tributavel = resultado_op - valor_compensado
+                eh_parcial = valor_compensado > 0 and lucro_tributavel > 0
+                
+                # Reduzir prejuízo disponível
+                prejuizo_disponivel = max(0, prejuizo_disponivel - valor_compensado)
+                
+                resultado[op_key] = {
+                    "valor_compensado": valor_compensado,
+                    "lucro_tributavel": lucro_tributavel,
+                    "eh_parcial": eh_parcial
+                }
+            else:
+                resultado[op_key] = {
+                    "valor_compensado": 0,
+                    "lucro_tributavel": 0,
+                    "eh_parcial": False
+                }
+    
+    return resultado
+
+def _deve_gerar_darf_otimizado(operacao: Dict[str, Any], resultado_mensal: Optional[Dict[str, Any]]) -> bool:
+    """
+    Versão otimizada da verificação de DARF
+    """
+    if not operacao or operacao.get("resultado", 0) <= 0:
+        return False
+    
+    # Verificar se status indica tributação
+    status_ir = operacao.get("status_ir", "")
+    if status_ir not in ["Tributável Day Trade", "Tributável Swing"]:
+        return False
+    
+    # Verificar se há IR devido no mês
+    if resultado_mensal:
+        is_day_trade = operacao.get("day_trade", False)
+        ir_devido = resultado_mensal.get("ir_devido_day" if is_day_trade else "ir_devido_swing", 0)
+        return ir_devido > 0
+    
+    return True
+
