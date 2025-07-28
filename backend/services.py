@@ -2941,8 +2941,7 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
             # 4. Calcular prejuízos acumulados uma vez por tipo
             prejuizos_acumulados = _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo)
             
-            # 5. Calcular compensações uma vez por tipo  
-            compensacoes_detalhadas = _calcular_compensacoes_otimizado(operacoes_por_tipo)
+            # 5. Compensações serão calculadas usando dados mensais corretos (não mais por operação)
             
             # 6. Enriquecer cada operação com dados pré-calculados
             operacoes_otimizadas = []
@@ -2957,14 +2956,49 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
                 # Adicionar prejuízo acumulado pré-calculado
                 operacao_otimizada["prejuizo_acumulado_ate"] = prejuizos_acumulados.get(tipo, {}).get(op_key, 0)
                 
-                # Adicionar detalhes de compensação pré-calculados
-                compensacao = compensacoes_detalhadas.get(op_key, {})
-                operacao_otimizada["detalhes_compensacao"] = {
-                    "valor_compensado": compensacao.get("valor_compensado", 0),
-                    "lucro_tributavel": compensacao.get("lucro_tributavel", op.get("resultado", 0) if op.get("resultado", 0) > 0 else 0),
-                    "tem_compensacao": compensacao.get("valor_compensado", 0) > 0,
-                    "eh_compensacao_parcial": compensacao.get("eh_parcial", False)
-                }
+                # 🔧 CORREÇÃO: Usar dados mensais corretos em vez de cálculo por operação
+                mes_operacao = op["data_fechamento"][:7]
+                resultado_mensal = resultados_map.get(mes_operacao)
+                is_day_trade = op.get("day_trade", False)
+                
+                if resultado_mensal and op.get("resultado", 0) > 0:
+                    # Usar valores corretos do cálculo mensal
+                    if is_day_trade:
+                        # Day Trade: valor tributável é o ganho final após compensação mensal
+                        ganho_bruto_mes = resultado_mensal.get("ganho_liquido_day", 0)
+                        prejuizo_mensal = resultado_mensal.get("prejuizo_acumulado_day", 0)
+                        ir_devido = resultado_mensal.get("ir_devido_day", 0)
+                        lucro_tributavel_mes = ir_devido / 0.20 if ir_devido > 0 else 0  # Reverter alíquota 20%
+                    else:
+                        # Swing Trade: valor tributável é o ganho final após compensação mensal  
+                        ganho_bruto_mes = resultado_mensal.get("ganho_liquido_swing", 0)
+                        prejuizo_mensal = resultado_mensal.get("prejuizo_acumulado_swing", 0)
+                        ir_devido = resultado_mensal.get("ir_devido_swing", 0)
+                        lucro_tributavel_mes = ir_devido / 0.15 if ir_devido > 0 else 0  # Reverter alíquota 15%
+                    
+                    # Calcular compensação proporcional desta operação no mês
+                    if ganho_bruto_mes > 0:
+                        proporcao_operacao = op.get("resultado", 0) / ganho_bruto_mes
+                        valor_compensado_operacao = max(0, ganho_bruto_mes - lucro_tributavel_mes) * proporcao_operacao
+                        lucro_tributavel_operacao = lucro_tributavel_mes * proporcao_operacao
+                    else:
+                        valor_compensado_operacao = 0
+                        lucro_tributavel_operacao = 0
+                    
+                    operacao_otimizada["detalhes_compensacao"] = {
+                        "valor_compensado": valor_compensado_operacao,
+                        "lucro_tributavel": lucro_tributavel_operacao,
+                        "tem_compensacao": valor_compensado_operacao > 0,
+                        "eh_compensacao_parcial": valor_compensado_operacao > 0 and lucro_tributavel_operacao > 0
+                    }
+                else:
+                    # Operação sem lucro ou sem dados mensais
+                    operacao_otimizada["detalhes_compensacao"] = {
+                        "valor_compensado": 0,
+                        "lucro_tributavel": 0,
+                        "tem_compensacao": False,
+                        "eh_compensacao_parcial": False
+                    }
                 
                 # Status DARF otimizado
                 mes_operacao = op["data_fechamento"][:7]
