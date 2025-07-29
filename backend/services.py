@@ -2953,6 +2953,38 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
                 # Dados base da operação
                 operacao_otimizada = dict(op)
                 
+                # ✅ GARANTIR que status_ir esteja presente e válido
+                if not operacao_otimizada.get("status_ir") or operacao_otimizada.get("status_ir", "").strip() == "":
+                    # Calcular status baseado na lógica de negócio
+                    if operacao_otimizada.get("resultado", 0) == 0:
+                        operacao_otimizada["status_ir"] = "Isento"
+                    elif operacao_otimizada.get("resultado", 0) < 0:
+                        operacao_otimizada["status_ir"] = "Prejuízo Acumulado"
+                    else:
+                        # Para lucros, verificar isenção/compensação/tributação
+                        is_day_trade = operacao_otimizada.get("day_trade", False)
+                        if resultado_mensal:
+                            if is_day_trade:
+                                # DAY TRADE: Nunca isento
+                                ir_devido = resultado_mensal.get("ir_devido_day", 0)
+                                if ir_devido > 0:
+                                    operacao_otimizada["status_ir"] = "Tributável Day Trade"
+                                else:
+                                    operacao_otimizada["status_ir"] = "Lucro Compensado"
+                            else:
+                                # SWING TRADE: Pode ser isento (≤ 20k/mês)
+                                isento_swing = resultado_mensal.get("isento_swing", False)
+                                ir_devido = resultado_mensal.get("ir_devido_swing", 0)
+                                
+                                if isento_swing:
+                                    operacao_otimizada["status_ir"] = "Isento"
+                                elif ir_devido > 0:
+                                    operacao_otimizada["status_ir"] = "Tributável Swing"
+                                else:
+                                    operacao_otimizada["status_ir"] = "Lucro Compensado"
+                        else:
+                            operacao_otimizada["status_ir"] = "Tributável Day Trade" if is_day_trade else "Tributável Swing"
+                
                 # Adicionar prejuízo acumulado pré-calculado
                 operacao_otimizada["prejuizo_acumulado_ate"] = prejuizos_acumulados.get(tipo, {}).get(op_key, 0)
                 
@@ -3003,7 +3035,8 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
                 # Status DARF otimizado
                 mes_operacao = op["data_fechamento"][:7]
                 resultado_mensal = resultados_map.get(mes_operacao)
-                operacao_otimizada["deve_gerar_darf"] = _deve_gerar_darf_otimizado(op, resultado_mensal)
+                # ✅ CORREÇÃO CRÍTICA: Usar operacao_otimizada com status_ir já corrigido
+                operacao_otimizada["deve_gerar_darf"] = _deve_gerar_darf_otimizado(operacao_otimizada, resultado_mensal)
                 
                 # Estatísticas do mês (cached)
                 if resultado_mensal:
@@ -3106,21 +3139,36 @@ def _calcular_compensacoes_otimizado(operacoes_por_tipo: Dict[str, List[Dict]]) 
 
 def _deve_gerar_darf_otimizado(operacao: Dict[str, Any], resultado_mensal: Optional[Dict[str, Any]]) -> bool:
     """
-    Versão otimizada da verificação de DARF
+    ✅ Versão otimizada da verificação de DARF - considera isenção
     """
     if not operacao or operacao.get("resultado", 0) <= 0:
         return False
     
-    # Verificar se status indica tributação
+    # ✅ VERIFICAR ISENÇÃO: Operações isentas não geram DARF
     status_ir = operacao.get("status_ir", "")
+    if status_ir == "Isento":
+        return False
+    
+    # Verificar se status indica tributação
     if status_ir not in ["Tributável Day Trade", "Tributável Swing"]:
         return False
     
-    # Verificar se há IR devido no mês
+    # ✅ VERIFICAR ISENÇÃO SWING TRADE no resultado mensal
     if resultado_mensal:
         is_day_trade = operacao.get("day_trade", False)
+        
+        # Para swing trade, verificar se é isento
+        if not is_day_trade and resultado_mensal.get("isento_swing", False):
+            return False
+        
         ir_devido = resultado_mensal.get("ir_devido_day" if is_day_trade else "ir_devido_swing", 0)
-        return ir_devido > 0
+        deve_gerar = ir_devido > 0
+        
+        # Log apenas resultado final para debug essencial
+        if deve_gerar:
+            logging.info(f"✅ [DARF] {operacao.get('ticker', 'UNKNOWN')}: Deve gerar DARF (ir_devido={ir_devido})")
+        
+        return deve_gerar
     
     return True
 

@@ -469,12 +469,69 @@ export function useOperacoesComStatusCorrigido(
   return useMemo(() => {
     if (!operacoes.length) return operacoes;
 
-    // ✅ ARQUITETURA LIMPA: Usar dados da API sem modificação
-    console.log("✅ [DADOS PUROS] Usando dados da API sem recálculo frontend");
-    return operacoes; // Dados originais da API são a fonte da verdade
-    
-    // DEPRECATED: Frontend não deve recalcular dados do backend
-    // return recalcularStatusFiscalMensal(operacoes, resultadosMensais);
+    // ✅ CORREÇÃO: Aplicar lógica inteligente de status apenas quando necessário
+    const operacoesComStatusCorrigido = operacoes.map(op => {
+      // Se já tem status válido, manter
+      if (op.status_ir && 
+          ['Lucro Compensado', 'Tributável Day Trade', 'Tributável Swing', 'Prejuízo Acumulado', 'Isento'].includes(op.status_ir)) {
+        return op;
+      }
+
+      // ✅ LÓGICA INTELIGENTE: Calcular status correto baseado nos dados
+      let statusCorrigido = op.status_ir;
+
+      if (op.resultado === 0) {
+        statusCorrigido = "Isento";
+      } else if (op.resultado < 0) {
+        statusCorrigido = "Prejuízo Acumulado";
+      } else if (op.resultado > 0) {
+        // Para operações de lucro, verificar isenção/compensação/tributação
+        const mesOperacao = op.data_fechamento.substring(0, 7);
+        const resultadoMensal = resultadosMensais?.find(rm => rm.mes === mesOperacao);
+        
+        if (resultadoMensal) {
+          if (op.day_trade) {
+            // ✅ DAY TRADE: Nunca isento
+            const valorTributavel = resultadoMensal.ir_devido_day || 0;
+            if (valorTributavel > 0) {
+              statusCorrigido = "Tributável Day Trade";
+            } else {
+              statusCorrigido = "Lucro Compensado";
+            }
+          } else {
+            // ✅ SWING TRADE: Pode ser isento (≤ 20k/mês)
+            const isentoSwing = resultadoMensal.isento_swing || false;
+            const valorTributavel = resultadoMensal.ir_devido_swing || 0;
+            
+            if (isentoSwing) {
+              statusCorrigido = "Isento";
+            } else if (valorTributavel > 0) {
+              statusCorrigido = "Tributável Swing";
+            } else {
+              statusCorrigido = "Lucro Compensado";
+            }
+          }
+        } else {
+          // Sem dados mensais, assumir tributável
+          statusCorrigido = op.day_trade ? "Tributável Day Trade" : "Tributável Swing";
+        }
+      }
+
+      console.log(`🔧 [STATUS CORRIGIDO] ${op.ticker}:`, {
+        statusOriginal: op.status_ir,
+        statusCorrigido,
+        resultado: op.resultado,
+        mesOperacao: op.data_fechamento.substring(0, 7)
+      });
+
+      return {
+        ...op,
+        status_ir: statusCorrigido
+      };
+    });
+
+    console.log("✅ [DADOS CORRIGIDOS] Status fiscal calculado inteligentemente");
+    return operacoesComStatusCorrigido;
   }, [operacoes, resultadosMensais]);
 }
 
@@ -489,15 +546,31 @@ export function deveGerarDarf(
 
   // ✅ PRIORIDADE MÁXIMA: Se a API já calculou deve_gerar_darf, usar esse valor
   if (operacao.deve_gerar_darf !== undefined) {
-    return Boolean(operacao.deve_gerar_darf);
+    const deveGerar = Boolean(operacao.deve_gerar_darf);
+    console.log(`🎯 [DEVE GERAR DARF] ${operacao.ticker}: API diz deve_gerar_darf=${deveGerar} → ${deveGerar}`);
+    return deveGerar;
+  }
+
+  // ✅ VERIFICAR ISENÇÃO: Operações isentas não geram DARF
+  if (operacao.status_ir === "Isento") {
+    console.log(`🎯 [DEVE GERAR DARF] ${operacao.ticker}: Isento → false`);
+    return false;
   }
 
   // ✅ FALLBACK: Se não há resultado mensal, usar status da operação
   if (!resultadoMensal) {
-    return (
+    const baseadoNoStatus = (
       operacao.status_ir === "Tributável Day Trade" ||
       operacao.status_ir === "Tributável Swing"
     );
+    console.log(`🔄 [DEVE GERAR DARF] ${operacao.ticker}: Baseado no status → ${baseadoNoStatus}`);
+    return baseadoNoStatus;
+  }
+
+  // ✅ VERIFICAR ISENÇÃO SWING TRADE
+  if (!operacao.day_trade && resultadoMensal.isento_swing) {
+    console.log(`🎯 [DEVE GERAR DARF] ${operacao.ticker}: Swing isento → false`);
+    return false;
   }
 
   // ✅ ÚLTIMO FALLBACK: Verificar valor tributável do backend
@@ -505,7 +578,9 @@ export function deveGerarDarf(
     ? resultadoMensal.ir_devido_day || 0
     : resultadoMensal.ir_devido_swing || 0;
 
-  return valorTributavel > 0;
+  const deveGerarPorValor = valorTributavel > 0;
+  console.log(`📊 [DEVE GERAR DARF] ${operacao.ticker}: Valor tributável=${valorTributavel} → ${deveGerarPorValor}`);
+  return deveGerarPorValor;
 }
 
 /**

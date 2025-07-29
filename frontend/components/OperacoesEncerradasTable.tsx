@@ -1415,11 +1415,18 @@ export default function OperacoesEncerradasTable(
     try {
       // 🚀 OTIMIZAÇÃO: Priorizar campo pré-calculado da API otimizada
       if (op.deve_gerar_darf !== undefined) {
-        return Boolean(op.deve_gerar_darf);
+        const deveGerar = Boolean(op.deve_gerar_darf);
+        console.log(`🎯 [DARF] ${op.ticker}: API otimizada → ${deveGerar}`);
+        return deveGerar;
       }
       
-      // Fallback para lógica tradicional
-      return Boolean(op.deve_gerar_darf);
+      // ✅ FALLBACK CORRETO: Usar função deveGerarDarf com lógica completa
+      const mesOperacao = op.data_fechamento?.substring(0, 7);
+      const resultadoMensal = resultadosMensais?.find(rm => rm.mes === mesOperacao);
+      const deveGerar = deveGerarDarf(op, resultadoMensal);
+      
+      console.log(`🔄 [DARF] ${op.ticker}: Fallback → ${deveGerar}`);
+      return deveGerar;
     } catch (error) {
       console.error('[shouldShowDarf] Error checking DARF requirement:', error);
       return false;
