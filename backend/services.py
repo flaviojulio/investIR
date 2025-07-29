@@ -3163,12 +3163,21 @@ def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[
             operacoes_mes = sorted(operacoes_por_mes[mes], key=lambda x: x["data_fechamento"])
             resultado_mensal = resultados_map.get(mes, {})
             
-            # 1. Prejuízo acumulado de meses anteriores
-            prejuizo_anterior = resultado_mensal.get(f"prejuizo_acumulado_{tipo}", 0)
-            if tipo == "day_trade":
-                prejuizo_anterior = resultado_mensal.get("prejuizo_acumulado_day", 0)
-            else:
-                prejuizo_anterior = resultado_mensal.get("prejuizo_acumulado_swing", 0)
+            # 1. Prejuízo acumulado de meses anteriores (NÃO do mês atual!)
+            # 🔧 CORREÇÃO CRÍTICA: Buscar prejuízo do mês ANTERIOR, não do atual
+            prejuizo_anterior = 0.0
+            
+            # Buscar todos os meses anteriores ao atual
+            meses_anteriores = [m for m in sorted(resultados_map.keys()) if m < mes]
+            if meses_anteriores:
+                # Pegar o último mês anterior
+                ultimo_mes_anterior = meses_anteriores[-1]
+                resultado_anterior = resultados_map.get(ultimo_mes_anterior, {})
+                
+                if tipo == "day_trade":
+                    prejuizo_anterior = resultado_anterior.get("prejuizo_acumulado_day", 0)
+                else:
+                    prejuizo_anterior = resultado_anterior.get("prejuizo_acumulado_swing", 0)
             
             # 2. Simular o mês operação por operação
             prejuizo_mes_atual = 0.0
