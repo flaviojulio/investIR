@@ -2602,8 +2602,20 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
         ''', (usuario_id,))
         
         operacoes_raw = cursor.fetchall()
+        
+        # 🔧 CORREÇÃO: Também obter operações fechadas importadas diretamente
+        cursor.execute('''
+            SELECT id, ticker, data_fechamento, resultado, valor_compra, valor_venda, 
+                   quantidade, day_trade, usuario_id
+            FROM operacoes_fechadas 
+            WHERE usuario_id = ?
+            ORDER BY data_fechamento, ticker
+        ''', (usuario_id,))
+        
+        operacoes_fechadas_raw = cursor.fetchall()
     
-    if not operacoes_raw:
+    # Se não há nem operações regulares nem fechadas, retornar
+    if not operacoes_raw and not operacoes_fechadas_raw:
         logging.warning(f"Nenhuma operação encontrada para usuário {usuario_id}")
         return
     
@@ -2616,7 +2628,7 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
             op_dict['date'] = datetime.fromisoformat(op_dict['date']).date()
         operacoes.append(op_dict)
     
-    logging.info(f"📊 Processando {len(operacoes)} operações")
+    logging.info(f"📊 Processando {len(operacoes)} operações regulares")
     
     # Agrupar operações por data
     operacoes_por_data = defaultdict(list)
@@ -2629,28 +2641,83 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
         "day_trade": {"resultado": 0.0, "vendas_total": 0.0, "irrf": 0.0, "custo_day_trade": 0.0}
     })
     
-    # Processar cada dia de operações
-    for data, ops_dia in operacoes_por_data.items():
-        try:
-            # Usar a função existente que já calcula IRRF corretamente
-            resultado_swing, resultado_day = _calcular_resultado_dia(ops_dia, usuario_id)
-            
-            mes = data.strftime('%Y-%m')
-            
-            # Acumular resultados com IRRF
-            resultados_por_mes[mes]['swing_trade']['resultado'] += resultado_swing.get('ganho_liquido', 0)
-            resultados_por_mes[mes]['swing_trade']['vendas_total'] += resultado_swing.get('vendas_total', 0)
-            resultados_por_mes[mes]['swing_trade']['custo_swing'] += resultado_swing.get('custo_total', 0)
-            resultados_por_mes[mes]['swing_trade']['irrf'] += resultado_swing.get('irrf', 0)
-            
-            resultados_por_mes[mes]['day_trade']['resultado'] += resultado_day.get('ganho_liquido', 0)
-            resultados_por_mes[mes]['day_trade']['vendas_total'] += resultado_day.get('vendas_total', 0)
-            resultados_por_mes[mes]['day_trade']['custo_day_trade'] += resultado_day.get('custo_total', 0)
-            resultados_por_mes[mes]['day_trade']['irrf'] += resultado_day.get('irrf', 0)
-            
-        except Exception as e:
-            logging.error(f"❌ Erro ao processar data {data}: {e}")
-            continue
+    # 🔧 CORREÇÃO: Identificar datas com operações fechadas para evitar duplicação
+    datas_com_operacoes_fechadas = set()
+    if operacoes_fechadas_raw:
+        logging.info(f"📊 Identificando {len(operacoes_fechadas_raw)} operações fechadas")
+        
+        for row in operacoes_fechadas_raw:
+            try:
+                id_op, ticker, data_fechamento, resultado, valor_compra, valor_venda, quantidade, day_trade, usuario_id_op = row
+                
+                # Converter data string para date object
+                if isinstance(data_fechamento, str):
+                    data_obj = datetime.fromisoformat(data_fechamento).date()
+                else:
+                    data_obj = data_fechamento
+                
+                # Marcar esta data como tendo operações fechadas
+                datas_com_operacoes_fechadas.add(data_obj)
+                
+                mes = data_obj.strftime('%Y-%m')
+                
+                # Usar valores CORRETOS da operação fechada (não recalcular)
+                if day_trade:
+                    # Day Trade
+                    resultados_por_mes[mes]['day_trade']['resultado'] += resultado
+                    resultados_por_mes[mes]['day_trade']['vendas_total'] += valor_venda
+                    resultados_por_mes[mes]['day_trade']['custo_day_trade'] += valor_compra
+                    
+                    # IRRF Day Trade: 1% sobre ganhos
+                    if resultado > 0:
+                        irrf_dt = resultado * 0.01
+                        resultados_por_mes[mes]['day_trade']['irrf'] += irrf_dt
+                        logging.info(f"[IRRF-DT-FECHADO] {ticker}: Ganho R${resultado:.2f}, IRRF 1% = R${irrf_dt:.2f}")
+                else:
+                    # Swing Trade
+                    resultados_por_mes[mes]['swing_trade']['resultado'] += resultado
+                    resultados_por_mes[mes]['swing_trade']['vendas_total'] += valor_venda
+                    resultados_por_mes[mes]['swing_trade']['custo_swing'] += valor_compra
+                    
+                    # IRRF Swing Trade: 0.005% sobre valor da venda
+                    irrf_st = valor_venda * 0.00005
+                    resultados_por_mes[mes]['swing_trade']['irrf'] += irrf_st
+                    logging.info(f"[IRRF-ST-FECHADO] {ticker}: Venda R${valor_venda:.2f}, IRRF 0.005% = R${irrf_st:.2f}")
+                
+                logging.debug(f"✅ Operação fechada processada: {ticker} {data_fechamento} = R${resultado:.2f}")
+                
+            except Exception as e:
+                logging.error(f"❌ Erro ao processar operação fechada {row}: {e}")
+                continue
+    
+    # Processar cada dia de operações regulares (EVITANDO DUPLICAÇÃO)
+    if operacoes_por_data:
+        for data, ops_dia in operacoes_por_data.items():
+            # 🚨 ANTI-DUPLICAÇÃO: Pular datas que já têm operações fechadas
+            if data in datas_com_operacoes_fechadas:
+                logging.info(f"⚠️ Pulando data {data} - já processada como operação fechada")
+                continue
+                
+            try:
+                # Usar a função existente que já calcula IRRF corretamente
+                resultado_swing, resultado_day = _calcular_resultado_dia(ops_dia, usuario_id)
+                
+                mes = data.strftime('%Y-%m')
+                
+                # Acumular resultados com IRRF
+                resultados_por_mes[mes]['swing_trade']['resultado'] += resultado_swing.get('ganho_liquido', 0)
+                resultados_por_mes[mes]['swing_trade']['vendas_total'] += resultado_swing.get('vendas_total', 0)
+                resultados_por_mes[mes]['swing_trade']['custo_swing'] += resultado_swing.get('custo_total', 0)
+                resultados_por_mes[mes]['swing_trade']['irrf'] += resultado_swing.get('irrf', 0)
+                
+                resultados_por_mes[mes]['day_trade']['resultado'] += resultado_day.get('ganho_liquido', 0)
+                resultados_por_mes[mes]['day_trade']['vendas_total'] += resultado_day.get('vendas_total', 0)
+                resultados_por_mes[mes]['day_trade']['custo_day_trade'] += resultado_day.get('custo_total', 0)
+                resultados_por_mes[mes]['day_trade']['irrf'] += resultado_day.get('irrf', 0)
+                
+            except Exception as e:
+                logging.error(f"❌ Erro ao processar data {data}: {e}")
+                continue
 
     if not resultados_por_mes:
         logging.warning(f"Nenhum resultado mensal para processar")
@@ -2939,7 +3006,7 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
             }
             
             # 4. Calcular prejuízos acumulados uma vez por tipo
-            prejuizos_acumulados = _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo)
+            prejuizos_acumulados = _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo, resultados_map)
             
             # 5. Compensações serão calculadas usando dados mensais corretos (não mais por operação)
             
@@ -3064,28 +3131,75 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
         logging.error(f"🚀 [OTIMIZADO] Erro para usuário {usuario_id}: {e}", exc_info=True)
         raise
 
-def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[Dict]]) -> Dict[str, Dict[str, float]]:
+def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[Dict]], resultados_map: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
     """
-    Calcula prejuízos acumulados de forma otimizada por tipo
+    ✅ CORRIGIDO: Calcula prejuízos acumulados considerando compensações e prejuízos de meses anteriores
+    
+    Lógica Correta:
+    1. Prejuízo acumulado de meses anteriores (da tabela resultados_mensais)
+    2. + Prejuízos do mês atual até a operação
+    3. - Compensações já utilizadas no mês
+    
     Complexidade: O(n) vs O(n²) do frontend
     """
     resultado = {}
     
     for tipo, operacoes in operacoes_por_tipo.items():
         resultado[tipo] = {}
-        prejuizo_acumulado = 0.0
         
         # Ordenar por data para cálculo cronológico
         operacoes_ordenadas = sorted(operacoes, key=lambda x: x["data_fechamento"])
         
+        # Agrupar operações por mês para processar cronologicamente
+        operacoes_por_mes = {}
         for op in operacoes_ordenadas:
-            # Acumular prejuízo se for negativo
-            if op.get("resultado", 0) < 0:
-                prejuizo_acumulado += abs(op.get("resultado", 0))
+            mes = op["data_fechamento"][:7]
+            if mes not in operacoes_por_mes:
+                operacoes_por_mes[mes] = []
+            operacoes_por_mes[mes].append(op)
+        
+        # Processar cada mês em ordem cronológica
+        for mes in sorted(operacoes_por_mes.keys()):
+            operacoes_mes = sorted(operacoes_por_mes[mes], key=lambda x: x["data_fechamento"])
+            resultado_mensal = resultados_map.get(mes, {})
             
-            # Salvar prejuízo acumulado até esta operação
-            op_key = f"{op['ticker']}-{op['data_fechamento']}-{op['quantidade']}"
-            resultado[tipo][op_key] = prejuizo_acumulado
+            # 1. Prejuízo acumulado de meses anteriores
+            prejuizo_anterior = resultado_mensal.get(f"prejuizo_acumulado_{tipo}", 0)
+            if tipo == "day_trade":
+                prejuizo_anterior = resultado_mensal.get("prejuizo_acumulado_day", 0)
+            else:
+                prejuizo_anterior = resultado_mensal.get("prejuizo_acumulado_swing", 0)
+            
+            # 2. Simular o mês operação por operação
+            prejuizo_mes_atual = 0.0
+            compensacao_usada_mes = 0.0
+            
+            for op in operacoes_mes:
+                resultado_op = op.get("resultado", 0)
+                
+                # Prejuízo disponível ANTES desta operação
+                prejuizo_disponivel_antes = prejuizo_anterior + prejuizo_mes_atual - compensacao_usada_mes
+                
+                if resultado_op < 0:
+                    # Operação de prejuízo: adiciona ao prejuízo do mês
+                    prejuizo_mes_atual += abs(resultado_op)
+                    # Prejuízo acumulado ATÉ esta operação (incluindo ela)
+                    prejuizo_ate_operacao = prejuizo_disponivel_antes + abs(resultado_op)
+                else:
+                    # Operação de lucro: pode usar prejuízo para compensação
+                    lucro_operacao = resultado_op
+                    compensacao_possivel = min(lucro_operacao, prejuizo_disponivel_antes)
+                    compensacao_usada_mes += compensacao_possivel
+                    # Para lucros, mostra prejuízo disponível ANTES da operação
+                    prejuizo_ate_operacao = prejuizo_disponivel_antes
+                
+                # Salvar resultado
+                op_key = f"{op['ticker']}-{op['data_fechamento']}-{op['quantidade']}"
+                resultado[tipo][op_key] = max(0, prejuizo_ate_operacao)
+                
+                logging.debug(f"📊 [PREJUÍZO ACUMULADO] {op['ticker']} ({tipo}): "
+                             f"Anterior={prejuizo_anterior}, MêsAtual={prejuizo_mes_atual}, "
+                             f"CompensaçãoUsada={compensacao_usada_mes}, AteOperação={prejuizo_ate_operacao}")
     
     return resultado
 

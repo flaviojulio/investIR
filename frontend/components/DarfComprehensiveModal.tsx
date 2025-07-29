@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { api } from "@/lib/api";
-import { HelpCircle, CheckCircle, Clock, CreditCard, TrendingUp, AlertCircle } from "lucide-react";
+import { HelpCircle, CheckCircle, Clock, CreditCard } from "lucide-react";
 
 interface OperacaoFechada {
   id?: number;
@@ -300,15 +300,6 @@ export function DarfComprehensiveModal({
     }).format(value);
   };
 
-  const formatIRRF = (value: number, decimals: number = 3): string => {
-    return new Intl.NumberFormat('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-      minimumFractionDigits: decimals,
-      maximumFractionDigits: decimals
-    }).format(value);
-  };
-
   const formatMonthYear = (monthString: string): string => {
     const [year, month] = monthString.split('-');
     const monthNames = [
@@ -401,320 +392,157 @@ export function DarfComprehensiveModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden">
-        {/* Header Minimalista */}
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-8 text-center relative">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden">
+        {/* Header com Gradiente Azul */}
+        <div className="p-6 bg-gradient-to-r from-indigo-500 to-blue-600 text-white relative">
           <button 
             onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
+            className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"
           >
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
           
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
-            <CreditCard className="w-8 h-8 text-blue-600" />
-          </div>
-          
-          <h1 className="text-2xl font-semibold text-gray-800 mb-2">
-            Seus Impostos de {formatMonthYear(mes)}
-          </h1>
-          <div className="flex items-center justify-center gap-2 text-gray-600">
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
-              tipo === "daytrade" 
-                ? "border-orange-300 bg-orange-100 text-orange-700" 
-                : "border-blue-300 bg-blue-100 text-blue-700"
-            }`}>
-              {tipo === "daytrade" ? "DT" : "ST"}
-            </span>
-            <span>{operacoesMes.length} operações realizadas</span>
+          <div className="text-center">
+            <h1 className="text-xl font-semibold mb-1">
+              Impostos de {formatMonthYear(mes)}
+            </h1>
+            <div className="flex items-center justify-center gap-2 text-sm text-white/90">
+              <span className={`px-2 py-1 rounded-full text-xs font-medium border ${
+                tipo === "daytrade" 
+                  ? "border-orange-300 bg-orange-100 text-orange-700" 
+                  : "border-blue-300 bg-blue-100 text-blue-700"
+              }`}>
+                {tipo === "daytrade" ? "Day Trade" : "Swing Trade"}
+              </span>
+              <span>{operacoesMes.length} operações</span>
+            </div>
           </div>
         </div>
 
         {/* Conteúdo Principal */}
-        <div className="p-8 space-y-8 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 12rem)' }}>
+        <div className="p-6 space-y-6 overflow-y-auto" style={{ maxHeight: 'calc(90vh - 12rem)' }}>
           
-          {/* Card Principal: Valor a Pagar */}
-          <div className="text-center">
+          {/* Valor Principal */}
+          <div className="text-center py-2 px-4 bg-gray-50 rounded-xl shadow-sm space-y-2">
             {impostoAPagar > 0 ? (
               <>
-                <div className="inline-flex items-center gap-2 text-lg text-gray-600 mb-2">
-                  <CreditCard className="w-5 h-5" />
-                  <span>Valor a pagar este mês</span>
-                </div>
-                <div className="text-4xl font-bold text-blue-600 mb-4">
+                <div className="text-3xl font-bold text-blue-600">
                   {formatCurrency(impostoAPagar)}
                 </div>
-                <div className="flex items-center justify-center gap-2 text-sm text-gray-500">
-                  <Clock className="w-4 h-4" />
-                  <span>Vencimento: {formatDate(darfVencimento)}</span>
-                </div>
+                <p className="text-sm text-gray-500">
+                  Vencimento: {formatDate(darfVencimento)}
+                </p>
               </>
             ) : (
               <>
-                <div className="inline-flex items-center justify-center w-20 h-20 bg-green-100 rounded-full mb-4">
-                  <CheckCircle className="w-10 h-10 text-green-600" />
+                <div className="flex justify-center mb-2">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                    <CheckCircle className="w-6 h-6 text-green-600" />
+                  </div>
                 </div>
-                <div className="text-2xl font-bold text-green-600 mb-2">
-                  Nada a pagar!
+                <div className="text-xl font-semibold text-green-600 mb-1">
+                  Nada a pagar este mês
                 </div>
-                <p className="text-gray-600 max-w-md mx-auto">
+                <p className="text-sm text-gray-600 max-w-xs mx-auto">
                   {impostoLiquido > 0 && impostoLiquido < 10 
-                    ? "O valor calculado é inferior a R$ 10,00, por isso não há obrigatoriedade de pagamento."
-                    : "Seus prejuízos anteriores cobriram os impostos deste mês ou você não teve lucros tributáveis."
-                  }
+                    ? "O valor é menor que R$10, então não precisa pagar."
+                    : "Seus resultados não geraram imposto devido."}
                 </p>
               </>
             )}
           </div>
 
-          {/* Como Chegamos Neste Valor - Seção Opcional */}
-          {impostoAPagar > 0 && (
-            <details className="group">
-              <summary className="flex items-center gap-2 text-gray-600 hover:text-gray-800 cursor-pointer transition-colors">
-                <TrendingUp className="w-4 h-4" />
-                <span className="font-medium">Como calculamos este valor?</span>
-                <svg className="w-4 h-4 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </summary>
-              
-              <div className="mt-4 space-y-4 pl-6 border-l-2 border-gray-100">
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-gray-600">Seus ganhos do mês:</span>
-                    <span className="font-semibold text-green-600">{formatCurrency(lucroLiquidoDoMes)}</span>
-                  </div>
-                  
-                  {prejuizoDisponivel > 0 && (
-                    <div className="flex justify-between items-center mb-2">
-                      <Tooltip text="Prejuízos de meses anteriores que podem ser descontados">
-                        <span className="text-gray-600">Prejuízos descontados:</span>
-                      </Tooltip>
-                      <span className="font-semibold text-red-600">-{formatCurrency(detalhesCompensacao.compensacaoNesteMs)}</span>
+          {/* Cálculo Didático - Visível apenas se houver imposto */}
+          {impostoDevido > 0 && (
+            <div className="space-y-4">
+              <div className="text-center text-sm font-medium text-gray-700">
+                Como chegamos neste valor
+              </div>
+              <div className="bg-gray-50 rounded-xl shadow-sm space-y-2 p-4">
+                <div className="flex justify-between items-center">
+                  <Tooltip text="Seu lucro líquido após descontar prejuízos do mês">
+                    <span className="text-gray-600">Ganhos do mês:</span>
+                  </Tooltip>
+                  <span className="font-medium text-green-600">{formatCurrency(lucroLiquidoDoMes)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <Tooltip text="Prejuízos de meses anteriores disponíveis para abater">
+                    <span className="text-gray-600">Prejuízo disponível:</span>
+                  </Tooltip>
+                  <span className="font-medium text-red-600">-{formatCurrency(prejuizoDisponivel)}</span>
+                </div>
+                <div className="border-t border-gray-200 pt-2 flex justify-between items-center font-medium">
+                  <span className="text-gray-700">Valor tributável:</span>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500">
+                      {formatCurrency(lucroLiquidoDoMes)} - {formatCurrency(prejuizoDisponivel)}
                     </div>
-                  )}
-                  
-                  {/* Detalhes da Compensação */}
-                  {prejuizoDisponivel > 0 && (
-                    <details className="group mt-3">
-                      <summary className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 cursor-pointer transition-colors">
-                        <span>Ver cálculo detalhado da compensação</span>
-                        <svg className="w-3 h-3 transform group-open:rotate-180 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </summary>
-                      
-                      <div className="mt-2 p-3 bg-gray-50 rounded-lg text-xs space-y-2">
-                        <div className="font-semibold text-gray-700 mb-2">Como calculamos seus prejuízos:</div>
-                        
-                        <div className="space-y-1">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Total de prejuízos acumulados:</span>
-                            <span className="font-medium text-red-600">
-                              {formatCurrency(detalhesCompensacao.prejuizosAcumulados.reduce((acc, op) => acc + op.prejuizo, 0))}
-                            </span>
-                          </div>
-                          
-                          {detalhesCompensacao.compensacoesJaUsadas > 0 && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">(-) Já utilizados em meses anteriores:</span>
-                              <span className="font-medium text-purple-600">
-                                -{formatCurrency(detalhesCompensacao.compensacoesJaUsadas)}
-                              </span>
-                            </div>
-                          )}
-                          
-                          <div className="flex justify-between border-t border-gray-200 pt-1">
-                            <span className="font-medium text-gray-700">Disponível para este mês:</span>
-                            <span className="font-semibold text-blue-600">
-                              {formatCurrency(detalhesCompensacao.prejuizoDisponivelParaEsteMs)}
-                            </span>
-                          </div>
-                          
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Utilizado neste mês:</span>
-                            <span className="font-medium text-green-600">
-                              -{formatCurrency(detalhesCompensacao.compensacaoNesteMs)}
-                            </span>
-                          </div>
-                          
-                          {detalhesCompensacao.prejuizoRestanteAposEsteMs > 0 && (
-                            <div className="flex justify-between border-t border-gray-200 pt-1">
-                              <span className="font-medium text-gray-700">Sobra para próximos meses:</span>
-                              <span className="font-semibold text-blue-600">
-                                {formatCurrency(detalhesCompensacao.prejuizoRestanteAposEsteMs)}
-                              </span>
-                            </div>
-                          )}
-                          
-                          {/* Indicador de compensação parcial */}
-                          {detalhesCompensacao.compensacaoNesteMs > 0 && resultadoTributavel > 0 && (
-                            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-                              <div className="flex items-start gap-1">
-                                <AlertCircle className="w-3 h-3 text-yellow-600 mt-0.5 flex-shrink-0" />
-                                <div className="text-yellow-800">
-                                  <strong>Compensação Parcial:</strong> Seus prejuízos disponíveis ({formatCurrency(detalhesCompensacao.prejuizoDisponivelParaEsteMs)}) 
-                                  foram suficientes para compensar apenas parte dos seus ganhos. 
-                                  O restante ({formatCurrency(resultadoTributavel)}) será tributado.
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* Indicador de compensação total */}
-                          {detalhesCompensacao.compensacaoNesteMs > 0 && resultadoTributavel === 0 && (
-                            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-xs">
-                              <div className="flex items-start gap-1">
-                                <CheckCircle className="w-3 h-3 text-green-600 mt-0.5 flex-shrink-0" />
-                                <div className="text-green-800">
-                                  <strong>Compensação Total:</strong> Seus prejuízos disponíveis foram suficientes 
-                                  para compensar todos os ganhos deste mês. Não há imposto a pagar.
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                          
-                        </div>
-                      </div>
-                    </details>
-                  )}
-                  
-                  <div className="border-t border-gray-200 pt-2 mt-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-800">Valor tributável:</span>
-                      <span className="font-bold text-blue-600">{formatCurrency(resultadoTributavel)}</span>
-                    </div>
+                    <span className="text-blue-600">= {formatCurrency(resultadoTributavel)}</span>
                   </div>
                 </div>
-                
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-200">
-                  <h4 className="font-semibold text-blue-800 mb-3 flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                    </svg>
-                    Como chegamos ao valor do imposto
-                  </h4>
-                  
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between items-center py-2">
-                      <span className="text-gray-700">Ganhos brutos do mês:</span>
-                      <span className="font-medium text-green-600">+ {formatCurrency(lucroLiquidoDoMes)}</span>
+                <div className="flex justify-between items-center">
+                  <Tooltip text={`Alíquota de ${(aliquota * 100)}% sobre o valor tributável`}>
+                    <span className="text-gray-600">IR devido ({(aliquota * 100)}%):</span>
+                  </Tooltip>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500">
+                      {formatCurrency(resultadoTributavel)} × {(aliquota * 100)}%
                     </div>
-                    
-                    <div className="flex justify-between items-center py-2">
-                      <Tooltip text="Prejuízos de meses anteriores que podem ser descontados dos ganhos">
-                        <span className="text-gray-700">Prejuízos anteriores disponíveis:</span>
-                      </Tooltip>
-                      <span className="font-medium text-red-600">- {formatCurrency(prejuizoDisponivel)}</span>
+                    <span className="text-orange-600">= {formatCurrency(impostoDevido)}</span>
+                  </div>
+                </div>
+                {irrfAplicavel > 0 && (
+                  <div className="flex justify-between items-center">
+                    <Tooltip text="Valor já retido pela corretora">
+                      <span className="text-gray-600">Já pago (IRRF):</span>
+                    </Tooltip>
+                    <span className="font-medium text-purple-600">-{formatCurrency(irrfAplicavel)}</span>
+                  </div>
+                )}
+                <div className="border-t border-gray-200 pt-2 flex justify-between items-center font-semibold">
+                  <span className="text-gray-800">Total a pagar:</span>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500">
+                      {formatCurrency(impostoDevido)} - {formatCurrency(irrfAplicavel)}
                     </div>
-                    
-                    <div className="border-t border-blue-200 pt-2">
-                      <div className="flex justify-between items-center py-2 bg-white rounded-lg px-3">
-                        <span className="font-semibold text-gray-800">Valor tributável:</span>
-                        <div className="text-right">
-                          <div className="text-xs text-gray-500">
-                            {formatCurrency(lucroLiquidoDoMes)} - {formatCurrency(prejuizoDisponivel)}
-                          </div>
-                          <div className="font-bold text-blue-600">= {formatCurrency(resultadoTributavel)}</div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex justify-between items-center py-2">
-                      <Tooltip text={`Alíquota de ${(aliquota * 100)}% aplicada sobre ${tipoLabel.toLowerCase()}`}>
-                        <span className="text-gray-700">Imposto devido ({(aliquota * 100)}%):</span>
-                      </Tooltip>
-                      <div className="text-right">
-                        <div className="text-xs text-gray-500">
-                          {formatCurrency(resultadoTributavel)} × {(aliquota * 100)}%
-                        </div>
-                        <div className="font-semibold text-orange-600">= {formatCurrency(impostoDevido)}</div>
-                      </div>
-                    </div>
-                    
-                    {irrfAplicavel > 0 && (
-                      <div className="flex justify-between items-center py-2">
-                        <Tooltip text="Valor já retido pela sua corretora que será descontado">
-                          <span className="text-gray-700">Já pago pela corretora (IRRF):</span>
-                        </Tooltip>
-                        <span className="font-medium text-purple-600">- {formatCurrency(irrfAplicavel)}</span>
-                      </div>
-                    )}
-                    
-                    <div className="border-t border-blue-200 pt-2">
-                      <div className="flex justify-between items-center py-2 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg px-3 border border-green-200">
-                        <span className="font-bold text-gray-800">Valor final a pagar:</span>
-                        <div className="text-right">
-                          <div className="text-xs text-gray-500">
-                            {formatCurrency(impostoDevido)} - {formatCurrency(irrfAplicavel)}
-                          </div>
-                          <div className="font-bold text-green-600 text-lg">= {formatCurrency(impostoLiquido)}</div>
-                        </div>
-                      </div>
-                    </div>
+                    <span className="text-green-600">= {formatCurrency(impostoLiquido)}</span>
                   </div>
                 </div>
               </div>
-            </details>
+            </div>
           )}
 
-          {/* Instruções de Pagamento */}
+          {/* Como Pagar - Simplificado */}
           {impostoAPagar > 0 && (
-            <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 bg-green-100 rounded-full">
-                    <CreditCard className="w-5 h-5 text-green-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-green-800">Como pagar</h3>
-                    <p className="text-sm text-green-600">Guia rápido para não errar</p>
-                  </div>
-                </div>
-                <div className={`px-4 py-2 rounded-full border ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} text-sm font-medium flex items-center gap-1`}>
-                  {statusStyle.icon === "✓" ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+            <div className="space-y-4">
+              <div className="text-center text-sm font-medium text-gray-700 flex items-center justify-center gap-2">
+                
+                <div className={`px-2 py-1 rounded-full text-xl font-medium flex items-center gap-1 ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}>
+                  {darfStatus === "Pago" ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
                   {darfStatus}
                 </div>
               </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div className="bg-white bg-opacity-70 rounded-lg p-4">
-                  <div className="text-sm text-gray-600 mb-1">Onde pagar</div>
-                  <div className="font-medium text-gray-800">Site da Receita Federal</div>
-                  <div className="text-xs text-gray-500">receita.fazenda.gov.br</div>
+              <div className="bg-gray-50 rounded-xl p-4 grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-gray-600 block">Site:</span>
+                  <span className="font-medium">receita.fazenda.gov.br</span>
                 </div>
-                <div className="bg-white bg-opacity-70 rounded-lg p-4">
-                  <div className="text-sm text-gray-600 mb-1">Código para usar</div>
-                  <div className="font-bold text-gray-800 text-lg">{darfCodigo}</div>
-                  <div className="text-xs text-gray-500">Ganho de capital</div>
+                <div>
+                  <span className="text-gray-600 block">Código:</span>
+                  <span className="font-medium">{darfCodigo}</span>
                 </div>
-                <div className="bg-white bg-opacity-70 rounded-lg p-4">
-                  <div className="text-sm text-gray-600 mb-1">Mês/Ano (Competência)</div>
-                  <div className="font-medium text-gray-800">{darfCompetencia}</div>
+                <div>
+                  <span className="text-gray-600 block">Competência:</span>
+                  <span className="font-medium">{darfCompetencia}</span>
                 </div>
-                <div className="bg-white bg-opacity-70 rounded-lg p-4">
-                  <div className="text-sm text-gray-600 mb-1">Prazo final</div>
-                  <div className="font-medium text-gray-800">{formatDate(darfVencimento)}</div>
-                  <div className="text-xs text-gray-500">
-                    {new Date(darfVencimento) < new Date() ? "⚠️ Vencido" : "✅ Em dia"}
-                  </div>
+                <div>
+                  <span className="text-gray-600 block">Vencimento:</span>
+                  <span className="font-medium">{formatDate(darfVencimento)}</span>
                 </div>
               </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-blue-800">
-                    <strong>Dica importante:</strong> O DARF pode ser pago em qualquer banco ou via PIX. 
-                    Se pagar após o vencimento, será calculada multa e juros automaticamente.
-                  </div>
-                </div>
-              </div>
-
-              {/* Botões de Alteração de Status */}
-              <div className="flex justify-center gap-3 mt-4">
+              <div className="flex justify-center gap-3">
                 {darfStatus !== "Pago" && (
                   <button
                     onClick={() => alterarStatusDarf("Pago")}
@@ -756,57 +584,6 @@ export function DarfComprehensiveModal({
               </div>
             </div>
           )}
-
-          {/* Detalhes das Operações - Seção Opcional */}
-          <details className="group">
-            <summary className="flex items-center gap-2 text-gray-600 hover:text-gray-800 cursor-pointer transition-colors">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" />
-                <span className="font-medium">Ver suas {operacoesMes.length} operações deste mês</span>
-              </div>
-              <svg className="w-4 h-4 transform group-open:rotate-180 transition-transform ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </summary>
-            
-            <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pl-6 border-l-2 border-gray-100">
-              {operacoesMes.map((operacao, index) => (
-                <div
-                  key={index}
-                  className="flex justify-between items-center p-3 bg-white rounded-lg border border-gray-100 hover:border-gray-200 transition-colors"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${operacao.resultado >= 0 ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                    <div>
-                      <span className="font-medium text-gray-800">{operacao.ticker}</span>
-                      <span className="text-xs text-gray-500 ml-2">
-                        {operacao.quantidade.toLocaleString()} ações
-                      </span>
-                    </div>
-                  </div>
-                  <span
-                    className={`font-semibold ${
-                      operacao.resultado >= 0 ? "text-green-600" : "text-red-600"
-                    }`}
-                  >
-                    {operacao.resultado >= 0 ? '+' : ''}{formatCurrency(operacao.resultado)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </details>
-        </div>
-
-        {/* Footer Simplificado */}
-        <div className="bg-white px-8 py-6 border-t border-gray-100">
-          <div className="flex justify-center">
-            <button
-              onClick={onClose}
-              className="inline-flex items-center gap-2 px-8 py-3 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-medium transition-all hover:scale-105"
-            >
-              {impostoAPagar === 0 ? "Entendi" : "Fechar"}
-            </button>
-          </div>
         </div>
       </div>
     </div>

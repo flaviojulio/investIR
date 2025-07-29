@@ -442,13 +442,17 @@ const ExpandedContent = React.memo(({
 
   // 🚀 OTIMIZAÇÃO: Usar dados pré-calculados se disponíveis
   const prejuizoInfo = useMemo(() => {
-    if (isProfit) return null;
+    // ✅ CORREÇÃO: Mostrar prejuízo acumulado para TODAS as operações
+    // Para prejuízo: mostra acumulado até a operação (incluindo ela)
+    // Para lucro: mostra prejuízo disponível ANTES da operação (para compensação)
     
     // Usar dados pré-calculados se disponíveis
     if (op.prejuizo_acumulado_ate !== undefined) {
       return {
         prejuizoAteOperacao: op.prejuizo_acumulado_ate,
-        prejuizoAnterior: Math.max(0, op.prejuizo_acumulado_ate - Math.abs(op.resultado || 0))
+        prejuizoAnterior: isProfit 
+          ? op.prejuizo_acumulado_ate  // Para lucros, é o prejuízo disponível ANTES
+          : Math.max(0, op.prejuizo_acumulado_ate - Math.abs(op.resultado || 0)) // Para prejuízos, é ANTES da operação
       };
     }
     
@@ -727,23 +731,34 @@ const ExpandedContent = React.memo(({
                     </div>
                   </div>
 
-                  {/* Restante do conteúdo fiscal será lazy loaded conforme necessário */}
-                  {!isProfit && prejuizoInfo && (
+                  {/* ✅ PREJUÍZO ACUMULADO: Mostrar para TODAS as operações */}
+                  {prejuizoInfo && prejuizoInfo.prejuizoAteOperacao > 0 && (
                     <div className="flex flex-col p-4 bg-gradient-to-br from-orange-50 to-red-50 rounded-xl border border-orange-200 shadow-sm">
                       <div className="flex items-center gap-2 mb-3">
                         <Info className="h-4 w-4 text-orange-600" />
                         <span className="text-xs font-semibold uppercase tracking-wide text-orange-600">
-                          Acúmulo de Prejuízo ({op.day_trade ? "Day Trade" : "Swing Trade"})
+                          {isProfit 
+                            ? `Prejuízo Disponível para Compensação (${op.day_trade ? "Day Trade" : "Swing Trade"})`
+                            : `Acúmulo de Prejuízo (${op.day_trade ? "Day Trade" : "Swing Trade"})`
+                          }
                         </span>
                       </div>
                       <div className="bg-white/60 rounded-lg p-3 border border-orange-300/50 mt-4">
                         <div className="text-center">
                           <div className="text-xs text-orange-600 mb-1">
-                            Prejuízo Acumulado até esta Operação ({op.day_trade ? "Day Trade" : "Swing Trade"})
+                            {isProfit 
+                              ? `Prejuízo Disponível na Data da Operação (${op.day_trade ? "Day Trade" : "Swing Trade"})`
+                              : `Prejuízo Acumulado até esta Operação (${op.day_trade ? "Day Trade" : "Swing Trade"})`
+                            }
                           </div>
                           <div className="text-red-700 font-bold text-lg bg-red-100 rounded px-2 py-1">
                             {formatCurrency(prejuizoInfo.prejuizoAteOperacao)}
                           </div>
+                          {isProfit && (
+                            <div className="text-xs text-gray-600 mt-2">
+                              Este valor estava disponível para compensar o lucro desta operação
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
