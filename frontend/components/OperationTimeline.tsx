@@ -352,12 +352,22 @@ function OperationCard({ item, idx }: OperationCardProps) {
   const isEventoCorporativo = ['bonificacao', 'desdobramento', 'agrupamento'].includes(operation);
   const isRight = item.visualBranch === "right";
   
+  // ✅ Eventos corporativos agora têm interface didática completa
+  
   // Usar campos corretos para exibição
   const displayTicker = item.ticker_acao || item.ticker;
   const displayNomeAcao = item.nome_acao;
   const displayDate = item.data_ex || item.date;
-  const displayQuantity = item.quantidade_na_data_ex || item.quantity;
-  const displayPrice = item.valor_unitario_provento || item.price;
+  
+  // 🎯 Para eventos corporativos, usar dados didáticos do backend
+  const displayQuantity = isEventoCorporativo && (item as any).quantidade_depois 
+    ? (item as any).quantidade_depois 
+    : (item.quantidade_na_data_ex || item.quantity);
+    
+  const displayPrice = isEventoCorporativo && (item as any).preco_depois 
+    ? (item as any).preco_depois 
+    : (item.valor_unitario_provento || item.price);
+    
   const displayValorTotal = item.valor_total_recebido;
 
   return (
@@ -415,23 +425,180 @@ function OperationCard({ item, idx }: OperationCardProps) {
             <div className="flex items-center justify-between">
               {isEventoCorporativo ? (
                 <div className="flex-1 mt-2">
-                  <div className="space-y-3">
-                    {(item as any).razao && (
-                      <div className="bg-white/20 backdrop-blur-sm rounded-lg p-2 border border-white/30">
-                        <div className="text-sm font-bold text-white">
-                          📊 Proporção: {(item as any).razao}
+                  {/* 🎓 INTERFACE DIDÁTICA PARA INVESTIDORES INICIANTES */}
+                  <div className="space-y-4">
+                    
+                    {/* 📋 TÍTULO EXPLICATIVO */}
+                    <div className="bg-white/30 backdrop-blur-sm rounded-lg p-3 border border-white/40">
+                      <div className="text-center">
+                        <h3 className="text-white font-bold text-sm mb-1">
+                          🎯 O que aconteceu com suas ações {displayTicker}
+                        </h3>
+                        <p className="text-white/90 text-xs">
+                          {operation === 'desdobramento' && 'Suas ações se multiplicaram!'}
+                          {operation === 'bonificacao' && 'Você ganhou ações de presente!'}
+                          {operation === 'agrupamento' && 'Suas ações foram reagrupadas'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* 🎯 INTERFACE DIDÁTICA SEMPRE PRESENTE para eventos corporativos */}
+                    {true ? (
+                      <div className="bg-white/20 backdrop-blur-sm rounded-lg p-4 border border-white/30">
+                        {/* Verificar se usuário tinha ações na data do evento */}
+                        {((item as any).quantidade_antes > 0 || (item as any).quantidade_depois > 0) ? (
+                          <>
+                            {/* CASO: USUÁRIO TINHA AÇÕES - MOSTRAR COMPARATIVO */}
+                            <div className="grid grid-cols-3 gap-3 items-center">
+                              
+                              {/* ANTES */}
+                              <div className="text-center">
+                                <div className="text-white/70 text-xs mb-2 font-medium">ANTES</div>
+                                <div className="bg-red-500/20 rounded-lg p-3 border border-red-400/30">
+                                  <div className="text-white font-bold text-lg">
+                                    {(item as any).quantidade_antes || 0}
+                                  </div>
+                                  <div className="text-white/80 text-xs">ações</div>
+                                  <div className="text-white/70 text-xs mt-1">
+                                    R$ {((item as any).preco_antes || 0).toFixed(2)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* SETA + PROPORÇÃO */}
+                              <div className="text-center">
+                                <div className="text-white text-2xl mb-1">➡️</div>
+                                <div className="bg-blue-500/30 rounded-lg px-2 py-1 border border-blue-400/40">
+                                  <div className="text-white font-bold text-xs">
+                                    {(item as any).razao || 'N/A'}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* DEPOIS */}
+                              <div className="text-center">
+                                <div className="text-white/70 text-xs mb-2 font-medium">DEPOIS</div>
+                                <div className="bg-green-500/20 rounded-lg p-3 border border-green-400/30">
+                                  <div className="text-white font-bold text-lg">
+                                    {(item as any).quantidade_depois || 0}
+                                  </div>
+                                  <div className="text-white/80 text-xs">ações</div>
+                                  <div className="text-white/70 text-xs mt-1">
+                                    R$ {((item as any).preco_depois || 0).toFixed(2)}
+                                  </div>
+                                </div>
+                              </div>
+
+                            </div>
+
+                            {/* RESUMO DO BENEFÍCIO */}
+                            <div className="mt-4 pt-3 border-t border-white/20">
+                              <div className="text-center">
+                                {operation === 'bonificacao' ? (
+                                  <div className="text-green-300 font-bold text-sm">
+                                    🎁 Você ganhou {((item as any).quantidade_depois || 0) - ((item as any).quantidade_antes || 0)} ações de presente!
+                                  </div>
+                                ) : (
+                                  <div className="text-blue-300 font-bold text-sm">
+                                    📊 Suas ações foram transformadas: {(item as any).quantidade_antes} → {(item as any).quantidade_depois}
+                                  </div>
+                                )}
+                                <div className="text-white/80 text-xs mt-1">
+                                  Patrimônio: R$ {(((item as any).quantidade_antes || 0) * ((item as any).preco_antes || 0)).toFixed(2)} → R$ {(((item as any).quantidade_depois || 0) * ((item as any).preco_depois || 0)).toFixed(2)}
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          /* CASO: USUÁRIO NÃO TINHA AÇÕES */
+                          <div className="text-center">
+                            <div className="bg-yellow-500/20 rounded-lg p-4 border border-yellow-400/30">
+                              <div className="text-yellow-200 font-bold text-sm mb-2">
+                                ℹ️ Evento não afetou você
+                              </div>
+                              <div className="text-white/90 text-xs">
+                                Você não possuía ações de {displayTicker} na data deste evento corporativo
+                                ({formatDate(displayDate)})
+                              </div>
+                              {(item as any).razao && (
+                                <div className="mt-2 pt-2 border-t border-yellow-400/30">
+                                  <div className="text-white/80 text-xs">
+                                    <strong>Proporção do evento:</strong> {(item as any).razao}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* CASO: Dados didáticos não disponíveis - FALLBACK */
+                      <div className="bg-orange-500/20 backdrop-blur-sm rounded-lg p-4 border border-orange-400/30">
+                        <div className="text-center">
+                          <div className="text-orange-200 font-bold text-sm mb-2">
+                            📋 Informação básica do evento
+                          </div>
+                          <div className="text-white/90 text-xs space-y-2">
+                            <div>
+                              <strong>Evento:</strong> {getOperationLabel(operation)}
+                            </div>
+                            <div>
+                              <strong>Ticker:</strong> {displayTicker}
+                            </div>
+                            <div>
+                              <strong>Data:</strong> {formatDate(displayDate)}
+                            </div>
+                            {item.razao && (
+                              <div>
+                                <strong>Proporção:</strong> {item.razao}
+                              </div>
+                            )}
+                            <div className="mt-3 pt-2 border-t border-orange-400/30">
+                              <div className="text-orange-100 text-xs">
+                                ⚠️ Dados detalhados não disponíveis para este evento
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}
-                    
-                    <div className="bg-white/20 backdrop-blur-sm rounded-lg p-3 border border-white/30">
-                      <div className="text-sm font-medium text-white mb-1">
-                        💡 O que isso significa:
-                      </div>
-                      <div className="text-sm text-white/95 leading-relaxed">
-                        {getEventoExplicacao(item.operation, (item as any).razao || '', displayTicker)}
+
+                    {/* 📚 EXPLICAÇÃO EDUCATIVA - USAR DADOS DO BACKEND SE DISPONÍVEL */}
+                    <div className="bg-white/15 backdrop-blur-sm rounded-lg p-3 border border-white/25">
+                      <div className="text-white/90 text-xs leading-relaxed">
+                        <div className="font-medium mb-2">💡 O que isso significa:</div>
+                        {(item as any).impacto_didatico ? (
+                          /* Usar explicação gerada pelo backend */
+                          <div dangerouslySetInnerHTML={{ __html: (item as any).impacto_didatico.replace(/\n/g, '<br />') }} />
+                        ) : (
+                          /* Fallback para explicações padrão */
+                          <>
+                            {operation === 'desdobramento' && (
+                              <div>
+                                Em um <strong>desdobramento</strong>, a empresa divide suas ações para torná-las mais baratas e acessíveis. 
+                                Você ganha mais ações, mas o preço de cada uma diminui proporcionalmente. 
+                                <strong> Seu dinheiro investido continua exatamente o mesmo!</strong>
+                              </div>
+                            )}
+                            {operation === 'bonificacao' && (
+                              <div>
+                                Em uma <strong>bonificação</strong>, a empresa distribui ações gratuitas para seus acionistas como um presente. 
+                                Você realmente ganha ações extras sem pagar nada adicional. 
+                                <strong> É literalmente um presente da empresa!</strong>
+                              </div>
+                            )}
+                            {operation === 'agrupamento' && (
+                              <div>
+                                Em um <strong>agrupamento</strong>, a empresa junta várias ações em uma só para aumentar o preço unitário. 
+                                Você fica com menos ações, mas cada uma vale mais. 
+                                <strong> Seu patrimônio total continua o mesmo!</strong>
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
+
                   </div>
                 </div>
               ) : isProvento ? (

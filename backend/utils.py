@@ -4,6 +4,7 @@ Utilitários para manipulação de datas e outros helpers.
 
 from datetime import datetime, date
 from typing import Union
+import re
 
 def extrair_mes_data_seguro(data_input: Union[str, date, datetime]) -> str:
     """
@@ -76,3 +77,92 @@ def converter_data_para_objeto_seguro(data_input: Union[str, date, datetime]) ->
                 return None
     
     return None
+
+# ============================================
+# UTILITÁRIOS PARA CPF
+# ============================================
+
+def validar_cpf(cpf: str) -> bool:
+    """
+    Valida se um CPF é válido usando o algoritmo oficial.
+    
+    Args:
+        cpf: String do CPF (com ou sem formatação)
+        
+    Returns:
+        bool: True se CPF válido, False caso contrário
+    """
+    if not cpf:
+        return False
+    
+    # Remove caracteres não numéricos
+    cpf_numeros = re.sub(r'\D', '', cpf)
+    
+    # Verifica se tem 11 dígitos
+    if len(cpf_numeros) != 11:
+        return False
+    
+    # Verifica se não são todos os dígitos iguais
+    if cpf_numeros == cpf_numeros[0] * 11:
+        return False
+    
+    # Calcula o primeiro dígito verificador
+    soma = 0
+    for i in range(9):
+        soma += int(cpf_numeros[i]) * (10 - i)
+    
+    resto = soma % 11
+    primeiro_digito = 0 if resto < 2 else 11 - resto
+    
+    # Verifica primeiro dígito
+    if int(cpf_numeros[9]) != primeiro_digito:
+        return False
+    
+    # Calcula o segundo dígito verificador
+    soma = 0
+    for i in range(10):
+        soma += int(cpf_numeros[i]) * (11 - i)
+    
+    resto = soma % 11
+    segundo_digito = 0 if resto < 2 else 11 - resto
+    
+    # Verifica segundo dígito
+    return int(cpf_numeros[10]) == segundo_digito
+
+def formatar_cpf(cpf: str) -> str:
+    """
+    Formata um CPF no padrão brasileiro xxx.xxx.xxx-xx.
+    
+    Args:
+        cpf: String do CPF (apenas números)
+        
+    Returns:
+        str: CPF formatado ou string original se inválido
+    """
+    if not cpf:
+        return cpf
+    
+    # Remove caracteres não numéricos
+    cpf_numeros = re.sub(r'\D', '', cpf)
+    
+    # Verifica se tem 11 dígitos
+    if len(cpf_numeros) != 11:
+        return cpf
+    
+    # Aplica formatação xxx.xxx.xxx-xx
+    return f"{cpf_numeros[:3]}.{cpf_numeros[3:6]}.{cpf_numeros[6:9]}-{cpf_numeros[9:]}"
+
+def limpar_cpf(cpf: str) -> str:
+    """
+    Remove formatação do CPF, deixando apenas números.
+    
+    Args:
+        cpf: String do CPF (com ou sem formatação)
+        
+    Returns:
+        str: CPF apenas com números
+    """
+    if not cpf:
+        return ""
+    
+    return re.sub(r'\D', '', cpf)

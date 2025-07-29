@@ -13,6 +13,7 @@ class UsuarioBase(BaseModel):
     username: str
     email: EmailStr
     nome_completo: Optional[str] = None
+    cpf: Optional[str] = None
 
 class UsuarioCreate(UsuarioBase):
     senha: str
@@ -21,6 +22,7 @@ class UsuarioUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     nome_completo: Optional[str] = None
+    cpf: Optional[str] = None
     senha: Optional[str] = None
     ativo: Optional[bool] = None
 
@@ -29,6 +31,7 @@ class UsuarioResponse(BaseModel):
     username: str
     email: str
     nome_completo: str
+    cpf: Optional[str] = None
     funcoes: List[str]
     data_criacao: Optional[datetime] = None
     data_atualizacao: Optional[datetime] = None
@@ -653,9 +656,88 @@ class ResumoIR(BaseModel):
     total_ir: float = 0.0
     isento_swing: bool = False
 
-class ConfiguracaoUsuario(BaseModel):
+class ConfiguracaoUsuarioBase(BaseModel):
+    nome_exibicao: Optional[str] = None
+    avatar_url: Optional[str] = None
+    tema: str = "light"
+    idioma: str = "pt-br"
+    moeda_preferida: str = "BRL"
+    notificacoes_email: bool = True
+    notificacoes_push: bool = True
+    exibir_valores_totais: bool = True
+    formato_data: str = "dd/mm/yyyy"
+    precisao_decimal: int = 2
+    configuracoes_dashboard: Dict[str, Any] = {}
+
+class ConfiguracaoUsuarioCreate(ConfiguracaoUsuarioBase):
     usuario_id: int
-    configuracoes: Dict[str, Any] = {}
+
+class ConfiguracaoUsuarioUpdate(BaseModel):
+    nome_exibicao: Optional[str] = None
+    avatar_url: Optional[str] = None
+    tema: Optional[str] = None
+    idioma: Optional[str] = None
+    moeda_preferida: Optional[str] = None
+    notificacoes_email: Optional[bool] = None
+    notificacoes_push: Optional[bool] = None
+    exibir_valores_totais: Optional[bool] = None
+    formato_data: Optional[str] = None
+    precisao_decimal: Optional[int] = None
+    configuracoes_dashboard: Optional[Dict[str, Any]] = None
+
+class ConfiguracaoUsuarioResponse(ConfiguracaoUsuarioBase):
+    id: int
+    usuario_id: int
+    data_criacao: Optional[datetime] = None
+    data_atualizacao: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+# Compatibilidade com código existente
+ConfiguracaoUsuario = ConfiguracaoUsuarioResponse
+
+# ============================================
+# MODELOS PARA SISTEMA DE MENSAGERIA
+# ============================================
+
+class MensagemBase(BaseModel):
+    titulo: str
+    conteudo: str
+    tipo: str = "info"  # info, success, warning, error
+    prioridade: str = "normal"  # baixa, normal, alta, critica
+    categoria: str = "geral"  # geral, fiscal, atualizacao, boas-vindas, etc
+    remetente: str = "sistema"
+    acao_url: Optional[str] = None
+    acao_texto: Optional[str] = None
+    expirar_em: Optional[datetime] = None
+
+class MensagemCreate(MensagemBase):
+    usuario_id: int
+
+class MensagemUpdate(BaseModel):
+    titulo: Optional[str] = None
+    conteudo: Optional[str] = None
+    tipo: Optional[str] = None
+    prioridade: Optional[str] = None
+    categoria: Optional[str] = None
+    lida: Optional[bool] = None
+    acao_url: Optional[str] = None
+    acao_texto: Optional[str] = None
+    expirar_em: Optional[datetime] = None
+
+class MensagemResponse(MensagemBase):
+    id: int
+    usuario_id: int
+    lida: bool
+    data_criacao: datetime
+    data_leitura: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class EstatisticasMensagens(BaseModel):
+    total: int
+    nao_lidas: int
+    por_tipo: Dict[str, int]
+    por_prioridade: Dict[str, int]
+    por_categoria: Dict[str, int]
 
 # Mais aliases comuns
 Acao = Operacao  # Caso seja usado em algum lugar

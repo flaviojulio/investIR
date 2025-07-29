@@ -405,7 +405,33 @@ const VirtualizedTimeline: React.FC<VirtualizedTimelineProps> = ({
               </div>
               
               <div className="flex items-center justify-between">
-                {isProvento ? (
+                {isEventoCorporativo ? (
+                  <div className="flex-1">
+                    {/* 🎯 INTERFACE DIDÁTICA ULTRA-COMPACTA PARA VIRTUALIZAÇÃO */}
+                    <div className="space-y-2">
+                      
+                      {/* Informação compacta em uma linha */}
+                      <div className="flex items-center justify-between">
+                        <div className="text-white text-xs">
+                          <span className="font-bold">
+                            {(item as any).quantidade_antes || 0} → {(item as any).quantidade_depois || 0} ações
+                          </span>
+                          {(item as any).razao && (
+                            <span className="ml-2 text-white/80">({(item as any).razao})</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Status visual simples */}
+                      <div className="text-white/90 text-xs">
+                        {operation === 'bonificacao' && '🎁 Ações gratuitas da empresa'}
+                        {operation === 'desdobramento' && '📈 Ações multiplicadas'}
+                        {operation === 'agrupamento' && '📊 Ações reagrupadas'}
+                      </div>
+
+                    </div>
+                  </div>
+                ) : isProvento ? (
                   <div className="flex-1">
                     {displayValorTotal ? (
                       <div className="space-y-2">

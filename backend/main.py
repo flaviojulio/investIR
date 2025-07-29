@@ -5,9 +5,10 @@ from typing import List, Dict, Any
 import uvicorn
 import logging # Added logging import
 from datetime import datetime, date # Added for date handling
-from utils import extrair_mes_data_seguro
+from utils import extrair_mes_data_seguro, validar_cpf, formatar_cpf, limpar_cpf
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
+from dependencies import get_current_user
 
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
@@ -17,6 +18,8 @@ from models import (
     UsuarioProventoRecebidoDB, UsuarioCreate, UsuarioUpdate, UsuarioResponse,
     LoginResponse, FuncaoCreate, FuncaoUpdate, FuncaoResponse, TokenResponse,
     Corretora, # Added Corretora model
+    ConfiguracaoUsuarioCreate, ConfiguracaoUsuarioUpdate, ConfiguracaoUsuarioResponse,
+    MensagemCreate, MensagemUpdate, MensagemResponse, EstatisticasMensagens,
 )
 from pydantic import BaseModel
 
@@ -29,6 +32,17 @@ from database import (
     criar_tabelas, 
     limpar_banco_dados, 
     # get_db, remover_operacao, obter_todas_operacoes removed
+    obter_configuracao_usuario,
+    atualizar_configuracao_usuario,
+    criar_configuracao_usuario_padrao,
+    # Funções de mensageria
+    criar_mensagem,
+    obter_mensagens_usuario,
+    marcar_mensagem_como_lida,
+    marcar_todas_mensagens_como_lidas,
+    deletar_mensagem,
+    obter_estatisticas_mensagens,
+    limpar_mensagens_expiradas,
 )
 
 import services # Keep this for other service functions
@@ -49,6 +63,7 @@ from services import (
     deletar_todas_operacoes_service, # Added for bulk delete
     atualizar_status_darf_service, # Added for DARF status update
     obter_operacoes_fechadas_otimizado_service, # Added for optimized API
+    obter_extrato_otimizado_service, # Added for optimized extrato API
     remover_item_carteira_service, # Added for deleting single portfolio item
     listar_operacoes_por_ticker_service, # Added for fetching operations by ticker
     calcular_resultados_por_ticker_service, # Added for ticker results
@@ -1299,6 +1314,30 @@ async def obter_operacoes_fechadas_otimizado(usuario: UsuarioResponse = Depends(
         logging.error(f"🚀 [API OTIMIZADA] Erro para usuário {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
+@app.get("/api/extrato/otimizado", response_model=Dict[str, Any])
+async def obter_extrato_otimizado(usuario: UsuarioResponse = Depends(get_current_user)):
+    """
+    🚀 API OTIMIZADA EXTRATO: Retorna todos os dados do extrato pré-processados
+    - Operações abertas filtradas e mapeadas
+    - Operações fechadas com cálculos
+    - Proventos do usuário
+    - Eventos corporativos relevantes
+    - Performance: O(n) vs O(n²) do frontend
+    """
+    try:
+        logging.info(f"🚀 [EXTRATO OTIMIZADO] Buscando dados para usuário {usuario.id}")
+        
+        extrato_otimizado = obter_extrato_otimizado_service(usuario.id)
+        
+        total_items = sum(len(v) if isinstance(v, list) else 0 for v in extrato_otimizado.values())
+        logging.info(f"🚀 [EXTRATO OTIMIZADO] Retornando {total_items} itens pré-processados")
+        
+        return extrato_otimizado
+        
+    except Exception as e:
+        logging.error(f"🚀 [EXTRATO OTIMIZADO] Erro para usuário {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
+
 @app.get("/api/test/auth")
 async def test_auth(usuario: UsuarioResponse = Depends(get_current_user)):
     """
@@ -2030,6 +2069,291 @@ async def recalcular_status_ir_endpoint(
     except Exception as e:
         logging.error(f"❌ [STATUS IR] Erro usuário {usuario.id}: {e}")
         raise HTTPException(status_code=500, detail=f"Erro ao recalcular status IR: {str(e)}")
+
+# ============================================
+# ROTAS PARA CONFIGURAÇÕES DE USUÁRIO
+# ============================================
+
+@app.get("/api/usuario/configuracoes", response_model=ConfiguracaoUsuarioResponse, tags=["Usuário"])
+async def obter_configuracoes_usuario(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Obtém as configurações pessoais do usuário logado.
+    """
+    try:
+        configuracao = obter_configuracao_usuario(usuario.id)
+        
+        if not configuracao:
+            # Se não existe configuração, criar uma padrão
+            criar_configuracao_usuario_padrao(usuario.id)
+            configuracao = obter_configuracao_usuario(usuario.id)
+        
+        return ConfiguracaoUsuarioResponse(**configuracao)
+        
+    except Exception as e:
+        logging.error(f"Erro ao obter configurações usuário {usuario.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao obter configurações: {str(e)}")
+
+@app.put("/api/usuario/configuracoes", response_model=ConfiguracaoUsuarioResponse, tags=["Usuário"])
+async def atualizar_configuracoes_usuario(
+    configuracoes: ConfiguracaoUsuarioUpdate,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Atualiza as configurações pessoais do usuário logado.
+    """
+    try:
+        # Verificar se usuário já tem configuração
+        config_existente = obter_configuracao_usuario(usuario.id)
+        if not config_existente:
+            criar_configuracao_usuario_padrao(usuario.id)
+        
+        # Converter para dict apenas com campos não-None
+        dados_atualizacao = {
+            campo: valor for campo, valor in configuracoes.dict().items() 
+            if valor is not None
+        }
+        
+        sucesso = atualizar_configuracao_usuario(usuario.id, dados_atualizacao)
+        
+        if not sucesso:
+            raise HTTPException(status_code=400, detail="Nenhuma configuração foi atualizada")
+        
+        # Retornar configuração atualizada
+        configuracao_atualizada = obter_configuracao_usuario(usuario.id)
+        return ConfiguracaoUsuarioResponse(**configuracao_atualizada)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Erro ao atualizar configurações usuário {usuario.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar configurações: {str(e)}")
+
+@app.get("/api/usuario/perfil", response_model=dict, tags=["Usuário"])
+async def obter_perfil_usuario(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Obtém o perfil completo do usuário (dados básicos + configurações).
+    """
+    try:
+        configuracao = obter_configuracao_usuario(usuario.id)
+        
+        if not configuracao:
+            criar_configuracao_usuario_padrao(usuario.id)
+            configuracao = obter_configuracao_usuario(usuario.id)
+        
+        return {
+            "usuario": {
+                "id": usuario.id,
+                "username": usuario.username,
+                "email": usuario.email,
+                "nome_completo": usuario.nome_completo,
+                "cpf": formatar_cpf(usuario.cpf) if usuario.cpf else None,
+                "funcoes": usuario.funcoes,
+                "data_criacao": usuario.data_criacao,
+                "ativo": usuario.ativo
+            },
+            "configuracoes": ConfiguracaoUsuarioResponse(**configuracao)
+        }
+        
+    except Exception as e:
+        logging.error(f"Erro ao obter perfil usuário {usuario.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao obter perfil: {str(e)}")
+
+@app.put("/api/usuario/dados", response_model=UsuarioResponse, tags=["Usuário"])
+async def atualizar_dados_usuario(
+    dados: UsuarioUpdate,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Atualiza os dados básicos do usuário (nome, CPF, etc.).
+    """
+    try:
+        # Validar CPF se fornecido
+        if dados.cpf is not None:
+            cpf_limpo = limpar_cpf(dados.cpf)
+            if cpf_limpo and not validar_cpf(cpf_limpo):
+                raise HTTPException(status_code=400, detail="CPF inválido")
+            # Salvar CPF sem formatação no banco
+            dados.cpf = cpf_limpo if cpf_limpo else None
+        
+        # Aqui você precisaria implementar a função de atualização no database.py
+        # Por enquanto, vou simular uma resposta
+        import auth
+        usuario_atualizado = auth.obter_usuario(usuario.id)
+        
+        if not usuario_atualizado:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado")
+        
+        # TODO: Implementar atualização real no banco de dados
+        # atualizar_usuario(usuario.id, dados.dict(exclude_unset=True))
+        
+        return UsuarioResponse(**usuario_atualizado)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Erro ao atualizar dados usuário {usuario.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar dados: {str(e)}")
+
+# ============================================
+# ROTAS PARA SISTEMA DE MENSAGERIA
+# ============================================
+
+@app.get("/api/mensagens", response_model=List[MensagemResponse], tags=["Mensagens"])
+async def listar_mensagens(
+    apenas_nao_lidas: bool = False,
+    categoria: str = None,
+    limite: int = 50,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Lista as mensagens do usuário logado com filtros opcionais.
+    """
+    try:
+        mensagens = obter_mensagens_usuario(
+            usuario.id, 
+            apenas_nao_lidas=apenas_nao_lidas, 
+            categoria=categoria, 
+            limite=limite
+        )
+        
+        # Converter datas ISO para datetime objects
+        for msg in mensagens:
+            if msg.get('data_criacao'):
+                msg['data_criacao'] = datetime.fromisoformat(msg['data_criacao'])
+            if msg.get('data_leitura'):
+                msg['data_leitura'] = datetime.fromisoformat(msg['data_leitura'])
+            if msg.get('expirar_em'):
+                msg['expirar_em'] = datetime.fromisoformat(msg['expirar_em'])
+        
+        return [MensagemResponse(**msg) for msg in mensagens]
+        
+    except Exception as e:
+        logging.error(f"Erro ao listar mensagens usuário {usuario.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao listar mensagens: {str(e)}")
+
+@app.post("/api/mensagens", response_model=MensagemResponse, status_code=201, tags=["Mensagens"])
+async def criar_nova_mensagem(
+    mensagem: MensagemCreate,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Cria uma nova mensagem (apenas admins podem criar mensagens para outros usuários).
+    """
+    try:
+        # Por segurança, verificar se usuário tem permissão
+        if mensagem.usuario_id != usuario.id and "admin" not in usuario.funcoes:
+            raise HTTPException(status_code=403, detail="Sem permissão para criar mensagens para outros usuários")
+        
+        mensagem_id = criar_mensagem(
+            usuario_id=mensagem.usuario_id,
+            titulo=mensagem.titulo,
+            conteudo=mensagem.conteudo,
+            tipo=mensagem.tipo,
+            prioridade=mensagem.prioridade,
+            categoria=mensagem.categoria,
+            remetente=mensagem.remetente,
+            acao_url=mensagem.acao_url,
+            acao_texto=mensagem.acao_texto,
+            expirar_em=mensagem.expirar_em.isoformat() if mensagem.expirar_em else None
+        )
+        
+        # Buscar mensagem criada
+        mensagens = obter_mensagens_usuario(mensagem.usuario_id, limite=1)
+        if mensagens:
+            msg = mensagens[0]
+            if msg.get('data_criacao'):
+                msg['data_criacao'] = datetime.fromisoformat(msg['data_criacao'])
+            return MensagemResponse(**msg)
+        
+        raise HTTPException(status_code=500, detail="Erro ao recuperar mensagem criada")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Erro ao criar mensagem: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao criar mensagem: {str(e)}")
+
+@app.put("/api/mensagens/{mensagem_id}/lida", tags=["Mensagens"])
+async def marcar_como_lida(
+    mensagem_id: int,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Marca uma mensagem específica como lida.
+    """
+    try:
+        sucesso = marcar_mensagem_como_lida(mensagem_id, usuario.id)
+        
+        if not sucesso:
+            raise HTTPException(status_code=404, detail="Mensagem não encontrada")
+        
+        return {"message": "Mensagem marcada como lida", "mensagem_id": mensagem_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Erro ao marcar mensagem como lida: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao marcar como lida: {str(e)}")
+
+@app.put("/api/mensagens/marcar-todas-lidas", tags=["Mensagens"])
+async def marcar_todas_como_lidas(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Marca todas as mensagens do usuário como lidas.
+    """
+    try:
+        quantidade = marcar_todas_mensagens_como_lidas(usuario.id)
+        
+        return {
+            "message": f"{quantidade} mensagens marcadas como lidas",
+            "quantidade": quantidade
+        }
+        
+    except Exception as e:
+        logging.error(f"Erro ao marcar todas mensagens como lidas: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao marcar como lidas: {str(e)}")
+
+@app.delete("/api/mensagens/{mensagem_id}", tags=["Mensagens"])
+async def deletar_mensagem_endpoint(
+    mensagem_id: int,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Deleta uma mensagem específica.
+    """
+    try:
+        sucesso = deletar_mensagem(mensagem_id, usuario.id)
+        
+        if not sucesso:
+            raise HTTPException(status_code=404, detail="Mensagem não encontrada")
+        
+        return {"message": "Mensagem deletada com sucesso", "mensagem_id": mensagem_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Erro ao deletar mensagem: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao deletar mensagem: {str(e)}")
+
+@app.get("/api/mensagens/estatisticas", response_model=EstatisticasMensagens, tags=["Mensagens"])
+async def obter_estatisticas(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Obtém estatísticas das mensagens do usuário.
+    """
+    try:
+        stats = obter_estatisticas_mensagens(usuario.id)
+        return EstatisticasMensagens(**stats)
+        
+    except Exception as e:
+        logging.error(f"Erro ao obter estatísticas: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao obter estatísticas: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

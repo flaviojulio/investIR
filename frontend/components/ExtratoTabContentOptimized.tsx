@@ -1,18 +1,22 @@
 "use client";
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, Suspense } from "react";
 import OperationTimeline from "./OperationTimeline";
 import OperationTable from "./OperationTable";
 import { Card, CardContent } from "@/components/ui/card";
-import { Calendar, BarChart3, AlertCircle, RefreshCw } from "lucide-react";
+import { Calendar, BarChart3, AlertCircle, RefreshCw, Zap } from "lucide-react";
 import { useExtratoOtimizado } from "@/hooks/useExtratoOtimizado";
 import { Button } from "@/components/ui/button";
+
+// Lazy load dos componentes virtualizados para melhor performance
+const VirtualizedTimeline = React.lazy(() => import("./VirtualizedTimeline"));
+const VirtualizedTable = React.lazy(() => import("./VirtualizedTable"));
 
 export default function ExtratoTabContentOptimized() {
   // Estado para controle de visualização
   const [viewMode, setViewMode] = useState<"timeline" | "table">("timeline");
   
   // Hook otimizado que busca todos os dados necessários
-  const { timelineItems, isLoading, error, refetch } = useExtratoOtimizado();
+  const { timelineItems, isLoading, error, refetch, shouldVirtualize, totalItems } = useExtratoOtimizado();
 
   // Estado de carregamento
   if (isLoading) {
@@ -59,9 +63,18 @@ export default function ExtratoTabContentOptimized() {
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
             <span className="font-medium">Extrato Otimizado</span>
             <span className="text-green-600">•</span>
-            <span>{timelineItems.length} itens carregados</span>
+            <span>{totalItems} itens carregados</span>
             <span className="text-green-600">•</span>
             <span className="text-xs">⚡ Performance O(n) vs O(n²)</span>
+            {shouldVirtualize && (
+              <>
+                <span className="text-green-600">•</span>
+                <span className="text-xs flex items-center gap-1">
+                  <Zap className="w-3 h-3" />
+                  Virtualização ativa
+                </span>
+              </>
+            )}
           </div>
         </div>
                 
@@ -98,24 +111,47 @@ export default function ExtratoTabContentOptimized() {
         </div>
 
         {/* Renderização condicional baseada no modo de visualização */}
-        {viewMode === "timeline" ? (
-          <OperationTimeline items={timelineItems} />
+        {shouldVirtualize ? (
+          <Suspense 
+            fallback={
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full mr-3"></div>
+                <span className="text-gray-600">Carregando visualização...</span>
+              </div>
+            }
+          >
+            {viewMode === "timeline" ? (
+              <VirtualizedTimeline items={timelineItems} />
+            ) : (
+              <VirtualizedTable items={timelineItems} />
+            )}
+          </Suspense>
         ) : (
-          <OperationTable items={timelineItems} />
+          // Para datasets pequenos, usar componentes tradicionais
+          viewMode === "timeline" ? (
+            <OperationTimeline items={timelineItems} />
+          ) : (
+            <OperationTable items={timelineItems} />
+          )
         )}
 
         {/* Footer com informações de performance */}
         <div className="mt-6 p-3 bg-gray-50 border border-gray-200 rounded-lg">
           <div className="text-xs text-gray-600 text-center space-y-1">
             <div>
-              💡 <strong>Otimização:</strong> Dados pré-calculados no backend • 
-              APIs em paralelo • Memoização inteligente
+              💡 <strong>Otimização:</strong> {shouldVirtualize ? "Virtualização + " : ""}
+              Dados pré-calculados no backend • APIs em paralelo • Memoização inteligente
             </div>
             <div className="flex items-center justify-center gap-4 text-gray-500">
               <span>🚀 Operações: {timelineItems.filter(item => item.operation === 'fechamento').length}</span>
               <span>💰 Proventos: {timelineItems.filter(item => item.provento).length}</span>
               <span>🏢 Eventos: {timelineItems.filter(item => ['bonificacao', 'desdobramento', 'agrupamento'].includes(item.operation)).length}</span>
             </div>
+            {shouldVirtualize && (
+              <div className="text-blue-600 font-medium">
+                ⚡ Virtualização ativa para {totalItems} itens (threshold: 100+)
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -27,6 +27,7 @@ declare module 'lucide-react' {
   export const Building2: ComponentType<IconProps>;
   export const Calculator: ComponentType<IconProps>;
   export const Calendar: ComponentType<IconProps>;
+  export const CreditCard: ComponentType<IconProps>;
   export const Check: ComponentType<IconProps>;
   export const CheckCheck: ComponentType<IconProps>;
   export const CheckCircle: ComponentType<IconProps>;
@@ -50,6 +51,7 @@ declare module 'lucide-react' {
   export const ExternalLink: ComponentType<IconProps>;
   export const Eye: ComponentType<IconProps>;
   export const EyeOff: ComponentType<IconProps>;
+  export const FileStack: ComponentType<IconProps>;
   export const FileText: ComponentType<IconProps>;
   export const FileX: ComponentType<IconProps>;
   export const Filter: ComponentType<IconProps>;
@@ -76,12 +78,14 @@ declare module 'lucide-react' {
   export const Plus: ComponentType<IconProps>;
   export const PlusCircle: ComponentType<IconProps>;
   export const Receipt: ComponentType<IconProps>;
+  export const RefreshCw: ComponentType<IconProps>;
   export const RotateCcw: ComponentType<IconProps>;
   export const Search: ComponentType<IconProps>;
   export const Shield: ComponentType<IconProps>;
   export const ShoppingCart: ComponentType<IconProps>;
   export const Sparkles: ComponentType<IconProps>;
   export const Target: ComponentType<IconProps>;
+  export const Timer: ComponentType<IconProps>;
   export const Trash2: ComponentType<IconProps>;
   export const TrendingDown: ComponentType<IconProps>;
   export const TrendingUp: ComponentType<IconProps>;

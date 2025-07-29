@@ -93,14 +93,18 @@ interface UseExtratoOtimizadoResult {
   isLoading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
+  shouldVirtualize: boolean;
+  totalItems: number;
 }
 
 export function useExtratoOtimizado(): UseExtratoOtimizadoResult {
+  const [timelineItemsDiretos, setTimelineItemsDiretos] = useState<TimelineItem[]>([]);
   const [operacoesFechadas, setOperacoesFechadas] = useState<OperacaoOtimizada[]>([]);
   const [proventos, setProventos] = useState<ProventoRecebido[]>([]);
   const [eventos, setEventos] = useState<EventoCorporativo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [usingOptimizedAPI, setUsingOptimizedAPI] = useState(false);
 
   // Função para normalizar operações
   const normalizeOperation = useCallback((raw: string) => {
@@ -122,53 +126,70 @@ export function useExtratoOtimizado(): UseExtratoOtimizadoResult {
     return op.toLowerCase();
   }, []);
 
-  // Fetch de dados otimizado - todas as APIs em paralelo
+  // 🚀 NOVO: Fetch otimizado usando API única do backend
   const fetchData = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      console.log('🚀 [EXTRATO OTIMIZADO] Iniciando busca de dados...');
+      console.log('🚀 [EXTRATO OTIMIZADO] Usando nova API unificada...');
       
-      // Buscar dados em paralelo para máxima performance
-      const [operacoesResponse, proventosResponse, eventosResponse] = await Promise.allSettled([
-        api.get('/operacoes/fechadas/otimizado'),
-        getProventosUsuarioDetalhado(),
-        getEventosCorporativosUsuario()
-      ]);
+      // Uma única chamada para a API otimizada que retorna tudo pré-processado
+      const response = await api.get('/extrato/otimizado');
+      const data = response.data;
       
-      // Processar operações fechadas
-      if (operacoesResponse.status === 'fulfilled') {
-        setOperacoesFechadas(operacoesResponse.value.data);
-        console.log('✅ [EXTRATO OTIMIZADO] Operações fechadas:', operacoesResponse.value.data.length);
+      console.log('✅ [EXTRATO OTIMIZADO] Dados recebidos:', {
+        total_items: data.total_items,
+        estatisticas: data.estatisticas
+      });
+      
+      // 🚀 USAR DADOS JÁ PROCESSADOS da API otimizada
+      if (data.timeline_items && Array.isArray(data.timeline_items)) {
+        console.log('🎯 [EXTRATO OTIMIZADO] Usando timeline_items da API:', data.timeline_items.length);
+        setTimelineItemsDiretos(data.timeline_items);
+        setUsingOptimizedAPI(true);
       } else {
-        console.error('❌ [EXTRATO OTIMIZADO] Erro ao buscar operações:', operacoesResponse.reason);
-      }
-      
-      // Processar proventos
-      if (proventosResponse.status === 'fulfilled') {
-        const proventosData = Array.isArray(proventosResponse.value) ? proventosResponse.value : [];
-        setProventos(proventosData);
-        console.log('✅ [EXTRATO OTIMIZADO] Proventos:', proventosData.length);
-      } else {
-        console.error('❌ [EXTRATO OTIMIZADO] Erro ao buscar proventos:', proventosResponse.reason);
-        setProventos([]);
-      }
-      
-      // Processar eventos corporativos
-      if (eventosResponse.status === 'fulfilled') {
-        const eventosData = Array.isArray(eventosResponse.value) ? eventosResponse.value : [];
-        setEventos(eventosData);
-        console.log('✅ [EXTRATO OTIMIZADO] Eventos corporativos:', eventosData.length);
-      } else {
-        console.error('❌ [EXTRATO OTIMIZADO] Erro ao buscar eventos:', eventosResponse.reason);
-        setEventos([]);
+        // Fallback: usar dados separados para construir timeline
+        console.log('⚠️ [EXTRATO OTIMIZADO] API não retornou timeline_items, usando dados separados');
+        setOperacoesFechadas(data.operacoes_fechadas || []);
+        setProventos(data.proventos || []);
+        setEventos(data.eventos_corporativos || []);
+        setUsingOptimizedAPI(false);
       }
       
     } catch (err: any) {
       const errorMessage = err?.response?.data?.detail || err?.message || 'Erro desconhecido';
-      console.error('🚨 [EXTRATO OTIMIZADO] Erro geral:', errorMessage);
+      console.error('🚨 [EXTRATO OTIMIZADO] Erro:', errorMessage);
       setError(errorMessage);
+      
+      // Fallback para APIs individuais em caso de erro
+      console.log('⚠️ [EXTRATO OTIMIZADO] Tentando fallback para APIs individuais...');
+      try {
+        const [operacoesResponse, proventosResponse, eventosResponse] = await Promise.allSettled([
+          api.get('/operacoes/fechadas/otimizado'),
+          getProventosUsuarioDetalhado(),
+          getEventosCorporativosUsuario()
+        ]);
+        
+        if (operacoesResponse.status === 'fulfilled') {
+          setOperacoesFechadas(operacoesResponse.value.data);
+        }
+        if (proventosResponse.status === 'fulfilled') {
+          setProventos(Array.isArray(proventosResponse.value) ? proventosResponse.value : []);
+        }
+        if (eventosResponse.status === 'fulfilled') {
+          setEventos(Array.isArray(eventosResponse.value) ? eventosResponse.value : []);
+        }
+        
+        // Resetar para usar lógica de mapeamento manual
+        setTimelineItemsDiretos([]);
+        setUsingOptimizedAPI(false);
+        setError(null); // Limpar erro se fallback funcionou
+        console.log('✅ [EXTRATO OTIMIZADO] Fallback realizado com sucesso');
+        
+      } catch (fallbackErr: any) {
+        console.error('🚨 [EXTRATO OTIMIZADO] Fallback também falhou:', fallbackErr);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -278,6 +299,24 @@ export function useExtratoOtimizado(): UseExtratoOtimizadoResult {
 
   // Memoizar items finais da timeline ordenados
   const timelineItems = useMemo(() => {
+    // 🚀 Se usando API otimizada, retornar dados diretos
+    if (usingOptimizedAPI && timelineItemsDiretos.length > 0) {
+      // 🔍 DEBUG: Mostrar tipos de operação nos dados diretos
+    const tiposOperacao = timelineItemsDiretos.reduce((acc, item) => {
+      const op = item.operation || 'sem_operation';
+      const type = item.type || 'sem_type';
+      const key = `${op} (${type})`;
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    console.log('🎯 [EXTRATO OTIMIZADO] Usando dados diretos da API:', timelineItemsDiretos.length);
+    console.log('🔍 [DEBUG] Tipos de operação encontrados:', tiposOperacao);
+    
+    return timelineItemsDiretos;
+    }
+    
+    // 📋 Fallback: construir timeline manualmente
     const fechadas = mappedPosicoesFechadas;
     const provs = mappedProventos;
     const evts = mappedEventos;
@@ -291,7 +330,7 @@ export function useExtratoOtimizado(): UseExtratoOtimizadoResult {
       return dateB - dateA; // Decrescente (mais recente primeiro)
     });
     
-    console.log('🎯 [EXTRATO OTIMIZADO] Timeline final:', {
+    console.log('🎯 [EXTRATO OTIMIZADO] Timeline construída manualmente:', {
       total: sorted.length,
       operacoes: fechadas.length,
       proventos: provs.length,
@@ -299,7 +338,19 @@ export function useExtratoOtimizado(): UseExtratoOtimizadoResult {
     });
     
     return sorted;
-  }, [mappedPosicoesFechadas, mappedProventos, mappedEventos]);
+  }, [usingOptimizedAPI, timelineItemsDiretos, mappedPosicoesFechadas, mappedProventos, mappedEventos]);
+
+  // 🎯 Decisão inteligente de virtualização
+  const shouldVirtualize = useMemo(() => {
+    const VIRTUALIZATION_THRESHOLD = 100;
+    const totalItems = timelineItems.length;
+    
+    const shouldUse = totalItems > VIRTUALIZATION_THRESHOLD;
+    
+    console.log(`📊 [EXTRATO OTIMIZADO] Virtualização: ${shouldUse} (${totalItems} itens)`);
+    
+    return shouldUse;
+  }, [timelineItems.length]);
 
   const refetch = useCallback(() => fetchData(), [fetchData]);
 
@@ -312,5 +363,7 @@ export function useExtratoOtimizado(): UseExtratoOtimizadoResult {
     isLoading,
     error,
     refetch,
+    shouldVirtualize,
+    totalItems: timelineItems.length,
   };
 }

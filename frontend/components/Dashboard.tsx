@@ -7,7 +7,7 @@ import { api, getResumoProventosAnuaisUsuario, getResumoProventosMensaisUsuario,
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff, Search } from "lucide-react" // Added Trophy, Eye, EyeOff, Search
+import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff, Search, Settings, Bell } from "lucide-react" // Added Trophy, Eye, EyeOff, Search, Settings, Bell
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import {
@@ -38,12 +38,13 @@ import { AddOperation } from "@/components/AddOperation"
 import { OperationsHistory } from "@/components/OperationsHistory"
 import { TaxResults } from "@/components/TaxResults"
 import OperacoesEncerradasTable from '@/components/OperacoesEncerradasTable';
-import ExtratoTabContent from '@/components/ExtratoTabContent';
+import ExtratoTabContentOptimized from '@/components/ExtratoTabContentOptimized';
 import { useToast } from "@/hooks/use-toast"
 import { Tooltip as TooltipUI, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 // Removed DividendTimeline import
 // import { DividendTimeline } from "@/components/DividendTimeline"
 import Link from "next/link";
+import NotificationCenter from "@/components/NotificationCenter";
 // Added ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario
 import type { Operacao, CarteiraItem, ResultadoMensal, OperacaoFechada, ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario } from "@/lib/types"
 
@@ -1322,6 +1323,21 @@ export function Dashboard() {
                   </>
                 )}
               </Button>
+
+              {/* Central de Notificações */}
+              <NotificationCenter />
+
+              {/* Botão de Configurações */}
+              <Link href="/configuracoes">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="flex items-center gap-2 hover:bg-indigo-50 hover:border-indigo-300"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span className="hidden sm:inline">Configurações</span>
+                </Button>
+              </Link>
               
               <Button variant="outline" size="sm" onClick={logout}>
                 <LogOut className="h-4 w-4 mr-2" />
@@ -1429,11 +1445,11 @@ export function Dashboard() {
               {/* Grupo Secundário */}
               <div className="flex flex-wrap gap-1">
                 {/* Link Externo com estilo diferenciado */}
-                <Link href="/imposto-renda" className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-all duration-200 rounded-lg whitespace-nowrap border border-gray-300 hover:border-gray-400 cursor-pointer">
-                  <FileText className="h-5 w-5 mr-2 text-gray-500" />
+                <Link href="/imposto-renda" className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white transition-all duration-200 rounded-lg whitespace-nowrap cursor-pointer border-0 shadow-md hover:shadow-lg">
+                  <FileText className="h-5 w-5 text-white" />
                   <span className="hidden sm:inline">Declaração Anual</span>
                   <span className="sm:hidden">Declaração</span>
-                  <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
+                  <ExternalLink className="h-3 w-3 opacity-80" />
                 </Link>
               </div>
             </div>
@@ -1523,10 +1539,7 @@ export function Dashboard() {
                   </p>
                 </div>
                 
-                <ExtratoTabContent
-                  operacoesAbertas={data.operacoes}
-                  operacoesFechadas={data.operacoes_fechadas}
-                />
+                <ExtratoTabContentOptimized />
               </div>
             )}
             {activeTab === "taxes" && (

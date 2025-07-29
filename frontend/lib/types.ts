@@ -1,5 +1,99 @@
 // lib/types.ts - Tipos atualizados para compatibilidade com backend
 
+// Tipos para Configurações de Usuário
+export interface ConfiguracaoUsuario {
+  id: number;
+  usuario_id: number;
+  nome_exibicao?: string;
+  avatar_url?: string;
+  tema: 'light' | 'dark';
+  idioma: string;
+  moeda_preferida: string;
+  notificacoes_email: boolean;
+  notificacoes_push: boolean;
+  exibir_valores_totais: boolean;
+  formato_data: string;
+  precisao_decimal: number;
+  configuracoes_dashboard: {
+    widgets_visiveis: string[];
+    ordem_widgets: string[];
+    modo_visualizacao: string;
+  };
+  data_criacao?: string;
+  data_atualizacao?: string;
+}
+
+export interface ConfiguracaoUsuarioUpdate {
+  nome_exibicao?: string;
+  avatar_url?: string;
+  tema?: 'light' | 'dark';
+  idioma?: string;
+  moeda_preferida?: string;
+  notificacoes_email?: boolean;
+  notificacoes_push?: boolean;
+  exibir_valores_totais?: boolean;
+  formato_data?: string;
+  precisao_decimal?: number;
+  configuracoes_dashboard?: {
+    widgets_visiveis?: string[];
+    ordem_widgets?: string[];
+    modo_visualizacao?: string;
+  };
+}
+
+export interface PerfilUsuario {
+  usuario: {
+    id: number;
+    username: string;
+    email: string;
+    nome_completo: string;
+    cpf?: string;
+    funcoes: string[];
+    data_criacao?: string;
+    ativo?: boolean;
+  };
+  configuracoes: ConfiguracaoUsuario;
+}
+
+// Tipos para Sistema de Mensageria
+export interface Mensagem {
+  id: number;
+  usuario_id: number;
+  titulo: string;
+  conteudo: string;
+  tipo: 'info' | 'success' | 'warning' | 'error';
+  prioridade: 'baixa' | 'normal' | 'alta' | 'critica';
+  categoria: string;
+  remetente: string;
+  lida: boolean;
+  data_criacao: string;
+  data_leitura?: string;
+  acao_url?: string;
+  acao_texto?: string;
+  expirar_em?: string;
+}
+
+export interface MensagemCreate {
+  usuario_id: number;
+  titulo: string;
+  conteudo: string;
+  tipo?: 'info' | 'success' | 'warning' | 'error';
+  prioridade?: 'baixa' | 'normal' | 'alta' | 'critica';
+  categoria?: string;
+  remetente?: string;
+  acao_url?: string;
+  acao_texto?: string;
+  expirar_em?: string;
+}
+
+export interface EstatisticasMensagens {
+  total: number;
+  nao_lidas: number;
+  por_tipo: Record<string, number>;
+  por_prioridade: Record<string, number>;
+  por_categoria: Record<string, number>;
+}
+
 export interface OperacaoFechada {
   id?: number;
   ticker: string;

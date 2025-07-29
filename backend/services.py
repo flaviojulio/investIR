@@ -3131,6 +3131,483 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
         logging.error(f"🚀 [OTIMIZADO] Erro para usuário {usuario_id}: {e}", exc_info=True)
         raise
 
+def obter_extrato_otimizado_service(usuario_id: int) -> Dict[str, Any]:
+    """
+    🚀 SERVIÇO OTIMIZADO: Retorna todos os dados do extrato pré-processados
+    
+    Inclui:
+    - operacoes_abertas: Operações filtradas (sem duplicação com fechadas)
+    - operacoes_fechadas: Operações fechadas com cálculos
+    - proventos: Proventos do usuário mapeados
+    - eventos_corporativos: Eventos relevantes para o usuário
+    - timeline_items: Todos os itens ordenados por data
+    
+    Performance: O(n) vs O(n²) do frontend
+    """
+    try:
+        logging.info(f"🚀 [EXTRATO OTIMIZADO] Iniciando para usuário {usuario_id}")
+        
+        # 1. Obter operações fechadas otimizadas (já temos esta função)
+        operacoes_fechadas = obter_operacoes_fechadas_otimizado_service(usuario_id)
+        
+        # 2. Obter operações abertas filtradas
+        operacoes_abertas = _obter_operacoes_abertas_filtradas(usuario_id, operacoes_fechadas)
+        
+        # 3. Obter proventos do usuário
+        proventos = _obter_proventos_mapeados(usuario_id)
+        
+        # 4. Obter eventos corporativos relevantes
+        eventos = _obter_eventos_corporativos_usuario(usuario_id, operacoes_abertas, operacoes_fechadas)
+        
+        # 5. Criar timeline consolidada
+        timeline_items = _criar_timeline_consolidada(operacoes_abertas, operacoes_fechadas, proventos, eventos)
+        
+        resultado = {
+            "operacoes_abertas": operacoes_abertas,
+            "operacoes_fechadas": operacoes_fechadas,
+            "proventos": proventos,
+            "eventos_corporativos": eventos,
+            "timeline_items": timeline_items,
+            "total_items": len(timeline_items),
+            "estatisticas": {
+                "operacoes_abertas": len(operacoes_abertas),
+                "operacoes_fechadas": len(operacoes_fechadas),
+                "proventos": len(proventos),
+                "eventos": len(eventos)
+            }
+        }
+        
+        logging.info(f"🚀 [EXTRATO OTIMIZADO] Concluído: {len(timeline_items)} itens para usuário {usuario_id}")
+        return resultado
+        
+    except Exception as e:
+        logging.error(f"🚀 [EXTRATO OTIMIZADO] Erro para usuário {usuario_id}: {e}", exc_info=True)
+        raise
+
+def _obter_operacoes_abertas_filtradas(usuario_id: int, operacoes_fechadas: List[Dict]) -> List[Dict]:
+    """
+    Obtém operações abertas filtradas (sem duplicação com fechadas)
+    """
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, ticker, date, operation, quantity, price, fees, usuario_id
+                FROM operacoes 
+                WHERE usuario_id = ?
+                ORDER BY date DESC, ticker
+            ''', (usuario_id,))
+            
+            operacoes_raw = cursor.fetchall()
+        
+        if not operacoes_raw:
+            return []
+        
+        # Criar set de vendas que fazem parte de posições fechadas
+        vendas_fechadas = set()
+        for fechada in operacoes_fechadas:
+            chave = f"{fechada['ticker']}-{fechada['data_fechamento']}-{fechada['quantidade']}-sell"
+            vendas_fechadas.add(chave)
+        
+        # Filtrar e mapear operações
+        operacoes_filtradas = []
+        for row in operacoes_raw:
+            op_dict = dict(row)
+            
+            # Normalizar dados
+            ticker = op_dict['ticker'].upper().strip()
+            date = str(op_dict['date']).strip()[:10]
+            operation = op_dict['operation'].lower().strip()
+            quantity = int(op_dict['quantity'] or 0)
+            
+            # Filtrar proventos (serão tratados separadamente)
+            if any(x in operation for x in ['dividend', 'jcp', 'rendiment']):
+                continue
+            
+            # Filtrar vendas que fazem parte de posições fechadas
+            chave_operacao = f"{ticker}-{date}-{quantity}-{operation}"
+            if chave_operacao in vendas_fechadas:
+                continue
+            
+            # Mapear operação
+            operacao_mapeada = {
+                "id": op_dict['id'],
+                "date": date,
+                "ticker": ticker,
+                "operation": operation,
+                "quantity": quantity,
+                "price": float(op_dict['price'] or 0),
+                "fees": float(op_dict['fees'] or 0),
+                "category": operation,
+                "type": "operacao_aberta",
+                "visualBranch": "left"
+            }
+            
+            operacoes_filtradas.append(operacao_mapeada)
+        
+        logging.info(f"📊 [OPERAÇÕES ABERTAS] {len(operacoes_filtradas)} operações filtradas para usuário {usuario_id}")
+        return operacoes_filtradas
+        
+    except Exception as e:
+        logging.error(f"❌ Erro ao obter operações abertas: {e}")
+        return []
+
+def _obter_proventos_mapeados(usuario_id: int) -> List[Dict]:
+    """
+    Obtém proventos do usuário já mapeados
+    """
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            # Tentar diferentes nomes de tabela para proventos
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%provento%'")
+            tabelas_provento = cursor.fetchall()
+            
+            if not tabelas_provento:
+                logging.info(f"📊 [PROVENTOS] Nenhuma tabela de proventos encontrada para usuário {usuario_id}")
+                return []
+            
+            nome_tabela = tabelas_provento[0][0]
+            logging.info(f"📊 [PROVENTOS] Usando tabela: {nome_tabela}")
+            
+            cursor.execute(f'''
+                SELECT id, ticker_acao, nome_acao, 
+                       tipo_provento, valor_unitario_provento,
+                       valor_total_recebido, quantidade_possuida_na_data_ex,
+                       dt_pagamento, data_ex
+                FROM {nome_tabela}
+                WHERE usuario_id = ?
+                ORDER BY dt_pagamento DESC
+            ''', (usuario_id,))
+            
+            proventos_raw = cursor.fetchall()
+        
+        if not proventos_raw:
+            return []
+        
+        proventos_mapeados = []
+        for row in proventos_raw:
+            provento_dict = dict(row)
+            
+            # Normalizar tipo de provento
+            tipo = provento_dict['tipo_provento'] or 'dividend'
+            if 'jcp' in tipo.lower():
+                tipo_normalizado = 'jcp'
+            elif 'rendimento' in tipo.lower():
+                tipo_normalizado = 'rendimento'
+            else:
+                tipo_normalizado = 'dividend'
+            
+            provento_mapeado = {
+                "id": provento_dict['id'],
+                "date": str(provento_dict['dt_pagamento'] or provento_dict['data_ex'])[:10],
+                "ticker": provento_dict['ticker_acao'].upper(),
+                "operation": tipo_normalizado,
+                "quantity": int(provento_dict['quantidade_possuida_na_data_ex'] or 0),
+                "price": float(provento_dict['valor_unitario_provento'] or 0),
+                "fees": 0,
+                "type": "provento",
+                "visualBranch": "right",
+                "nome_acao": provento_dict['nome_acao'],
+                "valor_total_recebido": float(provento_dict['valor_total_recebido'] or 0)
+            }
+            
+            proventos_mapeados.append(provento_mapeado)
+        
+        logging.info(f"📊 [PROVENTOS] {len(proventos_mapeados)} proventos mapeados para usuário {usuario_id}")
+        return proventos_mapeados
+        
+    except Exception as e:
+        logging.error(f"❌ Erro ao obter proventos: {e}")
+        return []
+
+def _obter_eventos_corporativos_usuario(usuario_id: int, operacoes_abertas: List[Dict], operacoes_fechadas: List[Dict]) -> List[Dict]:
+    """
+    Obtém eventos corporativos relevantes para o usuário
+    """
+    try:
+        # Obter todos os tickers do usuário
+        tickers_usuario = set()
+        for op in operacoes_abertas:
+            tickers_usuario.add(op['ticker'])
+        for op in operacoes_fechadas:
+            tickers_usuario.add(op['ticker'])
+        
+        if not tickers_usuario:
+            return []
+        
+        # Mapeamento conhecido de tickers para IDs
+        ticker_to_id = {
+            'BBAS3': 4, 'ITUB4': 9, 'PETR4': 10, 'VALE3': 24, 'WEGE3': 27
+        }
+        
+        # Filtrar apenas IDs de ações que o usuário possui/possuía
+        ids_relevantes = []
+        for ticker in tickers_usuario:
+            if ticker in ticker_to_id:
+                ids_relevantes.append(ticker_to_id[ticker])
+        
+        if not ids_relevantes:
+            return []
+        
+        with get_db() as conn:
+            cursor = conn.cursor()
+            placeholders = ','.join(['?' for _ in ids_relevantes])
+            cursor.execute(f'''
+                SELECT id_acao, evento, data_ex, data_registro, razao
+                FROM eventos_corporativos 
+                WHERE id_acao IN ({placeholders})
+                ORDER BY data_ex DESC
+                LIMIT 100
+            ''', ids_relevantes)
+            
+            eventos_raw = cursor.fetchall()
+        
+        eventos_mapeados = []
+        id_to_ticker = {v: k for k, v in ticker_to_id.items()}
+        
+        for row in eventos_raw:
+            evento_dict = dict(row)
+            ticker = id_to_ticker.get(evento_dict['id_acao'], f"ID_{evento_dict['id_acao']}")
+            
+            # Normalizar tipo do evento para compatibilidade com frontend
+            evento_tipo = evento_dict['evento'].lower().strip()
+            if 'bonificacao' in evento_tipo or 'bonificação' in evento_tipo:
+                operation_type = 'bonificacao'
+            elif 'desdobramento' in evento_tipo:
+                operation_type = 'desdobramento'
+            elif 'agrupamento' in evento_tipo:
+                operation_type = 'agrupamento'
+            else:
+                operation_type = 'evento_corporativo'  # Fallback para tipos não mapeados
+            
+            # 🎯 CALCULAR IMPACTO REAL DO EVENTO NA POSIÇÃO DO USUÁRIO
+            quantidade_antes, quantidade_depois, preco_antes, preco_depois = _calcular_impacto_evento_corporativo(
+                usuario_id, ticker, evento_dict['data_ex'], evento_dict['razao'], operation_type
+            )
+            
+            # 🚨 FILTRO CRÍTICO: Só incluir eventos onde usuário REALMENTE tinha ações na data
+            if quantidade_antes <= 0:
+                continue  # Pular este evento se usuário não tinha ações
+            
+            evento_mapeado = {
+                "id": evento_dict['id_acao'] * 1000 + hash(evento_dict['evento']) % 1000,
+                "date": str(evento_dict['data_ex'] or evento_dict['data_registro'])[:10],
+                "ticker": ticker,
+                "operation": operation_type,
+                "quantity": quantidade_depois,  # Quantidade APÓS o evento
+                "price": preco_depois,  # Preço médio APÓS o evento
+                "fees": 0,
+                "type": "evento_corporativo",
+                "visualBranch": "left",
+                "evento": evento_dict['evento'],
+                "razao": evento_dict['razao'] or '',
+                # 📊 Dados didáticos para o frontend
+                "quantidade_antes": quantidade_antes,
+                "quantidade_depois": quantidade_depois,
+                "preco_antes": preco_antes,
+                "preco_depois": preco_depois,
+                "impacto_didatico": _gerar_explicacao_didatica(
+                    operation_type, evento_dict['razao'], quantidade_antes, quantidade_depois, 
+                    preco_antes, preco_depois, ticker
+                )
+            }
+            
+            eventos_mapeados.append(evento_mapeado)
+        
+        logging.info(f"📊 [EVENTOS] {len(eventos_mapeados)} eventos mapeados para usuário {usuario_id}")
+        return eventos_mapeados
+        
+    except Exception as e:
+        logging.error(f"❌ Erro ao obter eventos corporativos: {e}")
+        return []
+
+def _calcular_impacto_evento_corporativo(usuario_id: int, ticker: str, data_evento: str, razao: str, tipo_evento: str) -> tuple:
+    """
+    🎯 Calcula o impacto real de um evento corporativo na posição do usuário
+    
+    Returns: (quantidade_antes, quantidade_depois, preco_antes, preco_depois)
+    """
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Buscar todas as operações do usuário para este ticker até a data do evento
+            cursor.execute('''
+                SELECT date, operation, quantity, price
+                FROM operacoes 
+                WHERE usuario_id = ? AND ticker = ? AND date <= ?
+                ORDER BY date
+            ''', (usuario_id, ticker, data_evento))
+            
+            operacoes = cursor.fetchall()
+            
+            # Calcular posição e preço médio antes do evento
+            quantidade_total = 0
+            valor_investido_total = 0
+            
+            for op in operacoes:
+                op_dict = dict(op)
+                operation = op_dict['operation'].lower()
+                quantity = op_dict['quantity']
+                price = op_dict['price']
+                
+                if operation in ['buy', 'compra']:
+                    quantidade_total += quantity
+                    valor_investido_total += (quantity * price)
+                elif operation in ['sell', 'venda']:
+                    # Calcular preço médio atual para ajustar valor investido
+                    if quantidade_total > 0:
+                        preco_medio_atual = valor_investido_total / quantidade_total
+                        valor_vendido = quantity * preco_medio_atual
+                        valor_investido_total -= valor_vendido
+                    quantidade_total -= quantity
+            
+            # Se usuário não tinha posição na data do evento
+            if quantidade_total <= 0:
+                return (0, 0, 0.0, 0.0)
+            
+            preco_medio_antes = valor_investido_total / quantidade_total if quantidade_total > 0 else 0
+            
+            # Aplicar evento corporativo
+            if not razao or ':' not in razao:
+                return (quantidade_total, quantidade_total, preco_medio_antes, preco_medio_antes)
+            
+            try:
+                numerador, denominador = map(int, razao.split(':'))
+            except:
+                return (quantidade_total, quantidade_total, preco_medio_antes, preco_medio_antes)
+            
+            # Calcular nova quantidade e preço baseado no tipo de evento
+            if tipo_evento == 'desdobramento':
+                # Desdobramento: multiplica ações, divide preço
+                fator_multiplicacao = denominador / numerador
+                quantidade_depois = int(quantidade_total * fator_multiplicacao)
+                preco_depois = preco_medio_antes / fator_multiplicacao
+                
+            elif tipo_evento == 'agrupamento':
+                # Agrupamento: divide ações, multiplica preço
+                fator_divisao = numerador / denominador  
+                quantidade_depois = int(quantidade_total / fator_divisao)
+                preco_depois = preco_medio_antes * fator_divisao
+                
+            elif tipo_evento == 'bonificacao':
+                # Bonificação: ganha ações gratuitas
+                acoes_ganhas = int(quantidade_total * (numerador / denominador))
+                quantidade_depois = quantidade_total + acoes_ganhas
+                # Preço se dilui proporcionalmente
+                preco_depois = preco_medio_antes * (quantidade_total / quantidade_depois)
+                
+            else:
+                # Fallback: sem alteração
+                quantidade_depois = quantidade_total
+                preco_depois = preco_medio_antes
+            
+            return (quantidade_total, quantidade_depois, preco_medio_antes, preco_depois)
+            
+    except Exception as e:
+        logging.error(f"❌ Erro ao calcular impacto do evento {tipo_evento}: {e}")
+        return (0, 0, 0.0, 0.0)
+
+def _gerar_explicacao_didatica(tipo_evento: str, razao: str, qtd_antes: int, qtd_depois: int, 
+                               preco_antes: float, preco_depois: float, ticker: str) -> str:
+    """
+    🎓 Gera explicação didática e acolhedora para investidores iniciantes
+    """
+    if qtd_antes <= 0:
+        return f"Você não possuía ações de {ticker} na data deste evento corporativo."
+    
+    if not razao or ':' not in razao:
+        return f"Evento corporativo em {ticker}. Suas {qtd_antes} ações não foram afetadas."
+    
+    try:
+        numerador, denominador = map(int, razao.split(':'))
+    except:
+        return f"Evento corporativo em {ticker}. Suas {qtd_antes} ações podem ter sido afetadas."
+    
+    if tipo_evento == 'desdobramento':
+        if qtd_depois > qtd_antes:
+            multiplicador = qtd_depois / qtd_antes
+            return (
+                f"🎉 **Suas ações se multiplicaram!**\\n\\n"
+                f"**Antes:** {qtd_antes} ações a R$ {preco_antes:.2f} cada\\n"
+                f"**Depois:** {qtd_depois} ações a R$ {preco_depois:.2f} cada\\n\\n"
+                f"🔢 **Proporção {razao}:** Cada {numerador} ação virou {denominador} ações\\n"
+                f"📈 **Resultado:** Você ganhou {qtd_depois - qtd_antes} ações extras!\\n"
+                f"💰 **Seu patrimônio:** Continua o mesmo (R$ {qtd_antes * preco_antes:.2f})"
+            )
+    
+    elif tipo_evento == 'bonificacao':
+        acoes_ganhas = qtd_depois - qtd_antes
+        percentual_bonus = (acoes_ganhas / qtd_antes * 100) if qtd_antes > 0 else 0
+        return (
+            f"🎁 **Você ganhou ações de presente!**\\n\\n"
+            f"**Antes:** {qtd_antes} ações a R$ {preco_antes:.2f} cada\\n"
+            f"**Depois:** {qtd_depois} ações a R$ {preco_depois:.2f} cada\\n\\n"
+            f"🎯 **Bônus:** +{acoes_ganhas} ações gratuitas ({percentual_bonus:.1f}% de bônus)\\n"
+            f"📊 **Proporção {razao}:** Para cada {denominador} ações, você ganhou {numerador}\\n"
+            f"💝 **Presente da empresa:** {ticker} distribuiu ações como bonificação!"
+        )
+    
+    elif tipo_evento == 'agrupamento':
+        return (
+            f"🔄 **Suas ações foram reagrupadas**\\n\\n"
+            f"**Antes:** {qtd_antes} ações a R$ {preco_antes:.2f} cada\\n"
+            f"**Depois:** {qtd_depois} ações a R$ {preco_depois:.2f} cada\\n\\n"
+            f"📉 **Proporção {razao}:** Cada {numerador} ações viraram {denominador}\\n"
+            f"⚖️ **Resultado:** Menos ações, mas preço maior por ação\\n"
+            f"💰 **Seu patrimônio:** Continua o mesmo (R$ {qtd_antes * preco_antes:.2f})"
+        )
+    
+    return f"Evento corporativo em {ticker}: de {qtd_antes} para {qtd_depois} ações (proporção {razao})."
+
+def _criar_timeline_consolidada(operacoes_abertas: List[Dict], operacoes_fechadas: List[Dict], 
+                               proventos: List[Dict], eventos: List[Dict]) -> List[Dict]:
+    """
+    Cria timeline consolidada com todos os itens ordenados por data
+    """
+    try:
+        # Mapear operações fechadas para formato timeline
+        fechadas_timeline = []
+        for op in operacoes_fechadas:
+            item_timeline = {
+                "id": op['id'],
+                "date": op['data_fechamento'],
+                "ticker": op['ticker'],
+                "operation": 'fechamento',
+                "quantity": op['quantidade'],
+                "price": op['valor_venda'] / op['quantidade'] if op['quantidade'] > 0 else 0,
+                "fees": 0,
+                "type": "operacao_fechada",
+                "visualBranch": "left",
+                "resultado": op.get('resultado', 0),
+                "valor_compra": op.get('valor_compra', 0),
+                "valor_venda": op.get('valor_venda', 0),
+                "day_trade": op.get('day_trade', False),
+                "percentual_lucro": op.get('percentual_lucro', 0)
+            }
+            fechadas_timeline.append(item_timeline)
+        
+        # Consolidar todos os itens
+        todos_itens = []
+        todos_itens.extend(operacoes_abertas)
+        todos_itens.extend(fechadas_timeline)
+        todos_itens.extend(proventos)
+        todos_itens.extend(eventos)
+        
+        # Ordenar por data (mais recentes primeiro) + EVENTOS CORPORATIVOS NO TOPO PARA DEBUG
+        timeline_ordenada = sorted(todos_itens, key=lambda x: (
+            0 if x.get('type') == 'evento_corporativo' else 1,  # Eventos corporativos primeiro
+            x['date']
+        ), reverse=True)
+        
+        logging.info(f"📊 [TIMELINE] {len(timeline_ordenada)} itens consolidados")
+        return timeline_ordenada
+        
+    except Exception as e:
+        logging.error(f"❌ Erro ao criar timeline: {e}")
+        return []
+
 def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[Dict]], resultados_map: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
     """
     ✅ CORRIGIDO: Calcula prejuízos acumulados considerando compensações e prejuízos de meses anteriores

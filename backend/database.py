@@ -37,12 +37,12 @@ def migrar_resultados_mensais():
         if "irrf_swing" not in colunas:
             try:
                 cursor.execute("ALTER TABLE resultados_mensais ADD COLUMN irrf_swing REAL DEFAULT 0.0")
-                print("[DB MIGRATION] ✅ Coluna irrf_swing adicionada à tabela resultados_mensais")
+                print("[DB MIGRATION] Coluna irrf_swing adicionada à tabela resultados_mensais")
                 conn.commit()
             except Exception as e:
-                print(f"[DB MIGRATION] ❌ Erro ao adicionar coluna irrf_swing: {e}")
+                print(f"[DB MIGRATION] Erro ao adicionar coluna irrf_swing: {e}")
         else:
-            print("[DB MIGRATION] ✅ Coluna irrf_swing já existe")
+            print("[DB MIGRATION] Coluna irrf_swing ja existe")
 import sqlite3
 from datetime import date, datetime
 from contextlib import contextmanager
@@ -2117,3 +2117,327 @@ def verificar_cotacoes_existentes(acao_id: int, data_inicio: str, data_fim: str)
         
         result = cursor.fetchone()
         return result['total'] > 0
+
+# ============================================
+# FUNÇÕES PARA CONFIGURAÇÕES DE USUÁRIO
+# ============================================
+
+def obter_configuracao_usuario(usuario_id: int) -> Dict[str, Any]:
+    """
+    Obtém as configurações de um usuário específico.
+    
+    Args:
+        usuario_id: ID do usuário
+        
+    Returns:
+        Dict[str, Any]: Configurações do usuário ou None se não encontrado
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM usuario_configuracoes
+            WHERE usuario_id = ?
+        ''', (usuario_id,))
+        
+        result = cursor.fetchone()
+        if result:
+            config = dict(result)
+            # Converter configuracoes_dashboard de JSON string para dict
+            if config.get('configuracoes_dashboard'):
+                import json
+                config['configuracoes_dashboard'] = json.loads(config['configuracoes_dashboard'])
+            else:
+                config['configuracoes_dashboard'] = {}
+            return config
+        return None
+
+def atualizar_configuracao_usuario(usuario_id: int, configuracoes: Dict[str, Any]) -> bool:
+    """
+    Atualiza as configurações de um usuário.
+    
+    Args:
+        usuario_id: ID do usuário
+        configuracoes: Dicionário com as configurações a serem atualizadas
+        
+    Returns:
+        bool: True se atualizou com sucesso, False caso contrário
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Campos válidos para atualização
+        campos_validos = [
+            'nome_exibicao', 'avatar_url', 'tema', 'idioma', 'moeda_preferida',
+            'notificacoes_email', 'notificacoes_push', 'exibir_valores_totais',
+            'formato_data', 'precisao_decimal', 'configuracoes_dashboard'
+        ]
+        
+        updates = []
+        valores = []
+        
+        for campo, valor in configuracoes.items():
+            if campo in campos_validos and valor is not None:
+                updates.append(f"{campo} = ?")
+                if campo == 'configuracoes_dashboard':
+                    import json
+                    valores.append(json.dumps(valor))
+                else:
+                    valores.append(valor)
+        
+        if not updates:
+            return False
+        
+        # Adicionar data_atualizacao
+        updates.append("data_atualizacao = CURRENT_TIMESTAMP")
+        valores.append(usuario_id)
+        
+        query = f'''
+            UPDATE usuario_configuracoes 
+            SET {', '.join(updates)}
+            WHERE usuario_id = ?
+        '''
+        
+        cursor.execute(query, valores)
+        conn.commit()
+        
+        return cursor.rowcount > 0
+
+def criar_configuracao_usuario_padrao(usuario_id: int) -> int:
+    """
+    Cria configuração padrão para um usuário novo.
+    
+    Args:
+        usuario_id: ID do usuário
+        
+    Returns:
+        int: ID da configuração criada
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        import json
+        configuracoes_dashboard = json.dumps({
+            'widgets_visiveis': ['carteira', 'resultados', 'operacoes_recentes', 'darfs'],
+            'ordem_widgets': ['carteira', 'resultados', 'operacoes_recentes', 'darfs'],
+            'modo_visualizacao': 'cards'
+        })
+        
+        cursor.execute('''
+            INSERT INTO usuario_configuracoes 
+            (usuario_id, tema, idioma, moeda_preferida, 
+             notificacoes_email, notificacoes_push, exibir_valores_totais, 
+             formato_data, precisao_decimal, configuracoes_dashboard)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (usuario_id, 'light', 'pt-br', 'BRL', 1, 1, 1, 'dd/mm/yyyy', 2, configuracoes_dashboard))
+        
+        conn.commit()
+        return cursor.lastrowid
+
+def deletar_configuracao_usuario(usuario_id: int) -> bool:
+    """
+    Remove as configurações de um usuário.
+    
+    Args:
+        usuario_id: ID do usuário
+        
+    Returns:
+        bool: True se removeu com sucesso, False caso contrário
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            DELETE FROM usuario_configuracoes
+            WHERE usuario_id = ?
+        ''', (usuario_id,))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+
+# ============================================
+# FUNÇÕES PARA SISTEMA DE MENSAGERIA
+# ============================================
+
+def criar_mensagem(usuario_id: int, titulo: str, conteudo: str, 
+                   tipo: str = "info", prioridade: str = "normal", 
+                   categoria: str = "geral", remetente: str = "sistema",
+                   acao_url: str = None, acao_texto: str = None, 
+                   expirar_em: str = None) -> int:
+    """
+    Cria uma nova mensagem para um usuário.
+    
+    Returns:
+        int: ID da mensagem criada
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO mensagens 
+            (usuario_id, titulo, conteudo, tipo, prioridade, categoria, 
+             remetente, acao_url, acao_texto, expirar_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (usuario_id, titulo, conteudo, tipo, prioridade, categoria,
+              remetente, acao_url, acao_texto, expirar_em))
+        
+        conn.commit()
+        return cursor.lastrowid
+
+def obter_mensagens_usuario(usuario_id: int, apenas_nao_lidas: bool = False, 
+                           categoria: str = None, limite: int = None) -> List[Dict[str, Any]]:
+    """
+    Obtém mensagens de um usuário com filtros opcionais.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        query = '''
+            SELECT * FROM mensagens 
+            WHERE usuario_id = ?
+        '''
+        params = [usuario_id]
+        
+        if apenas_nao_lidas:
+            query += " AND lida = 0"
+        
+        if categoria:
+            query += " AND categoria = ?"
+            params.append(categoria)
+            
+        # Filtrar mensagens expiradas
+        query += " AND (expirar_em IS NULL OR expirar_em > datetime('now'))"
+        
+        query += " ORDER BY data_criacao DESC"
+        
+        if limite:
+            query += f" LIMIT {limite}"
+        
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+def marcar_mensagem_como_lida(mensagem_id: int, usuario_id: int) -> bool:
+    """
+    Marca uma mensagem como lida.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE mensagens 
+            SET lida = 1, data_leitura = datetime('now')
+            WHERE id = ? AND usuario_id = ?
+        ''', (mensagem_id, usuario_id))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+
+def marcar_todas_mensagens_como_lidas(usuario_id: int) -> int:
+    """
+    Marca todas as mensagens de um usuário como lidas.
+    
+    Returns:
+        int: Número de mensagens marcadas como lidas
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE mensagens 
+            SET lida = 1, data_leitura = datetime('now')
+            WHERE usuario_id = ? AND lida = 0
+        ''', (usuario_id,))
+        
+        conn.commit()
+        return cursor.rowcount
+
+def deletar_mensagem(mensagem_id: int, usuario_id: int) -> bool:
+    """
+    Deleta uma mensagem específica.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            DELETE FROM mensagens 
+            WHERE id = ? AND usuario_id = ?
+        ''', (mensagem_id, usuario_id))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+
+def obter_estatisticas_mensagens(usuario_id: int) -> Dict[str, Any]:
+    """
+    Obtém estatísticas das mensagens de um usuário.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Total e não lidas
+        cursor.execute('''
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN lida = 0 THEN 1 ELSE 0 END) as nao_lidas
+            FROM mensagens 
+            WHERE usuario_id = ?
+            AND (expirar_em IS NULL OR expirar_em > datetime('now'))
+        ''', (usuario_id,))
+        totals = cursor.fetchone()
+        
+        # Por tipo
+        cursor.execute('''
+            SELECT tipo, COUNT(*) as count
+            FROM mensagens 
+            WHERE usuario_id = ? AND lida = 0
+            AND (expirar_em IS NULL OR expirar_em > datetime('now'))
+            GROUP BY tipo
+        ''', (usuario_id,))
+        por_tipo = {row['tipo']: row['count'] for row in cursor.fetchall()}
+        
+        # Por prioridade
+        cursor.execute('''
+            SELECT prioridade, COUNT(*) as count
+            FROM mensagens 
+            WHERE usuario_id = ? AND lida = 0
+            AND (expirar_em IS NULL OR expirar_em > datetime('now'))
+            GROUP BY prioridade
+        ''', (usuario_id,))
+        por_prioridade = {row['prioridade']: row['count'] for row in cursor.fetchall()}
+        
+        # Por categoria
+        cursor.execute('''
+            SELECT categoria, COUNT(*) as count
+            FROM mensagens 
+            WHERE usuario_id = ? AND lida = 0
+            AND (expirar_em IS NULL OR expirar_em > datetime('now'))
+            GROUP BY categoria
+        ''', (usuario_id,))
+        por_categoria = {row['categoria']: row['count'] for row in cursor.fetchall()}
+        
+        return {
+            'total': totals['total'],
+            'nao_lidas': totals['nao_lidas'],
+            'por_tipo': por_tipo,
+            'por_prioridade': por_prioridade,
+            'por_categoria': por_categoria
+        }
+
+def limpar_mensagens_expiradas() -> int:
+    """
+    Remove mensagens expiradas do banco de dados.
+    
+    Returns:
+        int: Número de mensagens removidas
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            DELETE FROM mensagens 
+            WHERE expirar_em IS NOT NULL 
+            AND expirar_em <= datetime('now')
+        ''')
+        
+        conn.commit()
+        return cursor.rowcount
