@@ -89,7 +89,9 @@ from services import (
     reverter_importacao_service,  # NOVA LINHA
     # Duplicate analysis services
     analisar_duplicatas_service,
-    limpar_importacoes_service
+    limpar_importacoes_service,
+    # Ações services
+    obter_informacoes_acao_service
 )
 
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -147,6 +149,22 @@ async def listar_acoes(): # Renamed function
         # Log a exceção 'e' aqui para depuração
         logging.error(f"Error in /api/acoes: {e}", exc_info=True) # Updated log message
         raise HTTPException(status_code=500, detail=f"Erro interno ao listar ações: {str(e)}")
+
+@app.get("/api/acoes/info/{ticker}", response_model=Dict[str, Any], tags=["Ações"])
+async def obter_informacoes_acao(
+    ticker: str = Path(..., description="Ticker da ação para obter informações")
+):
+    """
+    Obtém informações específicas de uma ação por ticker (nome, logo, etc.).
+    Este endpoint é público e não requer autenticação.
+    """
+    try:
+        return obter_informacoes_acao_service(ticker=ticker.upper())
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logging.error(f"Error in /api/acoes/info/{ticker}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao obter informações da ação: {str(e)}")
 
 # Endpoints de Proventos
 

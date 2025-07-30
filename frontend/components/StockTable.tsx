@@ -123,6 +123,9 @@ export function StockTable({
   const [cotacoes, setCotacoes] = useState<Map<string, Cotacao>>(new Map());
   const [loadingCotacoes, setLoadingCotacoes] = useState<boolean>(false);
 
+  // Estado para informações das ações (logos)
+  const [infosAcoes, setInfosAcoes] = useState<Map<string, {ticker: string, nome: string, logo?: string}>>(new Map());
+
   // Função para buscar cotações mais recentes
   const fetchCotacoes = async () => {
     if (carteira.length === 0) return;
@@ -166,9 +169,45 @@ export function StockTable({
     }
   };
 
-  // Buscar cotações quando a carteira mudar
+  // Função para buscar informações das ações (logos)
+  const fetchInfosAcoes = async () => {
+    if (carteira.length === 0) return;
+    
+    try {
+      const infosMap = new Map<string, {ticker: string, nome: string, logo?: string}>();
+      
+      // Buscar informações para cada ticker da carteira
+      await Promise.all(
+        carteira.map(async (item) => {
+          try {
+            const response = await api.get(`/acoes/info/${item.ticker}`);
+            
+            if (response.data) {
+              infosMap.set(item.ticker, {
+                ticker: response.data.ticker,
+                nome: response.data.nome,
+                logo: response.data.logo
+              });
+            }
+          } catch (error: any) {
+            // Se for 404, apenas log de debug, não é erro crítico
+            if (error.response?.status !== 404) {
+              console.warn(`Erro ao buscar info da ação ${item.ticker}:`, error);
+            }
+          }
+        })
+      );
+      
+      setInfosAcoes(infosMap);
+    } catch (error) {
+      console.error('Erro ao buscar informações das ações:', error);
+    }
+  };
+
+  // Buscar cotações e informações quando a carteira mudar
   useEffect(() => {
     fetchCotacoes();
+    fetchInfosAcoes();
   }, [carteira]);
 
   // Função para obter preço atual de uma ação
@@ -568,15 +607,32 @@ export function StockTable({
                 return (
                   <TableRow key={typedItem.ticker}>
                     <TableCell className="font-medium">
-                      <Link href={`/acao/${typedItem.ticker}`} passHref>
-                        <Badge
-                          variant="outline"
-                          className="hover:underline cursor-pointer"
-                          title={typedItem.nome || undefined}
-                        >
-                          {typedItem.ticker}
-                        </Badge>
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        {/* Logo discreto da ação */}
+                        {infosAcoes.get(typedItem.ticker)?.logo ? (
+                          <img 
+                            src={infosAcoes.get(typedItem.ticker)?.logo} 
+                            alt={`Logo ${typedItem.ticker}`}
+                            className="h-6 w-6 rounded object-cover flex-shrink-0"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <div className="h-6 w-6 rounded bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center flex-shrink-0">
+                            <Target className="h-3 w-3 text-gray-500" />
+                          </div>
+                        )}
+                        <Link href={`/acao/${typedItem.ticker}`} passHref>
+                          <Badge
+                            variant="outline"
+                            className="hover:underline cursor-pointer"
+                            title={typedItem.nome || undefined}
+                          >
+                            {typedItem.ticker}
+                          </Badge>
+                        </Link>
+                      </div>
                     </TableCell>
                     <TableCell className="text-right">
                       {formatNumber(typedItem.quantidade)}

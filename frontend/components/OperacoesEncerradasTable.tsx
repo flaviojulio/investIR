@@ -71,6 +71,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { OperacaoFechada, ResultadoMensal } from "@/lib/types";
+import { api } from "@/lib/api";
 
 // Tipo para operação com índice sequencial
 type OperacaoComIndice = OperacaoFechada & {
@@ -251,6 +252,7 @@ interface OperationRowProps {
   handleOpenDarfModal: (op: OperacaoFechada) => void;
   operacoesFechadas: OperacaoFechada[];
   resultadosMensais?: ResultadoMensal[]; // ✅ Tornar opcional se não usado
+  infosAcoes: Map<string, {ticker: string, nome: string, logo?: string}>; // ✅ Novo parâmetro
 }
 
 // Subcomponent: Filters
@@ -815,6 +817,7 @@ const OperationRow = React.memo(({
   handleOpenDarfModal,
   operacoesFechadas,
   resultadosMensais, // ✅ Usar apenas a prop da interface oficial
+  infosAcoes, // ✅ Nova prop para logos
 }: OperationRowProps) => {
   // ✅ Usar a interface oficial
   const rowKey = `${op.ticker}-${op.data_abertura}-${op.data_fechamento}-${op.quantidade}-${index}`;
@@ -846,14 +849,37 @@ const OperationRow = React.memo(({
 
         <div className="col-span-2 flex items-center">
           <div className="flex items-center space-x-3">
-            <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
-              <span className="text-white font-semibold text-lg">
-                {op.ticker}
-              </span>
-            </div>
+            {/* Logo discreto da ação ou fallback com badge estilizado */}
+            {infosAcoes.get(op.ticker)?.logo ? (
+              <div className="flex-shrink-0 w-12 h-12 rounded-xl overflow-hidden border-2 border-white shadow-md">
+                <img 
+                  src={infosAcoes.get(op.ticker)?.logo} 
+                  alt={`Logo ${op.ticker}`}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    // Fallback para badge estilizado
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) {
+                      parent.innerHTML = `
+                        <div class="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                          <span class="text-white font-semibold text-lg">${op.ticker}</span>
+                        </div>
+                      `;
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                <span className="text-white font-semibold text-lg">
+                  {op.ticker}
+                </span>
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-gray-800 truncate">
-                {op.ticker}
+                {infosAcoes.get(op.ticker)?.nome || op.ticker}
               </p>
               <div className="flex items-center gap-2 mt-1">
                 <span
@@ -1460,6 +1486,9 @@ export default function OperacoesEncerradasTable(
   // Pagination state - Reduzido para melhor performance
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  // Estado para informações das ações (logos)
+  const [infosAcoes, setInfosAcoes] = useState<Map<string, {ticker: string, nome: string, logo?: string}>>(new Map());
   // Add any other states needed for sorting, expansion, etc. (not shown for brevity)
 
   // Unique months and statuses for filters
@@ -1596,6 +1625,46 @@ export default function OperacoesEncerradasTable(
   React.useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, filterType, filterMonth, filterStatus]);
+
+  // Função para buscar informações das ações (logos)
+  const fetchInfosAcoes = useCallback(async () => {
+    if (!operacoesComStatusCorrigido || operacoesComStatusCorrigido.length === 0) return;
+    
+    try {
+      const infosMap = new Map<string, {ticker: string, nome: string, logo?: string}>();
+      const tickers = Array.from(new Set(operacoesComStatusCorrigido.map(op => op.ticker)));
+      
+      // Buscar informações para cada ticker único
+      await Promise.all(
+        tickers.map(async (ticker) => {
+          try {
+            const response = await api.get(`/acoes/info/${ticker}`);
+            
+            if (response.data) {
+              infosMap.set(ticker, {
+                ticker: response.data.ticker,
+                nome: response.data.nome,
+                logo: response.data.logo
+              });
+            }
+          } catch (error: any) {
+            if (error.response?.status !== 404) {
+              console.warn(`Erro ao buscar info da ação ${ticker}:`, error);
+            }
+          }
+        })
+      );
+      
+      setInfosAcoes(infosMap);
+    } catch (error) {
+      console.error('Erro ao buscar informações das ações:', error);
+    }
+  }, [operacoesComStatusCorrigido]);
+
+  // Buscar informações das ações quando as operações mudarem
+  React.useEffect(() => {
+    fetchInfosAcoes();
+  }, [fetchInfosAcoes]);
 
   const totalResultadoOperacoes = processedOperacoes.reduce(
     (acc, op) => acc + op.resultado,
@@ -1830,6 +1899,7 @@ export default function OperacoesEncerradasTable(
                   handleOpenDarfModal={handleOpenDarfModal}
                   operacoesFechadas={operacoesComStatusCorrigido}
                   resultadosMensais={resultadosMensais} // ✅ Apenas uma vez
+                  infosAcoes={infosAcoes} // ✅ Nova prop para logos
                 />
               );
             })}

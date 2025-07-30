@@ -1162,6 +1162,36 @@ def listar_todas_acoes_service() -> List[Dict[str, Any]]: # Renamed from listar_
     """
     return obter_todas_acoes() # Renamed from obter_todos_stocks
 
+def obter_informacoes_acao_service(ticker: str) -> Dict[str, Any]:
+    """
+    Serviço para obter informações de uma ação específica por ticker.
+    Retorna ticker, nome e logo da ação.
+    """
+    try:
+        # Buscar ação por ticker no banco de dados
+        import sqlite3
+        with sqlite3.connect("acoes_ir.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT ticker, nome, logo FROM acoes WHERE UPPER(ticker) = UPPER(?)",
+                (ticker,)
+            )
+            resultado = cursor.fetchone()
+            
+            if not resultado:
+                raise HTTPException(status_code=404, detail=f"Ação {ticker} não encontrada.")
+            
+            return {
+                "ticker": resultado[0],
+                "nome": resultado[1],
+                "logo": resultado[2]
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Erro ao buscar informações da ação {ticker}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro interno ao buscar ação: {str(e)}")
+
 # --- Serviços de Proventos ---
 
 def registrar_provento_service(id_acao_url: int, provento_in: ProventoCreate) -> ProventoInfo:
@@ -2766,7 +2796,9 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
             ganho_final_swing = ganho_tributavel_swing - valor_a_compensar_swing
             prejuizo_acumulado_swing = (prejuizo_acumulado_swing - valor_a_compensar_swing) + abs(min(0, resultado_swing))
             
-            imposto_swing = max(0, ganho_final_swing) * 0.15
+            # ✅ CORREÇÃO: Swing trade deve considerar IRRF
+            imposto_bruto_swing = max(0, ganho_final_swing) * 0.15
+            imposto_swing = max(0, imposto_bruto_swing - irrf_swing)
 
             # Cálculos day trade
             resultado_day = res_mes['day_trade']['resultado']
@@ -2786,8 +2818,8 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 "isento_swing": isento_swing,
                 "irrf_swing": irrf_swing,  # ✅ NOVO: IRRF swing
                 "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
-                "ir_devido_swing": imposto_swing,
-                "ir_pagar_swing": imposto_swing if imposto_swing >= 10 else 0,
+                "ir_devido_swing": imposto_bruto_swing,  # ✅ CORREÇÃO: IR bruto antes do IRRF
+                "ir_pagar_swing": imposto_swing if imposto_swing >= 10 else 0,  # ✅ CORREÇÃO: IR líquido após IRRF
                 "darf_codigo_swing": "6015",  # Código fixo para swing trade
                 "darf_competencia_swing": darf_competencia_swing,
                 "darf_vencimento_swing": darf_vencimento_swing,
