@@ -1201,9 +1201,9 @@ export function Dashboard() {
       setLoading(true)
       const [carteiraRes, resultadosRes, operacoesRes, operacoesFechadasRes] = await Promise.all([
         api.get("/carteira"),
-        api.get("/resultados"),
+        api.get("/resultados"), // ✅ API para ResultadoMensal
         api.get("/operacoes"),
-        api.get("/operacoes/fechadas"), // Fetch closed operations
+        api.get("/operacoes/fechadas/otimizado"), // ✅ API otimizada para operações fechadas
       ])
 
       setData({

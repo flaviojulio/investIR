@@ -14,6 +14,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 import { 
   Calendar, 
   DollarSign, 
@@ -177,6 +183,13 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
 
   const filteredData = useMemo(() => {
     return resultadosComAtualizacoes.filter(resultado => {
+      // Primeiro, filtrar apenas linhas que têm impostos (DARF > 0 ou day trade com ganho > 0)
+      const temImpostos = (resultado.darf_valor_swing && resultado.darf_valor_swing > 0) ||
+                          (resultado.darf_valor_day && resultado.darf_valor_day > 0) ||
+                          (resultado.ganho_liquido_day && resultado.ganho_liquido_day > 0);
+      
+      if (!temImpostos) return false;
+      
       const matchesSearch = formatMonth(resultado.mes).toLowerCase().includes(searchTerm.toLowerCase());
       
       if (!matchesSearch) return false;
@@ -369,67 +382,71 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
           </Card>
         </div>
 
-        {/* Seção Educativa */}
-        <Card className="border-0 shadow-sm bg-gradient-to-br from-blue-50 to-indigo-50">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2 text-blue-800">
-              <PieChart className="h-5 w-5" />
-              Como Funciona o Imposto sobre Ações
-            </CardTitle>
-            <CardDescription className="text-blue-600">
-              Regras simples para entender sua tributação
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="p-4 bg-white rounded-xl border border-blue-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="p-2 bg-blue-100 rounded-lg">
-                    <Target className="h-4 w-4 text-blue-600" />
-                  </div>
-                  <h4 className="font-semibold text-blue-800">Swing Trade (Normal)</h4>
-                </div>
-                <div className="space-y-2 text-sm text-blue-700">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-3 w-3 text-green-600" />
-                    <span><strong>Isenção:</strong> Até R$ 20.000 em vendas/mês</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Calculator className="h-3 w-3 text-blue-600" />
-                    <span><strong>Imposto:</strong> 15% sobre lucros acima da isenção</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Calendar className="h-3 w-3 text-purple-600" />
-                    <span><strong>Declaração:</strong> Anual no IR</span>
-                  </div>
-                </div>
+        {/* Seção Educativa - Accordion */}
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="como-funciona-imposto" className="border border-blue-200 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50">
+            <AccordionTrigger className="px-6 py-4 hover:no-underline">
+              <div className="flex items-center gap-2">
+                <PieChart className="h-5 w-5 text-blue-600" />
+                <span className="font-semibold text-blue-800 text-lg">
+                  Como Funciona o Imposto sobre Ações
+                </span>
               </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-6">
+              <p className="text-blue-600 mb-4">
+                Regras simples para entender sua tributação
+              </p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="p-4 bg-white rounded-xl border border-blue-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-2 bg-blue-100 rounded-lg">
+                      <Target className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <h4 className="font-semibold text-blue-800">Swing Trade (Normal)</h4>
+                  </div>
+                  <div className="space-y-2 text-sm text-blue-700">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-3 w-3 text-green-600" />
+                      <span><strong>Isenção:</strong> Até R$ 20.000 em vendas/mês</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Calculator className="h-3 w-3 text-blue-600" />
+                      <span><strong>Imposto:</strong> 15% sobre lucros acima da isenção</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-3 w-3 text-purple-600" />
+                      <span><strong>Declaração:</strong> Anual no IR</span>
+                    </div>
+                  </div>
+                </div>
 
-              <div className="p-4 bg-white rounded-xl border border-orange-200">
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="p-2 bg-orange-100 rounded-lg">
-                    <Zap className="h-4 w-4 text-orange-600" />
+                <div className="p-4 bg-white rounded-xl border border-orange-200">
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="p-2 bg-orange-100 rounded-lg">
+                      <Zap className="h-4 w-4 text-orange-600" />
+                    </div>
+                    <h4 className="font-semibold text-orange-800">Day Trade</h4>
                   </div>
-                  <h4 className="font-semibold text-orange-800">Day Trade</h4>
-                </div>
-                <div className="space-y-2 text-sm text-orange-700">
-                  <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-3 w-3 text-red-600" />
-                    <span><strong>Imposto:</strong> 20% sobre TODOS os lucros</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-3 w-3 text-orange-600" />
-                    <span><strong>DARF:</strong> Mensal até último dia útil</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Info className="h-3 w-3 text-blue-600" />
-                    <span><strong>IRRF:</strong> 1% retido automaticamente</span>
+                  <div className="space-y-2 text-sm text-orange-700">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-3 w-3 text-red-600" />
+                      <span><strong>Imposto:</strong> 20% sobre TODOS os lucros</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-3 w-3 text-orange-600" />
+                      <span><strong>DARF:</strong> Mensal até último dia útil</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Info className="h-3 w-3 text-blue-600" />
+                      <span><strong>IRRF:</strong> 1% retido automaticamente</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
 
         {/* DARFs Pendentes */}
         {darfsPendentes > 0 && (
@@ -657,35 +674,39 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
           </div>
         </div>
 
-        {/* Dicas Importantes */}
-        <Card className="border-0 shadow-sm bg-gradient-to-br from-amber-50 to-yellow-50">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2 text-amber-800">
-              <Lightbulb className="h-5 w-5" />
-              Dicas Importantes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3 text-sm">
-              <div className="flex items-start gap-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                <span><strong>Ver Detalhes:</strong> Clique em "Detalhes" ou no menu (⋮) dos badges para análise completa do DARF</span>
+        {/* Dicas Importantes - Accordion */}
+        <Accordion type="single" collapsible className="w-full">
+          <AccordionItem value="dicas-importantes" className="border border-amber-200 rounded-lg bg-gradient-to-br from-amber-50 to-yellow-50">
+            <AccordionTrigger className="px-6 py-4 hover:no-underline">
+              <div className="flex items-center gap-2">
+                <Lightbulb className="h-5 w-5 text-amber-600" />
+                <span className="font-semibold text-amber-800 text-lg">
+                  Dicas Importantes
+                </span>
               </div>
-              <div className="flex items-start gap-2">
-                <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
-                <span><strong>Gerenciar Status:</strong> Use os menus dos badges para alterar status entre Pago e Pendente</span>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-6">
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+                  <span><strong>Ver Detalhes:</strong> Clique em "Detalhes" ou no menu (⋮) dos badges para análise completa do DARF</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
+                  <span><strong>Gerenciar Status:</strong> Use os menus dos badges para alterar status entre Pago e Pendente</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
+                  <span><strong>Prejuízos compensam:</strong> Losses em swing trade ou day trade podem ser usados para reduzir impostos futuros do mesmo tipo</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <div className="w-2 h-2 bg-purple-500 rounded-full mt-2 flex-shrink-0"></div>
+                  <span><strong>Procure ajuda:</strong> Para carteiras grandes ou situações complexas, considere contratar um contador especializado</span>
+                </div>
               </div>
-              <div className="flex items-start gap-2">
-                <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
-                <span><strong>Prejuízos compensam:</strong> Losses em swing trade ou day trade podem ser usados para reduzir impostos futuros do mesmo tipo</span>
-              </div>
-              <div className="flex items-start gap-2">
-                <div className="w-2 h-2 bg-purple-500 rounded-full mt-2 flex-shrink-0"></div>
-                <span><strong>Procure ajuda:</strong> Para carteiras grandes ou situações complexas, considere contratar um contador especializado</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
       </div>
 
       {/* Modal de Detalhes do DARF */}
@@ -704,6 +725,8 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
               resultadoMensal={selectedResultado}
               operacoesFechadas={operacoesFechadas}
               onDarfStatusChange={handleDarfStatusChangeFromModal}
+              onUpdateDashboard={onUpdate}
+              tipoDarf="swing" // Default para swing, mas modal mostrará ambos quando usando ResultadoMensal
             />
           );
         })()

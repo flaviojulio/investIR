@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +28,12 @@ import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import jsPDF from "jspdf";
 import { formatCurrency, formatDate, formatMonthYear } from "@/lib/utils";
+
+// Helper function para calcular preço médio de compra
+const getPrecoMedioCompra = (operacao: any) => {
+  if (!operacao || !operacao.valor_compra || !operacao.quantidade) return 0;
+  return operacao.valor_compra / operacao.quantidade;
+};
 import {
   FileText,
   Download,
@@ -49,10 +55,12 @@ interface DarfDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   operacaoFechada?: OperacaoFechada | null;
-  tipoDarf: "swing" | "daytrade";
-  onUpdateDashboard: () => void;
+  tipoDarf?: "swing" | "daytrade";
+  onUpdateDashboard?: () => void;
   onDarfStatusChange?: (operationKey: string, newStatus: string) => void;
   operacoesFechadas?: OperacaoFechada[];
+  // Nova prop para ResultadoMensal
+  resultadoMensal?: any;
 }
 
 export function DarfDetailsModal({
@@ -63,18 +71,32 @@ export function DarfDetailsModal({
   onUpdateDashboard,
   onDarfStatusChange,
   operacoesFechadas = [],
+  resultadoMensal,
 }: DarfDetailsModalProps) {
   const { toast } = useToast();
   const [isMarkingPaid, setIsMarkingPaid] = useState(false);
   const [isMarkingPendente, setIsMarkingPendente] = useState(false);
+  
+  // ✅ Estado local para status DARF (atualização otimista)
+  const [localDarfStatus, setLocalDarfStatus] = useState<string | null>(null);
 
-  if (!isOpen || !operacaoFechada) {
+  if (!isOpen || (!operacaoFechada && !resultadoMensal)) {
     return null;
   }
 
-  // ✅ CORREÇÃO: Usar apenas dados da API de operações fechadas
+  // Se temos ResultadoMensal, usamos ele; caso contrário, OperacaoFechada
+  const isFromResultadoMensal = !!resultadoMensal;
+
+  // Quando usando ResultadoMensal, criamos modal para swing e day trade separadamente
+  const shouldShowSwingModal = isFromResultadoMensal || (tipoDarf === "swing");
+  const shouldShowDayTradeModal = isFromResultadoMensal || (tipoDarf === "daytrade");
+
+  // ✅ OTIMISTA: Marcar como pago com atualização local imediata
   const handleMarkAsPaid = async () => {
-    if (!operacaoFechada || !operacaoFechada.mes_operacao || !tipoDarf) {
+    const mesOperacao = isFromResultadoMensal ? resultadoMensal?.mes : operacaoFechada?.mes_operacao;
+    const tipoAtual = tipoDarf || "swing";
+    
+    if (!mesOperacao || !tipoAtual) {
       toast({
         title: "❌ Erro",
         description: "Dados insuficientes para marcar DARF como pago.",
@@ -84,41 +106,44 @@ export function DarfDetailsModal({
       return;
     }
 
+    // ✅ Atualização otimista - mudar status imediatamente
+    setLocalDarfStatus("Pago");
     setIsMarkingPaid(true);
+    
     try {
-      // ✅ USANDO: mes_operacao diretamente da operação fechada
       await api.put(
-        `/impostos/darf_status/${operacaoFechada.mes_operacao}/${tipoDarf}`,
+        `/impostos/darf_status/${mesOperacao}/${tipoAtual}`,
         { status: "Pago" }
       );
 
       toast({
         title: "✅ DARF Pago!",
         description: `DARF ${
-          tipoDarf === "swing" ? "Swing Trade" : "Day Trade"
-        } para ${formatMonthYear(
-          operacaoFechada.mes_operacao
-        )} marcado como pago com sucesso.`,
+          tipoAtual === "swing" ? "Swing Trade" : "Day Trade"
+        } para ${formatMonthYear(mesOperacao)} marcado como pago.`,
         className: "bg-green-50 border-green-200 text-green-800",
       });
 
-      // Callback para atualizar status na tabela
-      if (onDarfStatusChange && operacaoFechada) {
-        const operationKey = `${operacaoFechada.ticker}-${operacaoFechada.data_abertura}-${operacaoFechada.data_fechamento}-${operacaoFechada.quantidade}`;
-        onDarfStatusChange(operationKey, "pago");
+      // ✅ Notificar callback para atualizar tabela externa com parâmetros corretos
+      if (onDarfStatusChange) {
+        if (operacaoFechada) {
+          const operationKey = `${operacaoFechada.ticker}-${operacaoFechada.data_abertura}-${operacaoFechada.data_fechamento}-${operacaoFechada.quantidade}`;
+          onDarfStatusChange(operationKey, "pago");
+        } else if (isFromResultadoMensal) {
+          // ✅ CORREÇÃO: Enviar 3 parâmetros como esperado pelo TaxResults
+          onDarfStatusChange(mesOperacao, tipoAtual, "pago");
+        }
       }
 
-      onUpdateDashboard();
-      onClose();
+      // ✅ NÃO fecha modal nem recarrega dashboard - apenas atualiza estado local
     } catch (error: any) {
-      const errorMsg =
-        error.response?.data?.detail || `Erro ao marcar DARF como pago.`;
+      // ✅ Em caso de erro, reverter estado local
+      setLocalDarfStatus(null);
+      
+      const errorMsg = error.response?.data?.detail || `Erro ao marcar DARF como pago.`;
       toast({
         title: "❌ Erro no pagamento",
-        description:
-          typeof errorMsg === "string"
-            ? errorMsg
-            : "Ocorreu um erro inesperado.",
+        description: typeof errorMsg === "string" ? errorMsg : "Ocorreu um erro inesperado.",
         variant: "destructive",
         className: "bg-red-50 border-red-200 text-red-800",
       });
@@ -127,8 +152,12 @@ export function DarfDetailsModal({
     }
   };
 
+  // ✅ OTIMISTA: Marcar como pendente com atualização local imediata
   const handleMarkAsPendente = async () => {
-    if (!operacaoFechada || !operacaoFechada.mes_operacao || !tipoDarf) {
+    const mesOperacao = isFromResultadoMensal ? resultadoMensal?.mes : operacaoFechada?.mes_operacao;
+    const tipoAtual = tipoDarf || "swing";
+    
+    if (!mesOperacao || !tipoAtual) {
       toast({
         title: "❌ Erro",
         description: "Dados insuficientes para marcar DARF como pendente.",
@@ -138,39 +167,44 @@ export function DarfDetailsModal({
       return;
     }
 
+    // ✅ Atualização otimista - mudar status imediatamente
+    setLocalDarfStatus("Pendente");
     setIsMarkingPendente(true);
+    
     try {
-      // ✅ USANDO: mes_operacao diretamente da operação fechada
       await api.put(
-        `/impostos/darf_status/${operacaoFechada.mes_operacao}/${tipoDarf}`,
+        `/impostos/darf_status/${mesOperacao}/${tipoAtual}`,
         { status: "Pendente" }
       );
 
       toast({
         title: "🔄 Status Atualizado",
         description: `DARF ${
-          tipoDarf === "swing" ? "Swing Trade" : "Day Trade"
-        } para ${formatMonthYear(operacaoFechada.mes_operacao)} marcado como pendente.`,
+          tipoAtual === "swing" ? "Swing Trade" : "Day Trade"
+        } para ${formatMonthYear(mesOperacao)} marcado como pendente.`,
         className: "bg-blue-50 border-blue-200 text-blue-800",
       });
 
-      // Callback para atualizar status na tabela
-      if (onDarfStatusChange && operacaoFechada) {
-        const operationKey = `${operacaoFechada.ticker}-${operacaoFechada.data_abertura}-${operacaoFechada.data_fechamento}-${operacaoFechada.quantidade}`;
-        onDarfStatusChange(operationKey, "pendente");
+      // ✅ Notificar callback para atualizar tabela externa com parâmetros corretos
+      if (onDarfStatusChange) {
+        if (operacaoFechada) {
+          const operationKey = `${operacaoFechada.ticker}-${operacaoFechada.data_abertura}-${operacaoFechada.data_fechamento}-${operacaoFechada.quantidade}`;
+          onDarfStatusChange(operationKey, "pendente");
+        } else if (isFromResultadoMensal) {
+          // ✅ CORREÇÃO: Enviar 3 parâmetros como esperado pelo TaxResults
+          onDarfStatusChange(mesOperacao, tipoAtual, "pendente");
+        }
       }
 
-      onUpdateDashboard();
-      onClose();
+      // ✅ NÃO fecha modal nem recarrega dashboard - apenas atualiza estado local
     } catch (error: any) {
-      const errorMsg =
-        error.response?.data?.detail || `Erro ao marcar DARF como pendente.`;
+      // ✅ Em caso de erro, reverter estado local
+      setLocalDarfStatus(null);
+      
+      const errorMsg = error.response?.data?.detail || `Erro ao marcar DARF como pendente.`;
       toast({
         title: "❌ Erro na atualização",
-        description:
-          typeof errorMsg === "string"
-            ? errorMsg
-            : "Ocorreu um erro inesperado.",
+        description: typeof errorMsg === "string" ? errorMsg : "Ocorreu um erro inesperado.",
         variant: "destructive",
         className: "bg-red-50 border-red-200 text-red-800",
       });
@@ -208,12 +242,126 @@ export function DarfDetailsModal({
     });
   };
 
-  // ✅ CORREÇÃO: Usar campos corretos da operação fechada
-  const darfCodigo = "6015"; // Código padrão para IR sobre ganho de capital
+  // Helper functions para extrair dados da fonte correta
+  const getDarfData = () => {
+    if (isFromResultadoMensal) {
+      return {
+        codigo: "6015",
+        competencia: resultadoMensal.mes,
+        valorSwing: resultadoMensal.darf_valor_swing || 0,
+        valorDay: resultadoMensal.darf_valor_day || 0,
+        statusSwing: resultadoMensal.status_darf_swing_trade || 'Pendente',
+        statusDay: resultadoMensal.status_darf_day_trade || 'Pendente',
+      };
+    } else {
+      return {
+        codigo: "6015",
+        competencia: operacaoFechada?.mes_operacao || operacaoFechada?.data_fechamento?.substring(0, 7),
+        valorSwing: tipoDarf === "swing" ? (operacaoFechada?.valor_ir_pagar || 0) : 0,
+        valorDay: tipoDarf === "daytrade" ? (operacaoFechada?.valor_ir_pagar || 0) : 0,
+        statusSwing: tipoDarf === "swing" ? (operacaoFechada?.status_darf || 'Pendente') : 'Pendente',
+        statusDay: tipoDarf === "daytrade" ? (operacaoFechada?.status_darf || 'Pendente') : 'Pendente',
+      };
+    }
+  };
 
-  const darfCompetencia = operacaoFechada.mes_operacao || operacaoFechada.data_fechamento.substring(0, 7);
+  const darfData = getDarfData();
+  const darfCodigo = darfData.codigo;
+  const darfCompetencia = darfData.competencia;
+  
+  // ✅ ENHANCED CALCULATION LOGIC (from DarfComprehensiveModal)
+  const [irrfSwing, setIrrfSwing] = useState<number>(0);
+  const [irrfDay, setIrrfDay] = useState<number>(0);
+  
+  // Enhanced calculation with optimized data detection and IRRF
+  const getEnhancedTaxCalculation = () => {
+    if (isFromResultadoMensal) {
+      // Using monthly result data - apply enhanced logic
+      const mes = resultadoMensal.mes;
+      const lucroLiquidoSwing = resultadoMensal.ganho_liquido_swing || 0;
+      const lucroLiquidoDay = resultadoMensal.ganho_liquido_day || 0;
+      
+      // Calculate tax due with IRRF deduction
+      const impostoDevidoSwing = (resultadoMensal.ir_devido_swing || 0);
+      const impostoDevidoDay = (resultadoMensal.ir_devido_day || 0);
+      
+      // Apply IRRF deduction
+      const impostoLiquidoSwing = Math.max(0, impostoDevidoSwing - irrfSwing);
+      const impostoLiquidoDay = Math.max(0, impostoDevidoDay - irrfDay);
+      
+      // Only collect if >= R$ 10
+      const impostoApagarSwing = impostoLiquidoSwing >= 10 ? impostoLiquidoSwing : 0;
+      const impostoApagarDay = impostoLiquidoDay >= 10 ? impostoLiquidoDay : 0;
+      
+      return {
+        tipo: tipoDarf || 'swing',
+        lucroLiquido: tipoDarf === 'daytrade' ? lucroLiquidoDay : lucroLiquidoSwing,
+        impostoDevido: tipoDarf === 'daytrade' ? impostoDevidoDay : impostoDevidoSwing,
+        impostoLiquido: tipoDarf === 'daytrade' ? impostoLiquidoDay : impostoLiquidoSwing,
+        impostoAPagar: tipoDarf === 'daytrade' ? impostoApagarDay : impostoApagarSwing,
+        irrfAplicavel: tipoDarf === 'daytrade' ? irrfDay : irrfSwing,
+        aliquota: tipoDarf === 'daytrade' ? 0.20 : 0.15,
+        prejuizoDisponivel: 0, // This would need more complex calculation
+        resultadoTributavel: (tipoDarf === 'daytrade' ? impostoDevidoDay : impostoDevidoSwing) / (tipoDarf === 'daytrade' ? 0.20 : 0.15)
+      };
+    } else {
+      // Using operation data - simplified calculation
+      const resultado = operacaoFechada?.resultado || 0;
+      const aliquota = tipoDarf === 'daytrade' ? 0.20 : 0.15;
+      const impostoDevido = Math.max(0, resultado * aliquota);
+      const irrfAplicavel = tipoDarf === 'daytrade' ? irrfDay : irrfSwing;
+      const impostoLiquido = Math.max(0, impostoDevido - irrfAplicavel);
+      const impostoAPagar = impostoLiquido >= 10 ? impostoLiquido : 0;
+      
+      return {
+        tipo: tipoDarf || 'swing',
+        lucroLiquido: resultado,
+        impostoDevido,
+        impostoLiquido,
+        impostoAPagar,
+        irrfAplicavel,
+        aliquota,
+        prejuizoDisponivel: 0,
+        resultadoTributavel: Math.max(0, resultado)
+      };
+    }
+  };
+  
+  const enhancedCalc = getEnhancedTaxCalculation();
+  
+  const darfValorMensal = enhancedCalc.impostoAPagar;
 
-  const darfValorMensal = operacaoFechada.valor_ir_pagar || 0;
+  // ✅ Reset estado local quando modal abre/fecha
+  useEffect(() => {
+    if (isOpen) {
+      // Resetar estado local quando modal abre
+      setLocalDarfStatus(null);
+    }
+  }, [isOpen]);
+
+  // ✅ Fetch IRRF data when modal opens (like DarfComprehensiveModal)
+  useEffect(() => {
+    if (isOpen && isFromResultadoMensal && resultadoMensal?.mes) {
+      const fetchIrrfData = async () => {
+        try {
+          const response = await api.get(`/resultados?mes=${resultadoMensal.mes}`);
+          const resultados = response.data;
+          
+          if (resultados && resultados.length > 0) {
+            const resultado = resultados[0];
+            setIrrfSwing(resultado.irrf_swing || 0);
+            setIrrfDay(resultado.irrf_day || 0);
+          }
+        } catch (error) {
+          console.error("Erro ao buscar dados de IRRF:", error);
+          setIrrfSwing(0);
+          setIrrfDay(0);
+        }
+      };
+      
+      fetchIrrfData();
+    }
+  }, [isOpen, isFromResultadoMensal, resultadoMensal?.mes]);
 
   // ✅ Calcular vencimento baseado na competência
   const darfVencimento = (() => {
@@ -241,18 +389,30 @@ export function DarfDetailsModal({
     return vencimento.toISOString().split("T")[0];
   })();
 
-  const darfStatus = operacaoFechada.status_darf || "Pendente";
+  // ✅ Status com atualização otimista - prioriza estado local
+  const darfStatus = localDarfStatus || (isFromResultadoMensal ? 
+    (tipoDarf === "swing" ? darfData.statusSwing : darfData.statusDay) :
+    (operacaoFechada?.status_darf || "Pendente"));
 
   // ✅ Log para debug
   console.log("🔍 [DARF MODAL] Dados utilizados:", {
     darfValorMensal,
     darfStatus,
-    operacaoFechada: {
+    localDarfStatus,
+    isFromResultadoMensal,
+    operacaoFechada: operacaoFechada ? {
       valor_ir_pagar: operacaoFechada?.valor_ir_pagar,
       valor_ir_devido: operacaoFechada?.valor_ir_devido,
       status_darf: operacaoFechada?.status_darf,
       mes_operacao: operacaoFechada?.mes_operacao,
-    },
+    } : null,
+    resultadoMensal: resultadoMensal ? {
+      mes: resultadoMensal?.mes,
+      ir_devido_swing: resultadoMensal?.ir_devido_swing,
+      ir_devido_day: resultadoMensal?.ir_devido_day,
+      darf_valor_swing: resultadoMensal?.darf_valor_swing,
+      darf_valor_day: resultadoMensal?.darf_valor_day,
+    } : null,
     tipoDarf,
     condicoes: {
       temValor: darfValorMensal !== undefined && darfValorMensal !== null,
@@ -292,17 +452,28 @@ export function DarfDetailsModal({
   };
 
   const statusDisplay = getStatusDisplay(darfStatus);
-  const tipoLabel = tipoDarf === "swing" ? "Swing Trade" : "Day Trade";
-  const aliquota = tipoDarf === "swing" ? "15%" : "20%";
+  const tipoLabel = (tipoDarf === "swing" || !tipoDarf) ? "Swing Trade" : "Day Trade";
+  const aliquota = (tipoDarf === "swing" || !tipoDarf) ? "15%" : "20%";
 
   // Cor do cabeçalho baseada no status
   const getHeaderColor = () => {
-    if (operacaoFechada.status_ir === "Prejuízo Acumulado") {
-      return "bg-gradient-to-r from-amber-500 to-orange-600";
-    } else if (operacaoFechada.status_ir === "Lucro Compensado") {
-      return "bg-gradient-to-r from-green-500 to-emerald-600";
+    if (isFromResultadoMensal) {
+      // Para ResultadoMensal, usar cor baseada nos valores de DARF
+      if (darfData.valorSwing > 0 || darfData.valorDay > 0) {
+        return "bg-gradient-to-r from-blue-500 to-indigo-600"; // Há DARF a pagar
+      } else {
+        return "bg-gradient-to-r from-green-500 to-emerald-600"; // Sem DARF
+      }
     } else {
-      return "bg-gradient-to-r from-blue-500 to-indigo-600";
+      // Para OperacaoFechada, usar status_ir se disponível
+      const statusIr = operacaoFechada?.status_ir;
+      if (statusIr === "Prejuízo Acumulado") {
+        return "bg-gradient-to-r from-amber-500 to-orange-600";
+      } else if (statusIr === "Lucro Compensado") {
+        return "bg-gradient-to-r from-green-500 to-emerald-600";
+      } else {
+        return "bg-gradient-to-r from-blue-500 to-indigo-600";
+      }
     }
   };
 
@@ -314,47 +485,55 @@ export function DarfDetailsModal({
           <div className="relative z-10">
             <div className="flex items-start gap-3">
               <div className="h-8 w-8 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0 backdrop-blur-sm">
-                {operacaoFechada.status_ir === "Prejuízo Acumulado" ? (
-                  <TrendingDown className="h-4 w-4 text-white" />
-                ) : operacaoFechada.status_ir === "Lucro Compensado" ? (
-                  <TrendingUp className="h-4 w-4 text-white" />
-                ) : (
+                {isFromResultadoMensal ? (
                   <FileText className="h-4 w-4 text-white" />
+                ) : (
+                  operacaoFechada?.status_ir === "Prejuízo Acumulado" ? (
+                    <TrendingDown className="h-4 w-4 text-white" />
+                  ) : operacaoFechada?.status_ir === "Lucro Compensado" ? (
+                    <TrendingUp className="h-4 w-4 text-white" />
+                  ) : (
+                    <FileText className="h-4 w-4 text-white" />
+                  )
                 )}
               </div>
               <div className="flex-1 min-w-0">
                 <DialogTitle className="text-lg font-bold text-white mb-1">
-                  {operacaoFechada.status_ir === "Prejuízo Acumulado"
-                    ? `Controle de Prejuízo ${tipoLabel}`
-                    : operacaoFechada.status_ir === "Lucro Compensado"
-                    ? `Compensação ${tipoLabel}`
-                    : `DARF ${tipoLabel}`}
+                  {isFromResultadoMensal ? (
+                    `DARF Mensal - ${formatMonthYear(darfCompetencia)}`
+                  ) : (
+                    operacaoFechada?.status_ir === "Prejuízo Acumulado"
+                      ? `Controle de Prejuízo ${tipoLabel}`
+                      : operacaoFechada?.status_ir === "Lucro Compensado"
+                      ? `Compensação ${tipoLabel}`
+                      : `DARF ${tipoLabel}`
+                  )}
                 </DialogTitle>
-                <DialogDescription
-                  className={
-                    operacaoFechada.status_ir === "Prejuízo Acumulado"
-                      ? "text-amber-100 text-sm"
-                      : operacaoFechada.status_ir === "Lucro Compensado"
-                      ? "text-green-100 text-sm"
-                      : "text-blue-100 text-sm"
-                  }
-                >
-                  {operacaoFechada.status_ir === "Prejuízo Acumulado"
-                    ? "Controle de prejuízo acumulado para compensação futura"
-                    : operacaoFechada.status_ir === "Lucro Compensado"
-                    ? "Análise de compensação e situação fiscal"
-                    : "Documento de Arrecadação Federal"}
+                <DialogDescription className="text-blue-100 text-sm">
+                  {isFromResultadoMensal ? (
+                    "Resumo detalhado dos impostos do mês"
+                  ) : (
+                    operacaoFechada?.status_ir === "Prejuízo Acumulado"
+                      ? "Controle de prejuízo acumulado para compensação futura"
+                      : operacaoFechada?.status_ir === "Lucro Compensado"
+                      ? "Análise de compensação e situação fiscal"
+                      : "Documento de Arrecadação Federal"
+                  )}
                 </DialogDescription>
               </div>
             </div>
             <div className="flex items-center gap-2 mt-2">
               <Calendar className="h-3 w-3 text-white/70" />
               <span className="text-white/90 text-xs">
-                {operacaoFechada.status_ir === "Prejuízo Acumulado"
-                  ? `Prejuízo em: ${formatMonthYear(darfCompetencia)}`
-                  : operacaoFechada.status_ir === "Lucro Compensado"
-                  ? `Compensação em: ${formatMonthYear(darfCompetencia)}`
-                  : `Competência: ${formatMonthYear(darfCompetencia)}`}
+                {isFromResultadoMensal ? (
+                  `Competência: ${formatMonthYear(darfCompetencia)}`
+                ) : (
+                  operacaoFechada?.status_ir === "Prejuízo Acumulado"
+                    ? `Prejuízo em: ${formatMonthYear(darfCompetencia)}`
+                    : operacaoFechada?.status_ir === "Lucro Compensado"
+                    ? `Compensação em: ${formatMonthYear(darfCompetencia)}`
+                    : `Competência: ${formatMonthYear(darfCompetencia)}`
+                )}
               </span>
             </div>
           </div>
@@ -406,7 +585,10 @@ export function DarfDetailsModal({
                 <div className="flex justify-between">
                   <span className="text-gray-600">IR Devido:</span>
                   <span className="font-medium text-gray-800">
-                    {formatCurrency(operacaoFechada.valor_ir_devido || 0)}
+                    {isFromResultadoMensal ? 
+                      formatCurrency((resultadoMensal?.ir_devido_swing || 0) + (resultadoMensal?.ir_devido_day || 0)) : 
+                      formatCurrency(operacaoFechada?.valor_ir_devido || 0)
+                    }
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -419,76 +601,219 @@ export function DarfDetailsModal({
             </div>
           </div>
 
-          {/* Detalhes da Operação */}
-          <div className="bg-gradient-to-br from-gray-50 to-green-50 border border-green-200 rounded-lg p-3 shadow-sm">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="h-6 w-6 bg-green-100 rounded-lg flex items-center justify-center">
-                <BarChart3 className="h-3 w-3 text-green-600" />
+          {/* ✅ Enhanced Educational Section - Step-by-step calculation */}
+          {enhancedCalc.impostoDevido > 0 && (
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="h-6 w-6 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Calculator className="h-3 w-3 text-blue-600" />
+                </div>
+                <h4 className="font-semibold text-blue-800 text-sm">
+                  Como chegamos neste valor
+                </h4>
               </div>
-              <h4 className="font-semibold text-gray-800 text-sm">
-                Detalhes da Operação
-              </h4>
+              
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-700">Lucro líquido do período:</span>
+                  <span className="font-medium text-green-600">
+                    {formatCurrency(enhancedCalc.lucroLiquido)}
+                  </span>
+                </div>
+                
+                {enhancedCalc.prejuizoDisponivel > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-700">Prejuízo disponível:</span>
+                    <span className="font-medium text-red-600">
+                      -{formatCurrency(enhancedCalc.prejuizoDisponivel)}
+                    </span>
+                  </div>
+                )}
+                
+                <div className="border-t border-blue-200 pt-3 flex justify-between items-center font-medium">
+                  <span className="text-gray-800">Valor tributável:</span>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500 mb-1">
+                      {formatCurrency(enhancedCalc.lucroLiquido)} 
+                      {enhancedCalc.prejuizoDisponivel > 0 && ` - ${formatCurrency(enhancedCalc.prejuizoDisponivel)}`}
+                    </div>
+                    <span className="text-blue-600">= {formatCurrency(enhancedCalc.resultadoTributavel)}</span>
+                  </div>
+                </div>
+                
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-700">
+                    IR devido ({(enhancedCalc.aliquota * 100)}%):
+                  </span>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500 mb-1">
+                      {formatCurrency(enhancedCalc.resultadoTributavel)} × {(enhancedCalc.aliquota * 100)}%
+                    </div>
+                    <span className="text-orange-600">= {formatCurrency(enhancedCalc.impostoDevido)}</span>
+                  </div>
+                </div>
+                
+                {enhancedCalc.irrfAplicavel > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-700">Já pago (IRRF):</span>
+                    <span className="font-medium text-purple-600">
+                      -{formatCurrency(enhancedCalc.irrfAplicavel)}
+                    </span>
+                  </div>
+                )}
+                
+                <div className="border-t border-blue-200 pt-3 flex justify-between items-center font-semibold">
+                  <span className="text-gray-800">Total a pagar:</span>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500 mb-1">
+                      {formatCurrency(enhancedCalc.impostoDevido)} - {formatCurrency(enhancedCalc.irrfAplicavel)}
+                    </div>
+                    <span className={`text-lg ${enhancedCalc.impostoAPagar > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                      = {formatCurrency(enhancedCalc.impostoAPagar)}
+                    </span>
+                  </div>
+                </div>
+                
+                {enhancedCalc.impostoLiquido > 0 && enhancedCalc.impostoAPagar === 0 && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-3">
+                    <div className="flex items-center gap-2">
+                      <Info className="h-4 w-4 text-yellow-600" />
+                      <span className="text-xs text-yellow-800">
+                        Valor menor que R$ 10,00 - dispensado de recolhimento
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Ticker:</span>
-                  <span className="font-medium text-gray-800">
-                    {operacaoFechada.ticker}
-                  </span>
+          {/* Detalhes da Operação ou Resultado Mensal */}
+          {isFromResultadoMensal ? (
+            <div className="bg-gradient-to-br from-gray-50 to-indigo-50 border border-indigo-200 rounded-lg p-3 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-6 w-6 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <BarChart3 className="h-3 w-3 text-indigo-600" />
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Quantidade:</span>
-                  <span className="font-medium text-gray-800">
-                    {operacaoFechada.quantidade.toLocaleString()}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Preço Médio Compra:</span>
-                  <span className="font-medium text-gray-800">
-                    {formatCurrency(getPrecoMedioCompra(operacaoFechada))}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Preço Médio Venda:</span>
-                  <span className="font-medium text-gray-800">
-                    {formatCurrency(operacaoFechada.preco_medio_venda)}
-                  </span>
-                </div>
+                <h4 className="font-semibold text-gray-800 text-sm">
+                  Resumo Mensal - {formatMonthYear(darfCompetencia)}
+                </h4>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Valor Compra:</span>
-                  <span className="font-medium text-gray-800">
-                    {formatCurrency(operacaoFechada.valor_compra)}
-                  </span>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Vendas Swing:</span>
+                    <span className="font-medium text-gray-800">
+                      {formatCurrency(resultadoMensal.vendas_swing || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Ganho Swing:</span>
+                    <span className={`font-medium ${(resultadoMensal.ganho_liquido_swing || 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {formatCurrency(resultadoMensal.ganho_liquido_swing || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">DARF Swing:</span>
+                    <span className="font-medium text-gray-800">
+                      {formatCurrency(darfData.valorSwing)}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Valor Venda:</span>
-                  <span className="font-medium text-gray-800">
-                    {formatCurrency(operacaoFechada.valor_venda)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Resultado:</span>
-                  <span
-                    className={`font-bold ${
-                      operacaoFechada.resultado >= 0 ? "text-green-600" : "text-red-600"
-                    }`}
-                  >
-                    {formatCurrency(operacaoFechada.resultado)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Tipo:</span>
-                  <span className="font-medium text-gray-800">
-                    {operacaoFechada.day_trade ? "Day Trade" : "Swing Trade"}
-                  </span>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Vendas Day Trade:</span>
+                    <span className="font-medium text-gray-800">
+                      {formatCurrency(resultadoMensal.vendas_day_trade || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Ganho Day Trade:</span>
+                    <span className={`font-medium ${(resultadoMensal.ganho_liquido_day || 0) >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {formatCurrency(resultadoMensal.ganho_liquido_day || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">DARF Day Trade:</span>
+                    <span className="font-medium text-gray-800">
+                      {formatCurrency(darfData.valorDay)}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-gradient-to-br from-gray-50 to-green-50 border border-green-200 rounded-lg p-3 shadow-sm">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-6 w-6 bg-green-100 rounded-lg flex items-center justify-center">
+                  <BarChart3 className="h-3 w-3 text-green-600" />
+                </div>
+                <h4 className="font-semibold text-gray-800 text-sm">
+                  Detalhes da Operação
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Ticker:</span>
+                    <span className="font-medium text-gray-800">
+                      {operacaoFechada?.ticker || "N/A"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Quantidade:</span>
+                    <span className="font-medium text-gray-800">
+                      {operacaoFechada?.quantidade?.toLocaleString() || "N/A"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Preço Médio Compra:</span>
+                    <span className="font-medium text-gray-800">
+                      {operacaoFechada ? formatCurrency(getPrecoMedioCompra(operacaoFechada)) : "N/A"}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Preço Médio Venda:</span>
+                    <span className="font-medium text-gray-800">
+                      {formatCurrency(operacaoFechada?.preco_medio_venda || 0)}
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Valor Compra:</span>
+                    <span className="font-medium text-gray-800">
+                      {formatCurrency(operacaoFechada?.valor_compra || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Valor Venda:</span>
+                    <span className="font-medium text-gray-800">
+                      {formatCurrency(operacaoFechada?.valor_venda || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Resultado:</span>
+                    <span
+                      className={`font-bold ${
+                        (operacaoFechada?.resultado || 0) >= 0 ? "text-green-600" : "text-red-600"
+                      }`}
+                    >
+                      {formatCurrency(operacaoFechada?.resultado || 0)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Tipo:</span>
+                    <span className="font-medium text-gray-800">
+                      {operacaoFechada?.day_trade ? "Day Trade" : "Swing Trade"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Guia de Preenchimento */}
           {darfValorMensal > 0 && (
