@@ -1651,18 +1651,19 @@ def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict
         ticker_da_acao = acao_info['ticker']
         nome_da_acao = acao_info.get('nome') # nome_acao pode ser None
 
-        # data_ex já é um objeto date aqui, vindo de ProventoInfo
-        data_para_saldo = provento_global.data_ex
-
-        quantidade_na_data_ex = obter_saldo_acao_em_data(
+        # 🚨 CORREÇÃO CRÍTICA: Usar data COM (D-1 da data EX) para evitar contaminação
+        # Operações na data EX não têm direito ao provento
+        data_com = provento_global.data_ex - timedelta(days=1)
+        
+        quantidade_com_direito = obter_saldo_acao_em_data(
             usuario_id=usuario_id,
             ticker=ticker_da_acao,
-            data_limite=data_para_saldo
+            data_limite=data_com  # ✅ CORRIGIDO: usa data COM
         )
 
-        if quantidade_na_data_ex > 0:
+        if quantidade_com_direito > 0:
             valor_unit_provento = provento_global.valor or 0.0 # valor já é float em ProventoInfo
-            valor_total_recebido = quantidade_na_data_ex * valor_unit_provento
+            valor_total_recebido = quantidade_com_direito * valor_unit_provento
 
             dados_para_inserir = {
                 'usuario_id': usuario_id,
@@ -1674,7 +1675,7 @@ def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict
                 'data_ex': provento_global.data_ex.isoformat(), # Convertendo date para string ISO
                 'dt_pagamento': provento_global.dt_pagamento.isoformat() if provento_global.dt_pagamento else None, # Convertendo date para string ISO
                 'valor_unitario_provento': valor_unit_provento,
-                'quantidade_possuida_na_data_ex': quantidade_na_data_ex,
+                'quantidade_possuida_na_data_ex': quantidade_com_direito,
                 'valor_total_recebido': valor_total_recebido,
                 'data_calculo': datetime.now().isoformat() # Usando datetime para datetime.now()
             }
@@ -1683,7 +1684,7 @@ def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict
                 inserir_usuario_provento_recebido_db(
                     usuario_id=usuario_id,
                     provento_global_id=provento_global.id,
-                    quantidade=quantidade_na_data_ex,
+                    quantidade=quantidade_com_direito,
                     valor_total=valor_total_recebido
                 )
                 proventos_calculados += 1
@@ -3804,4 +3805,238 @@ def _deve_gerar_darf_otimizado(operacao: Dict[str, Any], resultado_mensal: Optio
         return deve_gerar
     
     return True
+
+
+def obter_ultimo_login_usuario(usuario_id: int) -> Optional[datetime]:
+    """
+    Obtém a data do último login do usuário.
+    Retorna None se não houver registro de login.
+    """
+    DB_PATH = 'acoes_ir.db'
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # Verificar se existe coluna ultimo_login na tabela usuarios
+        cursor.execute("PRAGMA table_info(usuarios)")
+        colunas = [col[1] for col in cursor.fetchall()]
+        
+        if 'ultimo_login' not in colunas:
+            # Adicionar coluna se não existir
+            cursor.execute("ALTER TABLE usuarios ADD COLUMN ultimo_login DATETIME")
+            conn.commit()
+        
+        # Buscar último login
+        cursor.execute("""
+            SELECT ultimo_login 
+            FROM usuarios 
+            WHERE id = ?
+        """, (usuario_id,))
+        
+        resultado = cursor.fetchone()
+        if resultado and resultado[0]:
+            return datetime.fromisoformat(resultado[0])
+        
+        return None
+        
+    except Exception as e:
+        print(f"Erro ao obter último login do usuário {usuario_id}: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def atualizar_ultimo_login_usuario(usuario_id: int) -> bool:
+    """
+    Atualiza o último login do usuário para o momento atual.
+    Retorna True se a atualização foi bem-sucedida.
+    """
+    DB_PATH = 'acoes_ir.db'
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # Verificar se existe coluna ultimo_login na tabela usuarios
+        cursor.execute("PRAGMA table_info(usuarios)")
+        colunas = [col[1] for col in cursor.fetchall()]
+        
+        if 'ultimo_login' not in colunas:
+            # Adicionar coluna se não existir
+            cursor.execute("ALTER TABLE usuarios ADD COLUMN ultimo_login DATETIME")
+            conn.commit()
+        
+        # Atualizar último login para agora
+        agora = datetime.now()
+        cursor.execute("""
+            UPDATE usuarios 
+            SET ultimo_login = ? 
+            WHERE id = ?
+        """, (agora.isoformat(), usuario_id))
+        
+        conn.commit()
+        
+        # Verificar se a atualização foi bem-sucedida
+        if cursor.rowcount > 0:
+            print(f"SUCCESS: Ultimo login atualizado para usuario {usuario_id}: {agora}")
+            return True
+        else:
+            print(f"WARNING: Usuario {usuario_id} nao encontrado para atualizar ultimo login")
+            return False
+        
+    except Exception as e:
+        print(f"ERROR: Erro ao atualizar ultimo login do usuario {usuario_id}: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+
+def obter_novos_dividendos_usuario_service(usuario_id: int, data_limite: datetime = None) -> List[Dict[str, Any]]:
+    """
+    Retorna dividendos recentemente cadastrados para a carteira do usuário.
+    Baseado no campo data_calculo para identificar dividendos novos.
+    Agora usa últimos 2 dias desde o último login do usuário (máximo 30 dias).
+    """
+    if data_limite is None:
+        # Nova lógica: 2 dias desde último login, máximo 30 dias
+        ultimo_login = obter_ultimo_login_usuario(usuario_id)
+        if ultimo_login:
+            data_limite_login = ultimo_login - timedelta(days=2)
+            data_limite_maxima = datetime.now() - timedelta(days=30)
+            data_limite = max(data_limite_login, data_limite_maxima)
+        else:
+            # Fallback: usuário novo ou sem login registrado
+            data_limite = datetime.now() - timedelta(days=2)
+    DB_PATH = 'acoes_ir.db'  # Definir localmente se não definido globalmente
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # Buscar dividendos calculados após data_limite para ações da carteira do usuário
+        cursor.execute("""
+            SELECT 
+                upr.id,
+                upr.ticker_acao,
+                upr.nome_acao,
+                upr.tipo_provento,
+                upr.valor_unitario_provento,
+                upr.data_ex,
+                upr.dt_pagamento,
+                upr.data_calculo,
+                upr.valor_total_recebido,
+                upr.quantidade_possuida_na_data_ex
+            FROM usuario_proventos_recebidos upr
+            WHERE upr.usuario_id = ? 
+            AND upr.data_calculo >= ?
+            AND upr.valor_total_recebido > 0
+            ORDER BY upr.data_calculo DESC
+            LIMIT 50
+        """, (usuario_id, data_limite.strftime('%Y-%m-%d %H:%M:%S')))
+        
+        dividendos = []
+        for row in cursor.fetchall():
+            dividendos.append({
+                'id': row[0],
+                'ticker': row[1],
+                'nome_acao': row[2] or row[1],  # Fallback para ticker se nome não disponível
+                'tipo_provento': row[3],
+                'valor_unitario': row[4],
+                'data_ex': row[5],
+                'dt_pagamento': row[6],
+                'data_calculo': row[7],
+                'valor_total_recebido': row[8],
+                'quantidade_possuida': row[9],
+                'is_new': True
+            })
+        
+        logging.info(f"[NOVOS-DIVIDENDOS] Usuario {usuario_id}: {len(dividendos)} dividendos novos encontrados")
+        return dividendos
+        
+    except Exception as e:
+        logging.error(f"Erro ao buscar novos dividendos para usuário {usuario_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+
+def obter_proximos_dividendos_usuario_service(usuario_id: int, data_inicio: date, data_fim: date) -> List[Dict[str, Any]]:
+    """
+    Retorna dividendos que serão pagos nos próximos dias para ações da carteira atual do usuário.
+    """
+    DB_PATH = 'acoes_ir.db'  # Definir localmente se não definido globalmente
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # Primeiro, obter a carteira atual do usuário
+        cursor.execute("""
+            SELECT ticker, quantidade, preco_medio
+            FROM carteira_atual 
+            WHERE usuario_id = ? AND quantidade > 0
+        """, (usuario_id,))
+        
+        carteira_atual = cursor.fetchall()
+        if not carteira_atual:
+            logging.info(f"[PROXIMOS-DIVIDENDOS] Usuario {usuario_id}: Carteira vazia")
+            return []
+        
+        tickers_carteira = [row[0] for row in carteira_atual]
+        
+        # Buscar dividendos futuros para ações da carteira
+        placeholders = ','.join(['?' for _ in tickers_carteira])
+        query = f"""
+            SELECT DISTINCT
+                pg.id,
+                a.ticker,
+                a.nome,
+                pg.tipo,
+                pg.valor,
+                pg.dt_pagamento,
+                pg.data_ex
+            FROM proventos_globais pg
+            JOIN acoes a ON pg.id_acao = a.id
+            WHERE a.ticker IN ({placeholders})
+            AND pg.dt_pagamento IS NOT NULL
+            AND DATE(pg.dt_pagamento) BETWEEN ? AND ?
+            ORDER BY pg.dt_pagamento ASC
+        """
+        
+        params = tickers_carteira + [data_inicio.strftime('%Y-%m-%d'), data_fim.strftime('%Y-%m-%d')]
+        cursor.execute(query, params)
+        
+        proximos_dividendos = []
+        carteira_map = {row[0]: {'quantidade': row[1], 'preco_medio': row[2]} for row in carteira_atual}
+        
+        for row in cursor.fetchall():
+            ticker = row[1]
+            quantidade_atual = carteira_map[ticker]['quantidade']
+            
+            # Calcular dias até pagamento
+            dt_pagamento = datetime.strptime(row[5], '%Y-%m-%d').date()
+            days_until_payment = (dt_pagamento - data_inicio).days
+            
+            # Estimar valor baseado na quantidade atual
+            estimated_amount = quantidade_atual * row[4] if row[4] else 0
+            
+            proximos_dividendos.append({
+                'id': row[0],
+                'ticker': ticker,
+                'nome_acao': row[2] or ticker,
+                'tipo_provento': row[3],
+                'valor_unitario': row[4],
+                'dt_pagamento': row[5],
+                'data_ex': row[6],
+                'days_until_payment': days_until_payment,
+                'estimated_amount': estimated_amount,
+                'quantidade_atual': quantidade_atual
+            })
+        
+        logging.info(f"[PROXIMOS-DIVIDENDOS] Usuario {usuario_id}: {len(proximos_dividendos)} dividendos próximos encontrados")
+        return proximos_dividendos
+        
+    except Exception as e:
+        logging.error(f"Erro ao buscar próximos dividendos para usuário {usuario_id}: {e}")
+        return []
+    finally:
+        conn.close()
 

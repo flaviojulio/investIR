@@ -19,6 +19,74 @@ interface TabelaProventosProps {
 
 type SortableKeys = 'data_ex' | 'dt_pagamento' | 'ticker_acao' | 'tipo' | 'valor_total_recebido';
 
+// Helper functions to handle field values with fallback
+/**
+ * Calcula o valor unitário de um provento seguindo as regras fiscais brasileiras.
+ * 
+ * Prioridade de cálculo:
+ * 1. Valor unitário direto (campos específicos do provento)
+ * 2. Cálculo derivado: valor_total_recebido ÷ quantidade_na_data_ex
+ * 
+ * Para JCP: O valor retornado pode ser bruto ou líquido dependendo da fonte.
+ * Recomenda-se verificar se há desconto de IR na fonte (27,5%) para JCP.
+ * 
+ * @param provento - Objeto contendo dados do provento
+ * @returns Valor unitário do provento com 4 casas decimais de precisão
+ */
+const getValorUnitarioProvento = (provento: any): number => {
+  // Função para converter valores com segurança
+  const tryValue = (val: any): number => {
+    if (val === null || val === undefined || val === '') return 0;
+    const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+    return isNaN(num) ? 0 : num;
+  };
+  
+  // Primeiro tentar campos diretos
+  const valorDireto = tryValue(provento.valor_unitario_provento) || 
+                     tryValue(provento.valor_unitario) || 
+                     tryValue(provento.valor);
+  
+  if (valorDireto > 0) {
+    return parseFloat(valorDireto.toFixed(4));
+  }
+  
+  // Se não tem valor direto, calcular: valor_total_recebido / quantidade_na_data_ex
+  const valorTotal = tryValue(provento.valor_total_recebido);
+  const quantidade = tryValue(provento.quantidade_na_data_ex) || tryValue(provento.quantidade_possuida_na_data_ex);
+  
+  // 🚨 Validação crítica: quantidade deve ser > 0 para evitar divisão por zero
+  if (valorTotal > 0 && quantidade > 0) {
+    const valorCalculado = valorTotal / quantidade;
+    return parseFloat(valorCalculado.toFixed(4));
+  }
+  
+  // 📊 Log de dados inconsistentes para debugging fiscal
+  if (valorTotal > 0 && quantidade <= 0) {
+    console.warn('💰 Provento com valor total mas quantidade inválida:', {
+      ticker: provento.ticker_acao,
+      tipo: provento.tipo,
+      valor_total: valorTotal,
+      quantidade: quantidade,
+      data_ex: provento.data_ex
+    });
+  }
+  
+  return 0;
+};
+
+const getQuantidadeNaDataEx = (provento: any): number => {
+  const tryValue = (val: any): number => {
+    if (val === null || val === undefined || val === '') return 0;
+    const num = typeof val === 'string' ? parseFloat(val) : Number(val);
+    return isNaN(num) ? 0 : num;
+  };
+  
+  return tryValue(provento.quantidade_na_data_ex) || 
+         tryValue(provento.quantidade_possuida_na_data_ex) || 
+         tryValue(provento.quantidade) ||
+         0;
+};
+
 // Pagination Controls Component
 interface PaginationControlsProps {
   currentPage: number;
@@ -121,6 +189,14 @@ const PaginationControls = ({
 };
 
 export function TabelaProventos({ data, showValues = true, title = "Proventos", ticker }: TabelaProventosProps) {
+  console.log('🎯 TabelaProventos renderizada:', {
+    data_length: data?.length || 0,
+    showValues: showValues,
+    title: title,
+    ticker: ticker,
+    primeiros_3_ids: data?.slice(0, 3).map(p => p.id) || []
+  });
+
   const [sortConfig, setSortConfig] = useState<{ key: SortableKeys; direction: 'ascending' | 'descending' } | null>({ key: 'dt_pagamento', direction: 'descending' });
   
   // State for filters
@@ -128,7 +204,7 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
   const [filterType, setFilterType] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 50;
+  const itemsPerPage = 20;
 
   // Reset page when filters change
   useEffect(() => {
@@ -222,19 +298,19 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
   const endIndex = startIndex + itemsPerPage;
   const paginatedData = sortedData.slice(startIndex, endIndex);
 
-  // Summary statistics
-  const totalReceived = data.filter(p => {
+  // Summary statistics - Now based on filtered data
+  const totalReceived = filteredData.filter(p => {
     const now = new Date();
     return p.dt_pagamento && new Date(p.dt_pagamento) <= now;
   }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0);
   
-  const totalToReceive = data.filter(p => {
+  const totalToReceive = filteredData.filter(p => {
     const now = new Date();
     return !p.dt_pagamento || new Date(p.dt_pagamento) > now;
   }).reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0);
   
-  const totalGeneral = data.reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0);
-  const totalProventos = data.length;
+  const totalGeneral = filteredData.reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0);
+  const totalProventos = filteredData.length;
 
   // Reset to first page when data changes
   React.useEffect(() => {
@@ -250,7 +326,7 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
             {title}
           </CardTitle>
           <CardDescription className="text-green-100">
-            Histórico de dividendos e proventos {ticker ? `para ${ticker}` : ''}
+            {ticker ? `Dividendos e JCP recebidos de ${ticker}` : 'Dividendos e JCP recebidos'}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-12">
@@ -283,7 +359,7 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
     { key: 'tipo', label: 'Tipo', isSortable: true },
     { label: 'Qtd. na Data Ex', className: 'text-right hidden sm:table-cell', isSortable: false },
     { label: 'Valor Unit.', className: 'text-right', isSortable: false },
-    { key: 'valor_total_recebido', label: 'Total Recebido', className: 'text-right', isSortable: true },
+    { key: 'valor_total_recebido', label: 'Valor Total', className: 'text-right', isSortable: true },
     { label: 'Status', className: 'text-center', isSortable: false },
   ];
 
@@ -305,12 +381,17 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
                 {title} {ticker ? `- ${ticker}` : ''}
               </CardTitle>
               <CardDescription className="text-green-100">
-                {totalProventos} provento(s) registrado(s)
+                {totalProventos} provento(s) {(searchTerm || filterType !== "all" || filterStatus !== "all") ? "filtrado(s)" : "registrado(s)"}
+                {(searchTerm || filterType !== "all" || filterStatus !== "all") && (
+                  <span className="ml-2 text-green-200 text-xs">
+                    • Filtros ativos
+                  </span>
+                )}
               </CardDescription>
             </div>
           </div>
           
-          {/* Summary cards */}
+          {/* Summary cards - Now responsive to filters */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 border border-white/20">
               <div className="flex items-center gap-2">
@@ -482,12 +563,12 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
                             {provento.tipo}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm p-4">{formatNumber(provento.quantidade_na_data_ex)}</TableCell>
-                        <TableCell className="text-right text-xs sm:text-sm p-4">{formatCurrency(provento.valor_unitario_provento)}</TableCell>
-                        <TableCell className="text-right font-semibold text-xs sm:text-sm p-4">
+                        <TableCell className="text-right hidden sm:table-cell text-xs sm:text-sm p-4">{formatNumber(getQuantidadeNaDataEx(provento))}</TableCell>
+                        <TableCell className="text-right text-xs sm:text-sm p-4">{formatCurrency(getValorUnitarioProvento(provento))}</TableCell>
+                        <TableCell className="text-right font-semibold text-sm sm:text-base p-4">
                           <div className="flex items-center justify-end gap-1">
-                            <DollarSign className="h-3 w-3 text-green-600" />
-                            <span className="text-green-600 font-bold">
+                            <DollarSign className="h-4 w-4 text-green-600" />
+                            <span className="text-green-600 font-bold text-base">
                               {showValues ? formatCurrency(provento.valor_total_recebido) : '***'}
                             </span>
                           </div>

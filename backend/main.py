@@ -346,6 +346,51 @@ async def recalcular_proventos_usuario_endpoint(
         logging.error(f"Error in POST /api/usuario/proventos/recalcular for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro durante o recálculo de proventos: {str(e)}")
 
+@app.get("/api/dividendos/novos", response_model=List[Dict[str, Any]], tags=["Notificações Dividendos"])
+async def obter_novos_dividendos(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Retorna os dividendos recentemente cadastrados para a carteira do usuário.
+    Usa o campo data_calculo para identificar dividendos novos (últimos 2 dias apenas).
+    """
+    try:
+        import services
+        
+        # Obter dividendos dos últimos 2 dias baseado na data_calculo (padrão do service)
+        novos_dividendos = services.obter_novos_dividendos_usuario_service(usuario_id=usuario.id)
+        
+        return novos_dividendos
+    except Exception as e:
+        logging.error(f"Error in GET /api/dividendos/novos for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar novos dividendos: {str(e)}")
+
+@app.get("/api/dividendos/proximos", response_model=List[Dict[str, Any]], tags=["Notificações Dividendos"])
+async def obter_proximos_dividendos(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Retorna os dividendos que serão pagos nos próximos 15 dias para ações da carteira do usuário.
+    """
+    try:
+        from datetime import datetime, timedelta
+        import services
+        
+        # Obter dividendos dos próximos 15 dias
+        data_inicio = datetime.now().date()
+        data_fim = data_inicio + timedelta(days=15)
+        
+        proximos_dividendos = services.obter_proximos_dividendos_usuario_service(
+            usuario_id=usuario.id, 
+            data_inicio=data_inicio, 
+            data_fim=data_fim
+        )
+        
+        return proximos_dividendos
+    except Exception as e:
+        logging.error(f"Error in GET /api/dividendos/proximos for user {usuario.id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar próximos dividendos: {str(e)}")
+
 @app.get("/api/usuario/eventos_corporativos/", response_model=List[EventoCorporativoInfo], tags=["Eventos Corporativos Usuário"])
 async def listar_eventos_corporativos_usuario(
     usuario: UsuarioResponse = Depends(get_current_user)
@@ -466,6 +511,10 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = auth.verificar_credenciais(form_data.username, form_data.password)
     if not user:
         raise HTTPException(status_code=401, detail="Usuário ou senha incorretos")
+    
+    # Atualizar último login do usuário
+    services.atualizar_ultimo_login_usuario(user["id"])
+    
     token = auth.gerar_token(user["id"])
     return {"access_token": token, "token_type": "bearer"}
 

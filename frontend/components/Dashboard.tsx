@@ -7,9 +7,10 @@ import { api, getResumoProventosAnuaisUsuario, getResumoProventosMensaisUsuario,
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff, Search, Settings, Bell } from "lucide-react" // Added Trophy, Eye, EyeOff, Search, Settings, Bell
+import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff, Settings } from "lucide-react" // Added Trophy, Eye, EyeOff, Settings
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
+import DividendNotifications from "./DividendNotifications"
 import {
   Select,
   SelectContent,
@@ -18,7 +19,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input"; // Added Input import
 import { InfoCard } from "@/components/InfoCard";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { TabelaProventos } from "@/components/TabelaProventos";
@@ -68,6 +68,20 @@ const formatCurrencyWithVisibility = (value: number | undefined | null, showValu
   }
   if (value === undefined || value === null) return "R$ 0,00";
   return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+};
+
+// Function to format currency without cents for Total Recebido cards
+const formatCurrencyWithoutCents = (value: number | undefined | null, showValues: boolean): string => {
+  if (!showValues) {
+    return "R$ •••,••";
+  }
+  if (value === undefined || value === null) return "R$ 0";
+  return value.toLocaleString('pt-BR', { 
+    style: 'currency', 
+    currency: 'BRL',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
 };
 
 const formatYAxisTick = (tick: number): string => {
@@ -159,7 +173,6 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: boolean; shouldLoad?: boolean }) {
   const [anoSelecionado, setAnoSelecionado] = useState<number | string | undefined>();
   const [anosDisponiveis, setAnosDisponiveis] = useState<number[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
 
   const [resumoAnualData, setResumoAnualData] = useState<ResumoProventoAnualAPI[]>([]);
   const [loadingData, setLoadingData] = useState(false); // Não carrega automaticamente
@@ -328,6 +341,10 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
     Outros: item.total_outros,
   }));
 
+  // Check if there are any "Outros" values > 0 in the data
+  const hasOutrosAnual = dadosGraficoAnual.some(item => item.Outros > 0);
+  const hasOutrosMensal = dadosGraficoMensal.some(item => item.Outros > 0);
+
   // Dados do gráfico de pizza (ações mais pagadoras)
   const dadosGraficoPizzaAcao = useMemo(() => {
     if (anoSelecionado === "todos") {
@@ -370,106 +387,6 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
     }
   }, [anoSelecionado, resumoAnualData, resumoDoAnoSelecionado]);
 
-  const proventosFiltradosParaTabela = useMemo(() => {
-    // If no year is selected, the original logic was to return proventosDetalhados.
-    // This might mean anoSelecionado is always expected to be set.
-    const filteredResult = (() => { // IIFE to contain existing logic
-        if (!proventosDetalhados) return []; // Handle case where proventosDetalhados might not be loaded yet
-
-        if (anoSelecionado === undefined) {
-            return proventosDetalhados.filter(p => {
-                let dateToConsider = null;
-                if (p.dt_pagamento) {
-                    dateToConsider = new Date(p.dt_pagamento + 'T00:00:00Z');
-                    if (!isNaN(dateToConsider.getTime())) {
-                        return true; // Valid payment date exists
-                    }
-                }
-                // If no valid payment date, try data_ex
-                if (p.data_ex) {
-                    dateToConsider = new Date(p.data_ex + 'T00:00:00Z');
-                    if (!isNaN(dateToConsider.getTime())) {
-                        return true; // Valid ex-dividend date exists
-                    }
-                }
-                return false; // Neither date is valid
-            });
-        }
-
-        return proventosDetalhados.filter(p => {
-            let dateToParse = p.dt_pagamento;
-            let isPaymentDate = true;
-            let dateFieldNameForLog = "dt_pagamento";
-
-            if (!dateToParse) { // If dt_pagamento is null, undefined, or empty
-                dateToParse = p.data_ex; // Fallback to data_ex
-                isPaymentDate = false;
-                dateFieldNameForLog = "data_ex";
-            }
-
-            if (!dateToParse) { // If both are null/undefined/empty
-                return false;
-            }
-
-            const dateObj = new Date(dateToParse + 'T00:00:00Z');
-
-            if (isNaN(dateObj.getTime())) {
-                if (isPaymentDate) { // Original attempt was for dt_pagamento
-                     console.warn(`Invalid date encountered for dt_pagamento: ${p.dt_pagamento} for provento ID: ${p.id}, attempting fallback to data_ex or excluding.`);
-                     // Try data_ex if dt_pagamento was invalid
-                     if (p.data_ex) {
-                         const dataExObj = new Date(p.data_ex + 'T00:00:00Z');
-                         if (!isNaN(dataExObj.getTime())) {
-                             const anoDataEx = dataExObj.getFullYear();
-                             return anoDataEx === anoSelecionado;
-                         } else {
-                             console.warn(`Invalid date also for data_ex: ${p.data_ex} for provento ID: ${p.id}. Excluding.`);
-                             return false;
-                         }
-                     } else {
-                         return false; // dt_pagamento invalid and no data_ex to fallback
-                     }
-                } else { // Original attempt was already for data_ex (because dt_pagamento was initially null/empty)
-                     console.warn(`Invalid date encountered for data_ex: ${p.data_ex} for provento ID: ${p.id} (dt_pagamento was also missing/invalid). Excluding.`);
-                     return false;
-                }
-            }
-
-            const anoEvento = dateObj.getFullYear();
-            return anoSelecionado === "todos" ? true : anoEvento === anoSelecionado;
-        });
-    })(); // End of IIFE
-
-    if (!searchTerm) {
-      return filteredResult;
-    }
-
-    const lowerSearchTerm = searchTerm.toLowerCase();
-    const searchedResult = filteredResult.filter(p => {
-      // Determina status
-      let status = 'Recebido';
-      const now = new Date();
-      if (!p.dt_pagamento || new Date(p.dt_pagamento) > now) {
-        status = 'A Receber';
-      }
-      const fieldsToSearch = [
-        p.ticker_acao,
-        p.tipo, // Corrigido para o campo correto
-        p.dt_pagamento,
-        p.data_ex,
-        String(p.valor_unitario_provento),
-        String(p.quantidade_na_data_ex),
-        String(p.valor_total_recebido),
-        p.nome_acao,
-        status
-      ];
-      return fieldsToSearch.some(field =>
-        field && field.toString().toLowerCase().includes(lowerSearchTerm)
-      );
-    });
-    return searchedResult;
-
-  }, [proventosDetalhados, anoSelecionado, searchTerm]);
 
   // Cálculo do total de proventos a receber no ano selecionado
   const totalAReceberAnoSelecionado = useMemo(() => {
@@ -613,7 +530,7 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-sm font-medium text-blue-600 mb-1">Total Recebido ({anoSelecionado === "todos" ? "Todos os anos" : anoSelecionado})</p>
-                          <p className="text-3xl font-bold text-blue-900">{formatCurrencyWithVisibility(totalAnoSelecionado, showValues)}</p>
+                          <p className="text-3xl font-bold text-blue-900">{formatCurrencyWithoutCents(totalAnoSelecionado, showValues)}</p>
                           <p className="text-xs text-blue-700 mt-2 flex items-center gap-1">
                             <span>💰</span>
                             <span>Proventos {anoSelecionado === "todos" ? "totais" : "do ano"}</span>
@@ -682,33 +599,84 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
               </div>
             )}
 
-            {/* Card Distribuição Melhorado */}
-            <div className="bg-gradient-to-br from-purple-50 to-purple-100 border-2 border-purple-200 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105">
-              <div className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-purple-600 mb-1">Distribuição</p>
-                    <div className="space-y-1">
-                      <p className="text-lg font-bold text-purple-900">
-                        {formatCurrencyWithVisibility(dividendosAnoSelecionado, showValues)}
-                      </p>
-                      <p className="text-xs text-purple-700">Dividendos</p>
-                      <p className="text-sm font-semibold text-purple-800">
-                        {formatCurrencyWithVisibility(jcpAnoSelecionado, showValues)} JCP
-                      </p>
+            {/* 🎯 Card Dividendos do Dia - NOVO! */}
+            {(() => {
+              const hoje = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+              const dividendosHoje = proventosDetalhados.filter(p => p.dt_pagamento === hoje);
+              const totalHoje = dividendosHoje.reduce((sum, p) => sum + (p.valor_total_recebido || 0), 0);
+              const temDividendoHoje = totalHoje > 0;
+              
+              return (
+                <div className={`bg-gradient-to-br ${temDividendoHoje ? 'from-emerald-50 to-emerald-100 border-emerald-200' : 'from-gray-50 to-gray-100 border-gray-200'} border-2 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105`}>
+                  <div className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className={`text-sm font-medium ${temDividendoHoje ? 'text-emerald-600' : 'text-gray-600'} mb-1`}>
+                          Dividendos Hoje
+                        </p>
+                        <p className={`text-3xl font-bold ${temDividendoHoje ? 'text-emerald-900' : 'text-gray-900'}`}>
+                          {temDividendoHoje ? formatCurrencyWithVisibility(totalHoje, showValues) : 'R$ 0,00'}
+                        </p>
+                        <p className={`text-xs ${temDividendoHoje ? 'text-emerald-700' : 'text-gray-500'} mt-2 flex items-center gap-1`}>
+                          <span>{temDividendoHoje ? '🎉' : '📅'}</span>
+                          <span>
+                            {temDividendoHoje 
+                              ? `${dividendosHoje.length} pagamento${dividendosHoje.length > 1 ? 's' : ''} recebido${dividendosHoje.length > 1 ? 's' : ''}!`
+                              : 'Nenhum pagamento hoje'
+                            }
+                          </span>
+                        </p>
+                      </div>
+                      <div className={`h-14 w-14 ${temDividendoHoje ? 'bg-emerald-500' : 'bg-gray-400'} rounded-full flex items-center justify-center shadow-lg`}>
+                        <span className="text-white text-3xl">
+                          {temDividendoHoje ? '😄' : '😔'}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="h-14 w-14 bg-purple-500 rounded-full flex items-center justify-center shadow-lg">
-                    <span className="text-white text-2xl">📈</span>
+                    
+                    {/* Detalhes dos dividendos de hoje */}
+                    {temDividendoHoje && dividendosHoje.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-emerald-200">
+                        <div className="space-y-2">
+                          {dividendosHoje.slice(0, 2).map((div, index) => (
+                            <div key={index} className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center">
+                                  <span className="text-white text-xs font-bold">
+                                    {div.ticker_acao?.substring(0, 2) || '??'}
+                                  </span>
+                                </div>
+                                <span className="text-xs font-medium text-emerald-800">
+                                  {div.ticker_acao}
+                                </span>
+                              </div>
+                              <span className="text-xs font-bold text-emerald-700">
+                                {formatCurrencyWithVisibility(div.valor_total_recebido || 0, showValues)}
+                              </span>
+                            </div>
+                          ))}
+                          {dividendosHoje.length > 2 && (
+                            <div className="text-center">
+                              <span className="text-xs text-emerald-600">
+                                +{dividendosHoje.length - 2} mais...
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
         ) : (
           <p className="text-gray-600 dark:text-gray-400">Não há dados de proventos para o ano selecionado ({anoSelecionado || "N/A"}).</p>
         )}
       </div>
+
+      {/* 🔔 NOTIFICAÇÕES DE DIVIDENDOS */}
+      <DividendNotifications showValues={showValues} />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
         {/* Gráfico Anual */}
@@ -761,8 +729,10 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
                   <Bar dataKey="Dividendos" stackId="a" fill="url(#dividendosGradient)" name="💰 Dividendos" />
-                  <Bar dataKey="JCP" stackId="a" fill="url(#jcpGradient)" name="🏦 JCP" />
-                  <Bar dataKey="Outros" stackId="a" fill="url(#outrosGradient)" name="📊 Outros" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="JCP" stackId="a" fill="url(#jcpGradient)" name="🏦 JCP" radius={hasOutrosAnual ? [0, 0, 0, 0] : [4, 4, 0, 0]} />
+                  {hasOutrosAnual && (
+                    <Bar dataKey="Outros" stackId="a" fill="url(#outrosGradient)" name="📊 Outros" radius={[4, 4, 0, 0]} />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -813,8 +783,10 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ paddingTop: '20px' }} iconType="circle" />
                   <Bar dataKey="Dividendos" stackId="b" fill="url(#dividendosGradient)" name="💰 Dividendos" />
-                  <Bar dataKey="JCP" stackId="b" fill="url(#jcpGradient)" name="🏦 JCP" />
-                  <Bar dataKey="Outros" stackId="b" fill="url(#outrosGradient)" name="📊 Outros" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="JCP" stackId="b" fill="url(#jcpGradient)" name="🏦 JCP" radius={hasOutrosMensal ? [0, 0, 0, 0] : [4, 4, 0, 0]} />
+                  {hasOutrosMensal && (
+                    <Bar dataKey="Outros" stackId="b" fill="url(#outrosGradient)" name="📊 Outros" radius={[4, 4, 0, 0]} />
+                  )}
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -1012,88 +984,14 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
         </div>
       </div>
 
-      {/* Seção da Tabela Detalhada */}
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-indigo-500 to-blue-600 p-6 text-white">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-3xl">📋</span>
-              <div>
-                <h2 className="text-xl font-bold">
-                  Histórico Detalhado de {anoSelecionado === "todos" ? "Todos os Anos" : anoSelecionado || "Todos os Anos"}
-                </h2>
-                <p className="text-indigo-100 text-sm">
-                  Todos os seus proventos organizados e detalhados
-                </p>
-              </div>
-            </div>
-            <div className="bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
-              <span className="text-white font-semibold">{proventosFiltradosParaTabela.length} registros</span>
-            </div>
-          </div>
-        </div>
-        
-        {loadingData ? (
-          <div className="h-[200px] flex items-center justify-center">
-            <div className="text-center">
-              <div className="relative mb-4">
-                <div className="w-12 h-12 relative mx-auto">
-                  <div className="absolute inset-0 border-3 border-indigo-200 rounded-full"></div>
-                  <div className="absolute inset-0 border-3 border-transparent border-t-indigo-600 rounded-full animate-spin"></div>
-                </div>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-indigo-600 text-lg">📋</span>
-                </div>
-              </div>
-              <p className="text-gray-600 font-medium">Carregando tabela de proventos...</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Barra de Pesquisa */}
-            <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-blue-50">
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-3 flex-1">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-indigo-100">
-                    <Search className="text-indigo-600 h-5 w-5" />
-                  </div>
-                  <div className="flex-1">
-                    <label className="text-gray-700 font-medium mb-1 block">
-                      Pesquisar nos seus proventos
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="Digite o nome da empresa, ticker, tipo de provento..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full border-2 border-indigo-200 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200 transition-all rounded-xl px-4 py-3 outline-none"
-                    />
-                  </div>
-                </div>
-                
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm("")}
-                    className="px-4 py-2 border border-gray-300 hover:border-gray-400 rounded-lg transition-colors"
-                  >
-                    Limpar
-                  </button>
-                )}
-              </div>
-              
-              {searchTerm && (
-                <div className="mt-3 p-3 bg-blue-100 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    <span className="font-semibold">{proventosFiltradosParaTabela.length}</span> resultados encontrados para "{searchTerm}"
-                  </p>
-                </div>
-              )}
-            </div>
 
-            <TabelaProventos data={proventosFiltradosParaTabela} showValues={showValues} title="Últimos Proventos Recebidos" />
-            
-          </>
-        )}
+      {/* 🎯 TABELA DE PROVENTOS - FINALMENTE NO LOCAL CORRETO! */}
+      <div className="mb-12">
+        <TabelaProventos 
+          data={proventosDetalhados} 
+          title={`Proventos Recebidos ${anoSelecionado === "todos" ? "(Todos os Anos)" : `em ${anoSelecionado}`}`}
+          showValues={showValues}
+        />
       </div>
 
       {/* Footer da Página */}
