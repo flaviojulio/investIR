@@ -13,6 +13,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button'; // For back button
 import { Input } from '@/components/ui/input'; // For search input
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import OperacoesEncerradasAcao from '@/components/OperacoesEncerradasAcao';
 
 // Interfaces tipadas para dados da ação
 interface DadosAcao {
@@ -787,7 +788,7 @@ export default function AcaoDetalhePage() {
             <div className="bg-gradient-to-r from-slate-50 via-gray-50 to-zinc-50 rounded-2xl p-6 border-2 border-slate-200 shadow-lg mb-6">
               <div className="flex items-center gap-3 mb-6">
                 <Receipt className="h-6 w-6 text-slate-600" />
-                <h3 className="text-xl font-bold text-gray-800">📋 Histórico Detalhado de Recebimentos</h3>
+                <h3 className="text-xl font-bold text-gray-800">Histórico Detalhado de Proventos</h3>
                 {proventosUsuario && (
                   <div className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
                     {(() => {
@@ -1193,12 +1194,6 @@ export default function AcaoDetalhePage() {
                       )}
                     </div>
                     
-                    {/* Confirmação de dados reais */}
-                    <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm text-green-800">
-                        <span className="font-semibold">✅ Dados Reais:</span> Histórico completo de todos os dividendos e proventos recebidos desta ação.
-                      </p>
-                    </div>
                   </>
                 );
               })()}
@@ -1698,6 +1693,22 @@ export default function AcaoDetalhePage() {
               </div>
             </div>
           </div>
+        </section>
+
+        {/* 📊 NOVA SEÇÃO: Operações Encerradas */}
+        <section id="closed-operations-section">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-8 w-1 bg-gradient-to-b from-purple-500 to-purple-600 rounded-full"></div>
+            <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+              <BarChart3 className="h-6 w-6 text-purple-600" />
+              📋 Operações Encerradas
+            </h2>
+          </div>
+
+          <OperacoesEncerradasAcao 
+            ticker={ticker} 
+            nomeAcao={infoAcao?.nome}
+          />
         </section>
 
         {/* Dica final para iniciantes */}
