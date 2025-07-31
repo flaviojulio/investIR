@@ -12,7 +12,7 @@ import { ArrowLeft, DollarSign, TrendingUp, TrendingDown, Package, Briefcase, Sh
 import Link from 'next/link';
 import { Button } from '@/components/ui/button'; // For back button
 import { Input } from '@/components/ui/input'; // For search input
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import OperacoesEncerradasAcao from '@/components/OperacoesEncerradasAcao';
 
 // Interfaces tipadas para dados da ação
@@ -76,6 +76,179 @@ const formatDate = (dateString: string | null | undefined, placeholder: string =
 };
 
 // 📊 Funções para processamento de dados dos gráficos
+
+// Função para calcular aportes líquidos (investimento total na ação)
+const calcularAportesLiquidos = (operacoes: OperacaoAcao[]): number => {
+  if (!operacoes || operacoes.length === 0) return 0;
+  
+  let aportesLiquidos = 0;
+  
+  operacoes.forEach((operacao) => {
+    if (operacao.operation === 'buy') {
+      // Compras: valor investido (preço + taxas)
+      const valorInvestido = (operacao.price * operacao.quantity) + (operacao.fees || 0);
+      aportesLiquidos += valorInvestido;
+      console.log(`💰 [APORTES] Compra: +R$ ${valorInvestido}`);
+    } else if (operacao.operation === 'sell') {
+      // Vendas: valor retirado (preço - taxas) - reduz o aporte líquido
+      const valorRetirado = (operacao.price * operacao.quantity) - (operacao.fees || 0);
+      aportesLiquidos -= valorRetirado;
+      console.log(`📤 [APORTES] Venda: -R$ ${valorRetirado}`);
+    }
+  });
+  
+  console.log(`📊 [APORTES] Total líquido investido: R$ ${aportesLiquidos}`);
+  return Math.max(0, aportesLiquidos); // Não pode ser negativo
+};
+
+// Função para preencher meses faltantes com o último valor conhecido
+const preencherMesesFaltantes = (dados: Array<{mes: string, valor: number}>): Array<{mes: string, valor: number}> => {
+  if (dados.length === 0) return [];
+  
+  // Ordenar dados por data para garantir ordem cronológica
+  const dadosOrdenados = dados.sort((a, b) => {
+    const [mesA, anoA] = a.mes.split('/');
+    const [mesB, anoB] = b.mes.split('/');
+    const dataA = new Date(2000 + parseInt(anoA), parseInt(mesA) - 1);
+    const dataB = new Date(2000 + parseInt(anoB), parseInt(mesB) - 1);
+    return dataA.getTime() - dataB.getTime();
+  });
+  
+  const primeiro = dadosOrdenados[0];
+  const ultimo = dadosOrdenados[dadosOrdenados.length - 1];
+  
+  // Parsear primeira e última data
+  const [mesPrimeiro, anoPrimeiro] = primeiro.mes.split('/');
+  const [mesUltimo, anoUltimo] = ultimo.mes.split('/');
+  
+  const dataInicio = new Date(2000 + parseInt(anoPrimeiro), parseInt(mesPrimeiro) - 1);
+  const dataFim = new Date(2000 + parseInt(anoUltimo), parseInt(mesUltimo) - 1);
+  
+  // Criar mapa dos dados existentes
+  const dadosMap = new Map<string, number>();
+  dadosOrdenados.forEach(item => dadosMap.set(item.mes, item.valor));
+  
+  // Preencher todos os meses entre início e fim
+  const dadosCompletos: Array<{mes: string, valor: number}> = [];
+  let dataAtual = new Date(dataInicio);
+  let ultimoValor = primeiro.valor;
+  
+  while (dataAtual <= dataFim) {
+    const mesAno = `${dataAtual.getMonth() + 1}/${dataAtual.getFullYear().toString().substr(-2)}`;
+    
+    if (dadosMap.has(mesAno)) {
+      // Mês com dados reais
+      ultimoValor = dadosMap.get(mesAno)!;
+      dadosCompletos.push({ mes: mesAno, valor: ultimoValor });
+    } else {
+      // Mês sem dados - usar último valor conhecido
+      dadosCompletos.push({ mes: mesAno, valor: ultimoValor });
+    }
+    
+    // Avançar para próximo mês
+    dataAtual.setMonth(dataAtual.getMonth() + 1);
+  }
+  
+  return dadosCompletos;
+};
+
+// Nova função para calcular evolução do valor de mercado da carteira
+const processarEvolucaoValorMercado = async (operacoes: OperacaoAcao[], ticker: string): Promise<Array<{mes: string, valor: number}>> => {
+  console.log(`🔍 [DEBUG] processarEvolucaoValorMercado recebeu ${operacoes?.length || 0} operações para ${ticker}`);
+  
+  if (!operacoes || operacoes.length === 0) {
+    console.log(`⚠️ [DEBUG] Sem operações para processar`);
+    return [];
+  }
+  
+  // Filtrar e ordenar todas as operações por data
+  const operacoesOrdenadas = operacoes
+    .filter(op => op.date && (op.operation === 'buy' || op.operation === 'sell'))
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  
+  if (operacoesOrdenadas.length === 0) return [];
+  
+  // Buscar cotações históricas
+  try {
+    const primeiraOperacao = operacoesOrdenadas[0];
+    const ultimaOperacao = operacoesOrdenadas[operacoesOrdenadas.length - 1];
+    
+    const dataInicio = new Date(primeiraOperacao.date);
+    const dataFim = new Date();
+    
+    // Buscar cotações históricas via API
+    const responseCotacoes = await api.get(`/cotacoes/ticker/${ticker}`, {
+      params: {
+        data_inicio: dataInicio.toISOString().split('T')[0],
+        data_fim: dataFim.toISOString().split('T')[0],
+        limite: 1000
+      }
+    });
+    
+    const cotacoes = responseCotacoes.data;
+    console.log(`📈 [DEBUG] Encontradas ${cotacoes.length} cotações históricas`);
+    
+    // Criar mapa de cotações por data
+    const cotacoesPorData = new Map<string, number>();
+    cotacoes.forEach((cotacao: any) => {
+      const data = new Date(cotacao.data);
+      const mesAno = `${data.getMonth() + 1}/${data.getFullYear().toString().substr(-2)}`;
+      // Usar a cotação mais recente do mês
+      cotacoesPorData.set(mesAno, cotacao.fechamento);
+    });
+    
+    // Calcular posição (quantidade de ações) ao longo do tempo
+    let quantidadeAtual = 0;
+    const posicaoPorMes = new Map<string, number>();
+    
+    operacoesOrdenadas.forEach((operacao) => {
+      const data = new Date(operacao.date);
+      const mesAno = `${data.getMonth() + 1}/${data.getFullYear().toString().substr(-2)}`;
+      
+      if (operacao.operation === 'buy') {
+        quantidadeAtual += operacao.quantity;
+      } else if (operacao.operation === 'sell') {
+        quantidadeAtual -= operacao.quantity;
+      }
+      
+      posicaoPorMes.set(mesAno, quantidadeAtual);
+    });
+    
+    // Calcular valor de mercado por mês
+    const valorMercadoPorMes = new Map<string, number>();
+    
+    posicaoPorMes.forEach((quantidade, mes) => {
+      const cotacao = cotacoesPorData.get(mes);
+      if (cotacao && quantidade > 0) {
+        const valorMercado = quantidade * cotacao;
+        valorMercadoPorMes.set(mes, valorMercado);
+        console.log(`💰 [DEBUG] ${mes}: ${quantidade} ações × R$ ${cotacao} = R$ ${valorMercado}`);
+      }
+    });
+    
+    // Converter para array e ordenar
+    const dadosGrafico = Array.from(valorMercadoPorMes.entries())
+      .map(([mes, valor]) => ({ mes, valor }))
+      .sort((a, b) => {
+        const [mesA, anoA] = a.mes.split('/');
+        const [mesB, anoB] = b.mes.split('/');
+        const dataA = new Date(2000 + parseInt(anoA), parseInt(mesA) - 1);
+        const dataB = new Date(2000 + parseInt(anoB), parseInt(mesB) - 1);
+        return dataA.getTime() - dataB.getTime();
+      });
+    
+    console.log(`📊 [DEBUG] Dados finais do gráfico de evolução do valor de mercado:`, dadosGrafico);
+    
+    // Preencher meses faltantes
+    const dadosCompletos = preencherMesesFaltantes(dadosGrafico);
+    return dadosCompletos;
+    
+  } catch (error) {
+    console.error(`❌ [DEBUG] Erro ao buscar cotações históricas:`, error);
+    return [];
+  }
+};
+
 const processarDadosEvolucaoInvestimento = (operacoes: OperacaoAcao[]): Array<{mes: string, valor: number}> => {
   console.log(`🔍 [DEBUG] processarDadosEvolucaoInvestimento recebeu ${operacoes?.length || 0} operações`);
   
@@ -131,7 +304,12 @@ const processarDadosEvolucaoInvestimento = (operacoes: OperacaoAcao[]): Array<{m
     });
   
   console.log(`📊 [DEBUG] Dados finais do gráfico de evolução do valor investido:`, dadosGrafico);
-  return dadosGrafico;
+  
+  // Preencher meses faltantes para criar uma linha contínua
+  const dadosCompletosMeses = preencherMesesFaltantes(dadosGrafico);
+  console.log(`🔄 [DEBUG] Dados após preencher meses faltantes:`, dadosCompletosMeses);
+  
+  return dadosCompletosMeses;
 };
 
 const processarDadosProventosMensais = (proventosUsuario: any[] | null, tickerFiltro: string): Array<{mes: string, valor: number}> => {
@@ -340,6 +518,7 @@ export default function AcaoDetalhePage() {
   // Estados para dados dos gráficos
   const [dadosEvolucaoInvestimento, setDadosEvolucaoInvestimento] = useState<Array<{mes: string, valor: number}>>([]);
   const [dadosProventosMensais, setDadosProventosMensais] = useState<Array<{mes: string, valor: number}>>([]);
+  const [aportesLiquidos, setAportesLiquidos] = useState<number>(0);
   
   // Estados para Calculadora DCA
   const [valorAporteMensal, setValorAporteMensal] = useState<number>(500);
@@ -460,11 +639,17 @@ export default function AcaoDetalhePage() {
         setInfoAcao(infoProcessada);
         
         // 📊 Processar dados para gráficos
-        const dadosEvolucao = processarDadosEvolucaoInvestimento(operacoesMapeadas);
+        // Usar nova função para calcular evolução do valor de mercado
+        const dadosEvolucaoMercado = await processarEvolucaoValorMercado(operacoesMapeadas, ticker);
         const dadosProventosMes = processarDadosProventosMensais(resProventosUsuario?.data, ticker);
+        
+        // 💰 Calcular aportes líquidos
+        const aportes = calcularAportesLiquidos(operacoesMapeadas);
+        
         console.log(`🔍 [DEBUG] Dados proventos mensais processados para ${ticker}:`, dadosProventosMes);
-        setDadosEvolucaoInvestimento(dadosEvolucao);
+        setDadosEvolucaoInvestimento(dadosEvolucaoMercado);
         setDadosProventosMensais(dadosProventosMes);
+        setAportesLiquidos(aportes);
         
       } catch (err: any) {
         let errorMessage = "Erro ao carregar dados da ação.";
@@ -1213,12 +1398,12 @@ export default function AcaoDetalhePage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-lg font-semibold text-yellow-700 flex items-center gap-2">
                     <DollarSign className="h-5 w-5" />
-                    Total Investido
+                    Aportes
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold text-yellow-800 mb-2">{formatCurrency(dados.total_investido_historico || 0)}</div>
-                  <p className="text-sm text-yellow-600">💵 Soma de todas as suas compras</p>
+                  <div className="text-2xl font-bold text-yellow-800 mb-2">{formatCurrency(aportesLiquidos)}</div>
+                  <p className="text-sm text-yellow-600">💰 Valor líquido investido (compras - vendas)</p>
                 </CardContent>
               </div>
 
@@ -1397,8 +1582,8 @@ export default function AcaoDetalhePage() {
                 <div className="flex items-center gap-3">
                   <span className="text-3xl">📈</span>
                   <div>
-                    <h3 className="text-xl font-bold">Evolução do Valor Investido</h3>
-                    <p className="text-blue-100 text-sm">Crescimento acumulado dos investimentos em {ticker} ao longo do tempo</p>
+                    <h3 className="text-xl font-bold">Evolução do Valor de Mercado</h3>
+                    <p className="text-blue-100 text-sm">Valor atual da carteira de {ticker} baseado nas cotações históricas</p>
                   </div>
                 </div>
               </div>
@@ -1410,16 +1595,20 @@ export default function AcaoDetalhePage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                       <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4">
                         <div className="text-center">
-                          <div className="text-2xl mb-2">📊</div>
-                          <div className="text-lg font-bold text-blue-800">
-                            {dadosEvolucaoInvestimento.length}
+                          <div className="flex justify-center mb-2">
+                            <DollarSign className="h-8 w-8 text-blue-500" />
                           </div>
-                          <p className="text-xs text-blue-600">Pontos no tempo</p>
+                          <div className="text-lg font-bold text-blue-800">
+                            {formatCurrency(aportesLiquidos)}
+                          </div>
+                          <p className="text-xs text-blue-600">Aportes</p>
                         </div>
                       </div>
                       <div className="bg-gradient-to-br from-indigo-50 to-indigo-100 border border-indigo-200 rounded-lg p-4">
                         <div className="text-center">
-                          <div className="text-2xl mb-2">🎯</div>
+                          <div className="flex justify-center mb-2">
+                            <Trophy className="h-8 w-8 text-yellow-500" />
+                          </div>
                           <div className="text-lg font-bold text-indigo-800">
                             {formatCurrency(Math.max(...dadosEvolucaoInvestimento.map(d => d.valor)))}
                           </div>
@@ -1439,12 +1628,14 @@ export default function AcaoDetalhePage() {
 
                     <div className="h-80">
                       <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={dadosEvolucaoInvestimento} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <AreaChart data={dadosEvolucaoInvestimento} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                           <defs>
                             {/* Gradiente para a área sob a linha */}
                             <linearGradient id="investimentoAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                              <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05}/>
+                              <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4}/>
+                              <stop offset="25%" stopColor="#3b82f6" stopOpacity={0.25}/>
+                              <stop offset="75%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                              <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02}/>
                             </linearGradient>
                             
                             {/* Gradiente moderno para a linha */}
@@ -1494,13 +1685,13 @@ export default function AcaoDetalhePage() {
                                     <div className="flex items-center gap-2 mb-2">
                                       <span className="text-lg">{isHighest ? '🏆' : '📈'}</span>
                                       <h4 className="font-bold text-gray-800">{label}</h4>
-                                      {isHighest && <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Pico máximo!</span>}
+                                      {isHighest && <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">Maior Valor</span>}
                                     </div>
                                     <div className="text-lg font-semibold text-blue-600">
                                       {formatCurrency(value)}
                                     </div>
                                     <p className="text-sm text-gray-600 mt-1">
-                                      Valor acumulado investido em {ticker}
+                                      Valor de mercado da carteira de {ticker}
                                     </p>
                                   </div>
                                 );
@@ -1508,41 +1699,38 @@ export default function AcaoDetalhePage() {
                               return null;
                             }}
                           />
-                          <Line 
+                          <Area 
                             type="monotone" 
                             dataKey="valor" 
                             stroke="url(#lineGradient)" 
                             strokeWidth={4}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            filter="url(#dropShadow)"
+                            fill="url(#investimentoAreaGradient)"
+                            fillOpacity={1}
                             dot={{ 
                               fill: '#ffffff', 
                               stroke: '#3b82f6', 
-                              strokeWidth: 3, 
-                              r: 6,
+                              strokeWidth: 2, 
+                              r: 3,
                               style: {
-                                filter: 'drop-shadow(0 2px 4px rgba(59, 130, 246, 0.4))',
+                                filter: 'drop-shadow(0 1px 2px rgba(59, 130, 246, 0.4))',
                                 transition: 'all 0.3s ease'
                               }
                             }}
                             activeDot={{ 
-                              r: 9, 
+                              r: 5, 
                               stroke: '#1e40af', 
-                              strokeWidth: 4, 
+                              strokeWidth: 3, 
                               fill: '#ffffff',
                               style: {
-                                filter: 'drop-shadow(0 4px 12px rgba(59, 130, 246, 0.6))',
+                                filter: 'drop-shadow(0 2px 8px rgba(59, 130, 246, 0.6))',
                                 transition: 'all 0.3s ease',
                                 animation: 'pulse 2s infinite'
                               }
                             }}
-                            fill="url(#investimentoAreaGradient)"
-                            fillOpacity={1}
                             animationDuration={1500}
                             animationEasing="ease-in-out"
                           />
-                        </LineChart>
+                        </AreaChart>
                       </ResponsiveContainer>
                     </div>
                   </>

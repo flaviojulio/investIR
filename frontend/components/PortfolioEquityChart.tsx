@@ -238,8 +238,10 @@ export function PortfolioEquityChart({ shouldLoad = true }: { shouldLoad?: boole
                 <AreaChart data={filteredChartData} margin={{ top: 20, right: 20, left: 20, bottom: 5 }}>
                   <defs>
                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={lineColor} stopOpacity={0.3} />
-                      <stop offset="95%" stopColor={lineColor} stopOpacity={0.05} />
+                      <stop offset="0%" stopColor={lineColor} stopOpacity={0.4} />
+                      <stop offset="25%" stopColor={lineColor} stopOpacity={0.25} />
+                      <stop offset="75%" stopColor={lineColor} stopOpacity={0.1} />
+                      <stop offset="100%" stopColor={lineColor} stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -287,8 +289,8 @@ export function PortfolioEquityChart({ shouldLoad = true }: { shouldLoad?: boole
                     strokeWidth={3}
                     fill={`url(#${gradientId})`}
                     name="Valor da Carteira"
-                    dot={{ fill: lineColor, strokeWidth: 2, r: 4 }}
-                    activeDot={{ r: 6, fill: lineColor, strokeWidth: 2, stroke: "#fff" }}
+                    dot={{ fill: lineColor, strokeWidth: 2, r: 2 }}
+                    activeDot={{ r: 4, fill: lineColor, strokeWidth: 2, stroke: "#fff" }}
                   />
                 </AreaChart>
               </ChartContainer>
