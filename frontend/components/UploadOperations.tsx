@@ -377,11 +377,12 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
       
       console.log("✅ [UPLOAD] Resposta recebida:", response.status, response.data)
       
-      // Extrair lista de ações únicas do arquivo importado
+      // Extrair lista de ações únicas do arquivo importado (removendo sufixo F)
       const acoesAfetadas = Array.from(new Set(
         (Array.isArray(jsonData) ? jsonData : [])
           .map((op: any) => op["Código de Negociação"] || op.ticker)
           .filter((ticker: string) => ticker && ticker.trim())
+          .map((ticker: string) => ticker.endsWith('F') ? ticker.slice(0, -1) : ticker)
       )) as string[]
       
       // Preparar resumo da importação

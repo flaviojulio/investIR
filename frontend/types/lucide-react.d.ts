@@ -102,5 +102,6 @@ declare module 'lucide-react' {
   export const User: ComponentType<IconProps>;
   export const Wallet: ComponentType<IconProps>;
   export const X: ComponentType<IconProps>;
+  export const XCircle: ComponentType<IconProps>;
   export const Zap: ComponentType<IconProps>;
 }

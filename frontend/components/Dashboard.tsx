@@ -1498,6 +1498,7 @@ export function Dashboard() {
         isOpen={isFeedbackModalOpen}
         onClose={() => setIsFeedbackModalOpen(false)}
         paginaAtual={pathname}
+        abaAtual={activeTab}
       />
     </div>
   )

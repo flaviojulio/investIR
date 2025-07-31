@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState } from 'react';
-import { X, MessageSquare, Bug, HelpCircle, Lightbulb, AlertCircle } from 'lucide-react';
+import { X, MessageSquare, AlertTriangle, HelpCircle, Lightbulb, AlertCircle } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface FeedbackModalProps {
   isOpen: boolean;
   onClose: () => void;
   paginaAtual?: string;
+  abaAtual?: string;
 }
 
 interface FeedbackData {
@@ -19,7 +21,7 @@ interface FeedbackData {
 const categoriaConfig = {
   bug: {
     label: 'Erro/Bug',
-    icon: Bug,
+    icon: AlertTriangle,
     color: 'text-red-600',
     bgColor: 'bg-red-50',
     borderColor: 'border-red-200',
@@ -57,10 +59,25 @@ const prioridadeConfig = {
   alta: { label: 'Alta', color: 'text-red-600' }
 };
 
-export default function FeedbackModal({ isOpen, onClose, paginaAtual }: FeedbackModalProps) {
+const traduzirAba = (abaId: string): string => {
+  const abas: Record<string, string> = {
+    'overview': 'Visão Geral',
+    'extrato': 'Extrato de Operações',
+    'carteira': 'Carteira Atual',
+    'proventos': 'Proventos',
+    'resultados': 'Resultados Fiscais',
+    'graficos': 'Gráficos',
+    'upload': 'Upload de Operações',
+    'manual': 'Cadastro Manual',
+    'operacoes_fechadas': 'Operações Encerradas'
+  };
+  return abas[abaId] || abaId;
+};
+
+export default function FeedbackModal({ isOpen, onClose, paginaAtual, abaAtual }: FeedbackModalProps) {
   const [feedback, setFeedback] = useState<FeedbackData>({
     categoria: 'geral',
-    pagina_atual: paginaAtual,
+    pagina_atual: abaAtual ? `${paginaAtual} - ${traduzirAba(abaAtual)}` : paginaAtual,
     mensagem: '',
     prioridade: 'media'
   });
@@ -85,37 +102,29 @@ export default function FeedbackModal({ isOpen, onClose, paginaAtual }: Feedback
     setErrorMessage('');
 
     try {
-      const response = await fetch('/api/feedback', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(feedback),
-        credentials: 'include'
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Erro ao enviar feedback');
-      }
+      const response = await api.post('/feedback', feedback);
+      
+      // Se chegou aqui, a requisição foi bem-sucedida
+      console.log('✅ [Feedback] Enviado com sucesso:', response.data);
 
       setSubmitStatus('success');
-      
-      // Fechar modal após 2 segundos
-      setTimeout(() => {
-        setSubmitStatus('idle');
-        setFeedback({
-          categoria: 'geral',
-          pagina_atual: paginaAtual,
-          mensagem: '',
-          prioridade: 'media'
-        });
-        onClose();
-      }, 2000);
 
-    } catch (error) {
-      console.error('Erro ao enviar feedback:', error);
-      setErrorMessage(error instanceof Error ? error.message : 'Erro desconhecido');
+    } catch (error: any) {
+      console.error('❌ [Feedback] Erro ao enviar:', error);
+      
+      // Tratamento específico para erros do axios
+      if (error.response) {
+        // Erro de resposta do servidor (4xx, 5xx)
+        const errorDetail = error.response.data?.detail || error.response.data?.message || 'Erro no servidor';
+        setErrorMessage(errorDetail);
+      } else if (error.request) {
+        // Erro de rede (sem resposta)
+        setErrorMessage('Erro de conexão. Verifique sua internet.');
+      } else {
+        // Outros erros
+        setErrorMessage(error.message || 'Erro desconhecido');
+      }
+      
       setSubmitStatus('error');
     } finally {
       setIsSubmitting(false);
@@ -130,6 +139,18 @@ export default function FeedbackModal({ isOpen, onClose, paginaAtual }: Feedback
     }
   };
 
+  const handleSuccessClose = () => {
+    setSubmitStatus('idle');
+    setFeedback({
+      categoria: 'geral',
+      pagina_atual: abaAtual ? `${paginaAtual} - ${traduzirAba(abaAtual)}` : paginaAtual,
+      mensagem: '',
+      prioridade: 'media'
+    });
+    setErrorMessage('');
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   if (submitStatus === 'success') {
@@ -142,12 +163,15 @@ export default function FeedbackModal({ isOpen, onClose, paginaAtual }: Feedback
           <h3 className="text-lg font-semibold text-gray-900 mb-2">
             Feedback Enviado!
           </h3>
-          <p className="text-gray-600 mb-4">
+          <p className="text-gray-600 mb-6">
             Obrigado pelo seu feedback. Nossa equipe analisará sua mensagem e retornará em breve.
           </p>
-          <div className="text-sm text-gray-500">
-            Fechando automaticamente...
-          </div>
+          <button
+            onClick={handleSuccessClose}
+            className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium"
+          >
+            OK
+          </button>
         </div>
       </div>
     );
@@ -259,10 +283,16 @@ export default function FeedbackModal({ isOpen, onClose, paginaAtual }: Feedback
             </div>
           </div>
 
-          {/* Página Atual */}
-          {paginaAtual && (
-            <div className="text-xs text-gray-500">
-              <span className="font-medium">Página atual:</span> {paginaAtual}
+          {/* Localização Atual */}
+          {(paginaAtual || abaAtual) && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <div className="text-xs text-blue-700">
+                <span className="font-medium">📍 Localização atual:</span>
+                <div className="mt-1">
+                  {paginaAtual && <div><strong>Página:</strong> {paginaAtual}</div>}
+                  {abaAtual && <div><strong>Aba:</strong> {traduzirAba(abaAtual)}</div>}
+                </div>
+              </div>
             </div>
           )}
 
