@@ -28,6 +28,23 @@ from pydantic import BaseModel
 class DARFStatusUpdate(BaseModel):
     status: str
 
+# Pydantic model for user feedback
+class FeedbackUsuarioCreate(BaseModel):
+    categoria: str = 'geral'  # 'bug', 'duvida_fiscal', 'sugestao', 'geral'
+    pagina_atual: str = None
+    mensagem: str
+    prioridade: str = 'media'  # 'baixa', 'media', 'alta'
+
+class FeedbackUsuarioResponse(BaseModel):
+    id: int
+    usuario_id: int
+    categoria: str
+    pagina_atual: str
+    mensagem: str
+    prioridade: str
+    data_criacao: str
+    status: str
+
 from database import (
     criar_tabelas, 
     limpar_banco_dados, 
@@ -43,6 +60,8 @@ from database import (
     deletar_mensagem,
     obter_estatisticas_mensagens,
     limpar_mensagens_expiradas,
+    # Função de feedback
+    inserir_feedback_usuario,
 )
 
 import services # Keep this for other service functions
@@ -1146,6 +1165,68 @@ async def criar_operacao(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao criar operação: {str(e)}")
+
+@app.post("/api/feedback", response_model=FeedbackUsuarioResponse, tags=["Feedback"])
+async def criar_feedback(
+    feedback: FeedbackUsuarioCreate,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    Cria um novo feedback do usuário.
+    
+    Args:
+        feedback: Dados do feedback a ser criado.
+        usuario: Usuário autenticado que está enviando o feedback.
+    
+    Returns:
+        FeedbackUsuarioResponse: Dados do feedback criado.
+    """
+    try:
+        # Validar tamanho da mensagem
+        if len(feedback.mensagem) > 1000:
+            raise HTTPException(status_code=400, detail="Mensagem muito longa. Máximo 1000 caracteres.")
+        
+        if not feedback.mensagem.strip():
+            raise HTTPException(status_code=400, detail="Mensagem não pode estar vazia.")
+        
+        # Validar categoria
+        categorias_validas = ['bug', 'duvida_fiscal', 'sugestao', 'geral']
+        if feedback.categoria not in categorias_validas:
+            raise HTTPException(status_code=400, detail=f"Categoria deve ser uma de: {', '.join(categorias_validas)}")
+        
+        # Validar prioridade
+        prioridades_validas = ['baixa', 'media', 'alta']
+        if feedback.prioridade not in prioridades_validas:
+            raise HTTPException(status_code=400, detail=f"Prioridade deve ser uma de: {', '.join(prioridades_validas)}")
+        
+        # Preparar dados para inserção
+        feedback_data = {
+            'usuario_id': usuario.id,
+            'categoria': feedback.categoria,
+            'pagina_atual': feedback.pagina_atual,
+            'mensagem': feedback.mensagem.strip(),
+            'prioridade': feedback.prioridade
+        }
+        
+        # Inserir no banco de dados
+        feedback_id = inserir_feedback_usuario(feedback_data)
+        
+        # Retornar resposta
+        return FeedbackUsuarioResponse(
+            id=feedback_id,
+            usuario_id=usuario.id,
+            categoria=feedback.categoria,
+            pagina_atual=feedback.pagina_atual,
+            mensagem=feedback.mensagem.strip(),
+            prioridade=feedback.prioridade,
+            data_criacao=datetime.now().isoformat(),
+            status='pendente'
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao criar feedback: {str(e)}")
 
 @app.put("/api/carteira/{ticker}", response_model=Dict[str, str])
 async def atualizar_carteira(

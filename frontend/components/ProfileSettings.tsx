@@ -309,8 +309,7 @@ export default function ProfileSettings() {
                 {cpfError && (
                   <p className="text-sm text-red-500">{cpfError}</p>
                 )}
-                <p className="text-sm text-gray-500">
-                  Formato: 000.000.000-00 (apenas números brasileiros válidos)
+                <p className="text-sm text-gray-500">                 
                 </p>
               </div>
 

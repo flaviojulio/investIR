@@ -63,6 +63,38 @@ def migrar_acoes_logo():
                 print(f"[DB MIGRATION] Erro ao adicionar coluna logo: {e}")
         else:
             print("[DB MIGRATION] Coluna logo ja existe")
+
+def migrar_feedback_usuario():
+    """
+    Cria a tabela feedback_usuario se não existir.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Verifica se a tabela já existe
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='feedback_usuario'")
+        exists = cursor.fetchone()
+        
+        if not exists:
+            try:
+                cursor.execute("""
+                    CREATE TABLE feedback_usuario (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        usuario_id INTEGER NOT NULL,
+                        categoria VARCHAR(50) NOT NULL DEFAULT 'geral',
+                        pagina_atual VARCHAR(100),
+                        mensagem TEXT(1000) NOT NULL,
+                        prioridade VARCHAR(10) DEFAULT 'media',
+                        data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        status VARCHAR(20) DEFAULT 'pendente',
+                        FOREIGN KEY (usuario_id) REFERENCES usuarios (id)
+                    )
+                """)
+                print("[DB MIGRATION] Tabela feedback_usuario criada com sucesso")
+                conn.commit()
+            except Exception as e:
+                print(f"[DB MIGRATION] Erro ao criar tabela feedback_usuario: {e}")
+        else:
+            print("[DB MIGRATION] Tabela feedback_usuario ja existe")
 import sqlite3
 from datetime import date, datetime
 from contextlib import contextmanager
@@ -1125,10 +1157,21 @@ def limpar_usuario_proventos_recebidos_db(usuario_id: int) -> None:
 def inserir_usuario_provento_recebido_db(usuario_id: int, provento_global_id: int, quantidade: float, valor_total: float) -> int:
     """
     Insere um registro de provento recebido por um usuário no banco de dados.
+    🚨 PROTEGIDO CONTRA DUPLICATAS com INSERT OR IGNORE.
     """
     from datetime import datetime as dt
     with get_db() as conn:
         cursor = conn.cursor()
+
+        # 🔧 VERIFICAR SE JÁ EXISTS - PREVENÇÃO DE DUPLICATAS
+        cursor.execute('''
+            SELECT id FROM usuario_proventos_recebidos 
+            WHERE usuario_id = ? AND provento_global_id = ? AND quantidade_possuida_na_data_ex = ?
+        ''', (usuario_id, provento_global_id, quantidade))
+        
+        existing = cursor.fetchone()
+        if existing:
+            return existing['id']  # Retorna ID existente, não insere duplicata
 
         # Buscar informações do provento global para preencher os campos necessários
         cursor.execute('''SELECT id_acao, tipo, data_ex, dt_pagamento, valor as valor_unitario FROM proventos WHERE id = ?''', (provento_global_id,))
@@ -1959,6 +2002,40 @@ def inserir_cotacoes_lote(cotacoes_lista: List[Dict[str, Any]]) -> int:
         
         conn.commit()
         return len(dados_para_inserir)
+
+def inserir_feedback_usuario(feedback_data: Dict[str, Any]) -> int:
+    """
+    Insere um novo feedback do usuário no banco de dados.
+    
+    Args:
+        feedback_data: Dicionário com dados do feedback contendo:
+            - usuario_id: int
+            - categoria: str ('bug', 'duvida_fiscal', 'sugestao', 'geral')
+            - pagina_atual: str (opcional)
+            - mensagem: str
+            - prioridade: str ('baixa', 'media', 'alta') (opcional, padrão: 'media')
+    
+    Returns:
+        int: ID do feedback inserido
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO feedback_usuario (
+                usuario_id, categoria, pagina_atual, mensagem, prioridade
+            ) VALUES (?, ?, ?, ?, ?)
+        ''', (
+            feedback_data['usuario_id'],
+            feedback_data.get('categoria', 'geral'),
+            feedback_data.get('pagina_atual'),
+            feedback_data['mensagem'],
+            feedback_data.get('prioridade', 'media')
+        ))
+        
+        feedback_id = cursor.lastrowid
+        conn.commit()
+        return feedback_id
 
 def obter_cotacoes_por_acao_id(acao_id: int, data_inicio: str = None, data_fim: str = None) -> List[Dict[str, Any]]:
     """

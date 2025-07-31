@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Upload, FileText, CheckCircle, AlertCircle, HelpCircle, UploadCloud, Loader2, Clock, Sparkles, AlertTriangle, FileStack } from "lucide-react"
+import { Upload, FileText, CheckCircle, AlertCircle, HelpCircle, UploadCloud, Loader2, Clock, Sparkles, AlertTriangle, FileStack, Shield, ShieldCheck, Lock, Zap, Timer, Trophy } from "lucide-react"
 import { api } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
 import { Tooltip, TooltipContent } from "@/components/ui/tooltip"
@@ -450,13 +450,29 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
     return (
       <div className="w-full">
         
-        {/* Header compacto */}
-        <div className="text-center mb-6">
-          <div className="w-12 h-12 bg-blue-500 rounded-full flex items-center justify-center mx-auto mb-3">
-            <UploadCloud className="h-6 w-6 text-white" />
+        {/* Header melhorado com gradiente brasileiro */}
+        <div className="text-center mb-8">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg hover:scale-110 transition-transform duration-300">
+            <UploadCloud className="h-8 w-8 text-white" />
           </div>
-          <h1 className="text-xl font-bold text-gray-800 mb-2">Importar Operações da B3</h1>
-          <p className="text-gray-600 text-sm">Importe todas suas operações de uma vez só, de forma simples e segura</p>
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-3">Importar da B3</h1>
+          <p className="text-gray-600 text-lg mb-4">Rápido, simples e 100% seguro 🚀</p>
+          
+          {/* Indicadores de confiança LGPD */}
+          <div className="flex items-center justify-center gap-4 mb-6 text-sm text-gray-600">
+            <div className="flex items-center gap-2 bg-green-50 px-3 py-2 rounded-full border border-green-200">
+              <Shield className="h-4 w-4 text-green-600" />
+              <span className="text-green-700 font-medium">Protegido pela LGPD</span>
+            </div>
+            <div className="flex items-center gap-2 bg-blue-50 px-3 py-2 rounded-full border border-blue-200">
+              <Lock className="h-4 w-4 text-blue-600" />
+              <span className="text-blue-700 font-medium">Criptografia bancária</span>
+            </div>
+            <div className="flex items-center gap-2 bg-purple-50 px-3 py-2 rounded-full border border-purple-200">
+              <CheckCircle className="h-4 w-4 text-purple-600" />
+              <span className="text-purple-700 font-medium">Dados não compartilhados</span>
+            </div>
+          </div>
         </div>
 
         {/* Cards de Instrução Lado a Lado */}
@@ -551,38 +567,49 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
           </div>
         </div>
 
-        {/* Área de Upload */}
-        <div className="bg-white rounded-xl border p-5">
-          <h2 className="text-lg font-bold text-gray-800 mb-4 text-center">Selecione seu arquivo da B3</h2>
+        {/* Área de Upload melhorada com design brasileiro */}
+        <div className="bg-white rounded-2xl border-2 border-gray-200 p-6 shadow-lg hover:shadow-xl transition-all duration-300">
+          <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">Arraste seu extrato da B3 aqui 🎯</h2>
           
           <div
-            className={`border-3 border-dashed rounded-xl p-6 text-center transition-all cursor-pointer ${
+            className={`relative border-3 border-dashed rounded-2xl p-8 text-center transition-all duration-300 cursor-pointer group ${
               isDragOver 
-                ? 'border-blue-500 bg-blue-50' 
-                : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                ? 'border-green-500 bg-gradient-to-br from-green-50 to-emerald-50 scale-[1.02] shadow-lg' 
+                : 'border-gray-300 hover:border-blue-400 hover:bg-gradient-to-br hover:from-blue-50 hover:to-cyan-50 hover:scale-[1.01]'
             }`}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
           >
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <Upload className="h-6 w-6 text-blue-500" />
+            {/* Fundo animado */}
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-50 via-purple-50 to-indigo-50 opacity-0 group-hover:opacity-50 transition-opacity duration-300 rounded-2xl" />
+            
+            {/* Ícone principal melhorado */}
+            <div className={`relative w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center shadow-lg transition-all duration-300 group-hover:scale-110 ${
+              isDragOver 
+                ? 'bg-gradient-to-br from-green-400 to-emerald-500' 
+                : 'bg-gradient-to-br from-blue-500 to-purple-600'
+            }`}>
+              <Upload className="h-10 w-10 text-white" />
             </div>
             
-            <h3 className="text-base font-semibold text-gray-800 mb-2">
-              Arraste seu arquivo aqui
+            {/* Texto principal */}
+            <h3 className="text-2xl font-bold text-gray-800 mb-3">
+              {isDragOver ? "Solte aqui! 🎯" : "Arraste seu arquivo aqui"}
             </h3>
-            <p className="text-gray-600 mb-4 text-sm">
-              ou clique para selecionar do seu computador
+            <p className="text-gray-600 mb-6 text-lg">
+              ou toque para escolher do seu celular/computador
             </p>
             
-            <Button className="px-4 py-2">
-              Escolher Arquivo
+            {/* Botão melhorado */}
+            <Button className="px-8 py-4 text-lg bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-xl font-semibold shadow-lg hover:scale-105 transition-all duration-300">
+              📎 Escolher Arquivo da B3
             </Button>
             
-            <p className="text-xs text-gray-500 mt-3">
-              Arquivos Excel (.xlsx) ou JSON • Máximo 5MB
+            {/* Informações de arquivo */}
+            <p className="text-sm text-gray-500 mt-4">
+              Arquivos Excel (.xlsx) • Até 25MB • Dados seguros
             </p>
             
             <Input
@@ -595,11 +622,19 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
           </div>
 
           {error && (
-            <Alert variant="destructive" className="mt-4">
+            <Alert variant="destructive" className="mt-6">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
+          
+          {/* Footer de conformidade LGPD */}
+          <div className="mt-6 p-4 bg-gray-50 rounded-xl border border-gray-200">
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
+              <Lock className="h-4 w-4 text-green-600" />
+              <span>🇧🇷 Dados processados no Brasil • Protegido pela LGPD • Não compartilhamos suas informações</span>
+            </div>
+          </div>
         </div>
       </div>
     )
@@ -656,9 +691,9 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
               
               <Button
                 onClick={prosseguirAposAvisoB3}
-                className="flex-1"
+                className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-semibold py-3"
               >
-                Entendi, continuar
+                ✅ Entendi, vamos continuar!
               </Button>
             </div>
           </CardContent>
@@ -743,9 +778,11 @@ export function UploadOperations({ onSuccess }: UploadOperationsProps) {
               <Button
                 onClick={handleUpload}
                 disabled={validationSteps.some(s => s.status !== 'done')}
-                className="flex-1"
+                className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-semibold py-3 disabled:opacity-50"
               >
-                {validationSteps.every(s => s.status === 'done') ? 'Importar Operações' : 'Aguarde...'}
+                {validationSteps.every(s => s.status === 'done') ? 
+                  <>🚀 Importar Operações ({operationsCount} encontradas)</> : 
+                  'Aguarde a validação...'}
               </Button>
             </div>
           </CardContent>

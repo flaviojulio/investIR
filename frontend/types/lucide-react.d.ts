@@ -22,6 +22,7 @@ declare module 'lucide-react' {
   export const ArrowUpRight: ComponentType<IconProps>;
   export const Award: ComponentType<IconProps>;
   export const BarChart3: ComponentType<IconProps>;
+  export const Bell: ComponentType<IconProps>;
   export const BookOpen: ComponentType<IconProps>;
   export const Brain: ComponentType<IconProps>;
   export const Briefcase: ComponentType<IconProps>;
@@ -71,6 +72,7 @@ declare module 'lucide-react' {
   export const Loader2: ComponentType<IconProps>;
   export const Lock: ComponentType<IconProps>;
   export const LogOut: ComponentType<IconProps>;
+  export const MessageSquare: ComponentType<IconProps>;
   export const MoreHorizontal: ComponentType<IconProps>;
   export const MoreVertical: ComponentType<IconProps>;
   export const Package: ComponentType<IconProps>;
@@ -83,7 +85,9 @@ declare module 'lucide-react' {
   export const RefreshCw: ComponentType<IconProps>;
   export const RotateCcw: ComponentType<IconProps>;
   export const Search: ComponentType<IconProps>;
+  export const Settings: ComponentType<IconProps>;
   export const Shield: ComponentType<IconProps>;
+  export const ShieldCheck: ComponentType<IconProps>;
   export const ShoppingCart: ComponentType<IconProps>;
   export const Sparkles: ComponentType<IconProps>;
   export const Target: ComponentType<IconProps>;

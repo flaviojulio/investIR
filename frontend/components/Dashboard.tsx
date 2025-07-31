@@ -7,7 +7,7 @@ import { api, getResumoProventosAnuaisUsuario, getResumoProventosMensaisUsuario,
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff, Settings } from "lucide-react" // Added Trophy, Eye, EyeOff, Settings
+import { LogOut, TrendingUp, PlusCircle, UploadCloud, DollarSign, Briefcase, Landmark, Trophy, History, FileText, ExternalLink, Eye, EyeOff, Settings, MessageSquare } from "lucide-react" // Added Trophy, Eye, EyeOff, Settings, MessageSquare
 import { PortfolioOverview } from "@/components/PortfolioOverview"
 import { StockTable } from "@/components/StockTable"
 import DividendNotifications from "./DividendNotifications"
@@ -45,6 +45,7 @@ import { Tooltip as TooltipUI, TooltipTrigger, TooltipContent, TooltipProvider }
 // import { DividendTimeline } from "@/components/DividendTimeline"
 import Link from "next/link";
 import NotificationCenter from "@/components/NotificationCenter";
+import FeedbackModal from "@/components/FeedbackModal";
 // Added ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario
 import type { Operacao, CarteiraItem, ResultadoMensal, OperacaoFechada, ResumoProventoAnualAPI, ResumoProventoMensalAPI, AcaoDetalhadaResumoProventoAPI, ProventoRecebidoUsuario } from "@/lib/types"
 
@@ -1067,6 +1068,7 @@ export function Dashboard() {
   const [activeTab, setActiveTab] = useState("overview")
   const [totalDividendosRecebidos, setTotalDividendosRecebidos] = useState<number>(0);
   const [showValues, setShowValues] = useState(true); // New state for hiding/showing values
+  const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
 
   const router = useRouter() // Initialize useRouter
   const pathname = usePathname() // Initialize usePathname
@@ -1224,6 +1226,17 @@ export function Dashboard() {
 
               {/* Central de Notificações */}
               <NotificationCenter />
+
+              {/* Botão de Feedback */}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setIsFeedbackModalOpen(true)}
+                className="flex items-center gap-2 hover:bg-orange-50 hover:border-orange-300"
+              >
+                <MessageSquare className="h-4 w-4" />
+                <span className="hidden sm:inline">Feedback</span>
+              </Button>
 
               {/* Botão de Configurações */}
               <Link href="/configuracoes">
@@ -1479,6 +1492,13 @@ export function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* Feedback Modal */}
+      <FeedbackModal 
+        isOpen={isFeedbackModalOpen}
+        onClose={() => setIsFeedbackModalOpen(false)}
+        paginaAtual={pathname}
+      />
     </div>
   )
 }

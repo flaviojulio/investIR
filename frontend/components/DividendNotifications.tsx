@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, Calendar, TrendingUp, Clock, Sparkles, X } from 'lucide-react';
+import { Bell, Calendar, TrendingUp, Clock, Sparkles, X, ChevronDown } from 'lucide-react';
 
 interface DividendNotification {
   id: number;
@@ -69,6 +69,14 @@ const DividendNotifications: React.FC<DividendNotificationsProps> = ({ showValue
   const dismissNewCard = () => {
     setDismissedNewCard(true);
   };
+  
+  const scrollToTable = () => {
+    // Encontrar a tabela de proventos e fazer scroll suave
+    const tableElement = document.querySelector('[data-testid="tabela-proventos"]');
+    if (tableElement) {
+      tableElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
 
   const formatCurrency = (value: number) => {
     if (!showValues) return "R$ ••••";
@@ -79,16 +87,37 @@ const DividendNotifications: React.FC<DividendNotificationsProps> = ({ showValue
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR');
+    const date = new Date(dateString);
+    const now = new Date();
+    
+    // Se for ano diferente, mostrar ano
+    if (date.getFullYear() !== now.getFullYear()) {
+      return date.toLocaleDateString('pt-BR', { 
+        day: '2-digit', 
+        month: '2-digit',
+        year: '2-digit'
+      });
+    }
+    
+    // Mesmo ano, mostrar apenas dd/mm
+    return date.toLocaleDateString('pt-BR', { 
+      day: '2-digit', 
+      month: '2-digit' 
+    });
   };
 
+  const CARDS_LIMIT = 6;
+  
   const getVisibleNewDividends = () => {
-    return showAll ? newDividends : newDividends.slice(0, 3);
+    return newDividends.slice(0, CARDS_LIMIT);
   };
 
   const getVisibleUpcomingDividends = () => {
-    return showAll ? upcomingDividends : upcomingDividends.slice(0, 3);
+    return upcomingDividends.slice(0, CARDS_LIMIT);
   };
+  
+  const remainingNewCount = Math.max(0, newDividends.length - CARDS_LIMIT);
+  const remainingUpcomingCount = Math.max(0, upcomingDividends.length - CARDS_LIMIT);
 
   const totalNewDividends = dismissedNewCard ? 0 : newDividends.length;
   const totalUpcoming = upcomingDividends.length;
@@ -134,13 +163,10 @@ const DividendNotifications: React.FC<DividendNotificationsProps> = ({ showValue
             </button>
           </div>
           
-          <div className="flex gap-2 overflow-x-auto">
+          <div className="flex gap-2 overflow-x-auto items-center">
             {getVisibleNewDividends().map((dividend) => (
               <div key={dividend.id} className="flex items-center gap-2 bg-gradient-to-r from-green-100 to-emerald-100 border border-green-300 rounded px-2 py-1 flex-shrink-0 min-w-0">
                 <span className="font-medium text-gray-800 text-xs whitespace-nowrap">{dividend.ticker}</span>
-                <span className="bg-green-200 text-green-800 text-[10px] px-1 py-0.5 rounded">
-                  {dividend.tipo_provento.slice(0, 3)}
-                </span>
                 <span className="text-xs font-semibold text-gray-800 whitespace-nowrap">
                   {formatCurrency(dividend.valor_total_recebido)}
                 </span>
@@ -149,6 +175,17 @@ const DividendNotifications: React.FC<DividendNotificationsProps> = ({ showValue
                 </span>
               </div>
             ))}
+            
+            {remainingNewCount > 0 && (
+              <button
+                onClick={scrollToTable}
+                className="flex items-center gap-1 bg-gradient-to-r from-green-200 to-emerald-200 hover:from-green-300 hover:to-emerald-300 transition-all duration-200 border border-green-400 rounded px-2 py-1 flex-shrink-0 group"
+                title={`Mais ${remainingNewCount} dividendo${remainingNewCount > 1 ? 's' : ''} cadastrado${remainingNewCount > 1 ? 's' : ''}. Clique para ver todos na tabela abaixo.`}
+              >
+                <span className="text-xs font-semibold text-green-800">(+{remainingNewCount} mais)</span>
+                <ChevronDown className="h-3 w-3 text-green-700 group-hover:translate-y-0.5 transition-transform" />
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -158,16 +195,13 @@ const DividendNotifications: React.FC<DividendNotificationsProps> = ({ showValue
         <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-2">
           <div className="flex items-center gap-2 mb-2">
             <Clock className="h-3 w-3 text-green-600" />
-            <h4 className="text-xs font-medium text-green-700">Próximos ({totalUpcoming})</h4>
+            <h4 className="text-xs font-medium text-green-700">Próximos Pagamentos ({totalUpcoming})</h4>
           </div>
           
-          <div className="flex gap-2 overflow-x-auto">
+          <div className="flex gap-2 overflow-x-auto items-center">
             {getVisibleUpcomingDividends().map((dividend) => (
               <div key={dividend.id} className="flex items-center gap-2 bg-gradient-to-r from-green-100 to-emerald-100 border border-green-300 rounded px-2 py-1 flex-shrink-0 min-w-0">
                 <span className="font-medium text-gray-800 text-xs whitespace-nowrap">{dividend.ticker}</span>
-                <span className="bg-green-200 text-green-800 text-[10px] px-1 py-0.5 rounded">
-                  {dividend.tipo_provento.slice(0, 3)}
-                </span>
                 <span className="text-xs font-semibold text-gray-800 whitespace-nowrap">
                   {formatCurrency(dividend.estimated_amount)}
                 </span>
@@ -176,6 +210,17 @@ const DividendNotifications: React.FC<DividendNotificationsProps> = ({ showValue
                 </span>
               </div>
             ))}
+            
+            {remainingUpcomingCount > 0 && (
+              <button
+                onClick={scrollToTable}
+                className="flex items-center gap-1 bg-gradient-to-r from-green-200 to-emerald-200 hover:from-green-300 hover:to-emerald-300 transition-all duration-200 border border-green-400 rounded px-2 py-1 flex-shrink-0 group"
+                title={`Mais ${remainingUpcomingCount} dividendo${remainingUpcomingCount > 1 ? 's' : ''} próximo${remainingUpcomingCount > 1 ? 's' : ''}. Clique para ver todos na tabela abaixo.`}
+              >
+                <span className="text-xs font-semibold text-green-800">(+{remainingUpcomingCount} mais)</span>
+                <ChevronDown className="h-3 w-3 text-green-700 group-hover:translate-y-0.5 transition-transform" />
+              </button>
+            )}
           </div>
         </div>
       )}

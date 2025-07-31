@@ -17,7 +17,7 @@ interface TabelaProventosProps {
   ticker?: string;
 }
 
-type SortableKeys = 'data_ex' | 'dt_pagamento' | 'ticker_acao' | 'tipo' | 'valor_total_recebido';
+type SortableKeys = 'dt_pagamento' | 'ticker_acao' | 'tipo' | 'valor_total_recebido';
 
 // Helper functions to handle field values with fallback
 /**
@@ -352,7 +352,6 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
   // Configuration for table headers
   // Adiciona coluna de status (Recebido/A Receber)
   const headerConfig: { key?: SortableKeys; label: string; className?: string; isSortable: boolean }[] = [
-    { key: 'data_ex', label: 'Data Ex', className: 'hidden md:table-cell', isSortable: true },
     { key: 'dt_pagamento', label: 'Data Pag.', isSortable: true },
     { key: 'ticker_acao', label: 'Ticker', isSortable: true },
     { label: 'Nome Ação', className: 'hidden lg:table-cell', isSortable: false },
@@ -368,7 +367,7 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
   const paginatedUniqueData = Array.from(new Map(paginatedData.map(item => [item.id, item])).values());
 
   return (
-    <Card className="border-0 shadow-xl rounded-2xl overflow-hidden">
+    <Card className="border-0 shadow-xl rounded-2xl overflow-hidden" data-testid="tabela-proventos">
       {/* Header with summary stats */}
       <CardHeader className="bg-gradient-to-r from-green-500 to-emerald-600 text-white p-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -538,7 +537,6 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
                           index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'
                         } hover:bg-gradient-to-r hover:from-green-50/50 hover:to-emerald-50/50 transition-all duration-200`}
                       >
-                        <TableCell className="hidden md:table-cell text-xs sm:text-sm p-4">{formatDate(provento.data_ex)}</TableCell>
                         <TableCell className="text-xs sm:text-sm p-4">{formatDate(provento.dt_pagamento)}</TableCell>
                         <TableCell className="font-medium text-xs sm:text-sm p-4">
                           <div className="flex items-center gap-3">
@@ -567,7 +565,6 @@ export function TabelaProventos({ data, showValues = true, title = "Proventos", 
                         <TableCell className="text-right text-xs sm:text-sm p-4">{formatCurrency(getValorUnitarioProvento(provento))}</TableCell>
                         <TableCell className="text-right font-semibold text-sm sm:text-base p-4">
                           <div className="flex items-center justify-end gap-1">
-                            <DollarSign className="h-4 w-4 text-green-600" />
                             <span className="text-green-600 font-bold text-base">
                               {showValues ? formatCurrency(provento.valor_total_recebido) : '***'}
                             </span>

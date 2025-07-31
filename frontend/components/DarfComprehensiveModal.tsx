@@ -393,11 +393,11 @@ export function DarfComprehensiveModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-40 backdrop-blur-sm">
       <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden">
-        {/* Header com Gradiente Azul */}
-        <div className="p-6 bg-gradient-to-r from-indigo-500 to-blue-600 text-white relative">
+        {/* Header Minimalista */}
+        <div className="p-6 border-b border-gray-100 relative">
           <button 
             onClick={onClose}
-            className="absolute top-4 right-4 text-white/80 hover:text-white transition-colors"
+            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -405,14 +405,14 @@ export function DarfComprehensiveModal({
           </button>
           
           <div className="text-center">
-            <h1 className="text-xl font-semibold mb-1">
+            <h1 className="text-xl font-semibold text-gray-800 mb-1">
               Impostos de {formatMonthYear(mes)}
             </h1>
-            <div className="flex items-center justify-center gap-2 text-sm text-white/90">
+            <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
               <span className={`px-2 py-1 rounded-full text-xs font-medium border ${
                 tipo === "daytrade" 
-                  ? "border-orange-300 bg-orange-100 text-orange-700" 
-                  : "border-blue-300 bg-blue-100 text-blue-700"
+                  ? "border-orange-300 bg-orange-50 text-orange-700" 
+                  : "border-blue-300 bg-blue-50 text-blue-700"
               }`}>
                 {tipo === "daytrade" ? "Day Trade" : "Swing Trade"}
               </span>
