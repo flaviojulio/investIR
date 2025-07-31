@@ -1090,7 +1090,7 @@ function ProventosTabContent({ showValues, shouldLoad = true }: { showValues: bo
               )}
             </div>
 
-            <TabelaProventos data={proventosFiltradosParaTabela} showValues={showValues} />
+            <TabelaProventos data={proventosFiltradosParaTabela} showValues={showValues} title="Últimos Proventos Recebidos" />
             
           </>
         )}

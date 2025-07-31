@@ -380,7 +380,7 @@ export default function ProventosPage() {
         {loadingData ? (
           <Card className="h-[200px] flex items-center justify-center"><CardContent><p>Carregando tabela de proventos...</p></CardContent></Card>
         ) : (
-          <TabelaProventos data={proventosFiltradosParaTabela} />
+          <TabelaProventos data={proventosFiltradosParaTabela} title="Histórico de Proventos" />
         )}
       </div>
 
