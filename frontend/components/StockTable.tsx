@@ -51,6 +51,7 @@ import {
   PiggyBank,
   Calculator,
   Target,
+  Building2,
   Activity,
   Coins,
   Wallet,
@@ -620,7 +621,7 @@ export function StockTable({
                           />
                         ) : (
                           <div className="h-6 w-6 rounded bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center flex-shrink-0">
-                            <Target className="h-3 w-3 text-gray-500" />
+                            <Building2 className="h-3 w-3 text-gray-500" />
                           </div>
                         )}
                         <Link href={`/acao/${typedItem.ticker}`} passHref>

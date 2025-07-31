@@ -43,6 +43,26 @@ def migrar_resultados_mensais():
                 print(f"[DB MIGRATION] Erro ao adicionar coluna irrf_swing: {e}")
         else:
             print("[DB MIGRATION] Coluna irrf_swing ja existe")
+
+def migrar_acoes_logo():
+    """
+    Adiciona a coluna logo na tabela acoes se não existir.
+    """
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # Verifica se a coluna logo já existe
+        cursor.execute("PRAGMA table_info(acoes)")
+        colunas = [row[1] for row in cursor.fetchall()]
+        
+        if "logo" not in colunas:
+            try:
+                cursor.execute("ALTER TABLE acoes ADD COLUMN logo TEXT")
+                print("[DB MIGRATION] Coluna logo adicionada à tabela acoes")
+                conn.commit()
+            except Exception as e:
+                print(f"[DB MIGRATION] Erro ao adicionar coluna logo: {e}")
+        else:
+            print("[DB MIGRATION] Coluna logo ja existe")
 import sqlite3
 from datetime import date, datetime
 from contextlib import contextmanager
@@ -101,7 +121,8 @@ def criar_tabelas():
         cnpj TEXT,
         ri TEXT,
         classificacao TEXT,
-        isin TEXT
+        isin TEXT,
+        logo TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_acoes_ticker ON acoes(ticker);
 
@@ -2378,7 +2399,7 @@ def obter_estatisticas_mensagens(usuario_id: int) -> Dict[str, Any]:
         cursor.execute('''
             SELECT 
                 COUNT(*) as total,
-                SUM(CASE WHEN lida = 0 THEN 1 ELSE 0 END) as nao_lidas
+                COALESCE(SUM(CASE WHEN lida = 0 THEN 1 ELSE 0 END), 0) as nao_lidas
             FROM mensagens 
             WHERE usuario_id = ?
             AND (expirar_em IS NULL OR expirar_em > datetime('now'))

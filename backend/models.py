@@ -172,6 +172,9 @@ class Operacao(OperacaoBase):
     id: int
     usuario_id: Optional[int] = None
     corretora_nome: Optional[str] = None  # Nome da corretora para exibição
+    importacao_id: Optional[int] = None
+    data_importacao: Optional[datetime] = None
+    nome_arquivo_original: Optional[str] = None
 
 class ResultadoMensal(BaseModel):
     mes: str  # Formato: YYYY-MM
@@ -603,17 +606,6 @@ class ItemCarteira(BaseModel):
     preco_medio: float
     nome: Optional[str] = None
 
-class Operacao(BaseModel):
-    id: Optional[int] = None
-    date: date
-    ticker: str
-    operation: str
-    quantity: int
-    price: float
-    fees: float = 0.0
-    usuario_id: Optional[int] = None
-    corretora_id: Optional[int] = None
-    importacao_id: Optional[int] = None
 
 class CarteiraAtual(BaseModel):
     ticker: str

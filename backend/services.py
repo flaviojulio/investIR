@@ -1173,7 +1173,7 @@ def obter_informacoes_acao_service(ticker: str) -> Dict[str, Any]:
         with sqlite3.connect("acoes_ir.db") as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT ticker, nome, logo FROM acoes WHERE UPPER(ticker) = UPPER(?)",
+                "SELECT id, ticker, nome, logo FROM acoes WHERE UPPER(ticker) = UPPER(?)",
                 (ticker,)
             )
             resultado = cursor.fetchone()
@@ -1182,9 +1182,10 @@ def obter_informacoes_acao_service(ticker: str) -> Dict[str, Any]:
                 raise HTTPException(status_code=404, detail=f"Ação {ticker} não encontrada.")
             
             return {
-                "ticker": resultado[0],
-                "nome": resultado[1],
-                "logo": resultado[2]
+                "id": resultado[0],
+                "ticker": resultado[1],
+                "nome": resultado[2],
+                "logo": resultado[3]
             }
     except HTTPException:
         raise

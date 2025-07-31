@@ -146,6 +146,7 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
 
   // Função para o modal atualizar o estado local
   const handleDarfStatusChangeFromModal = (yearMonth: string, type: 'swing' | 'daytrade', newStatus: string) => {
+    console.log('🔄 [SYNC] Modal atualizou status:', { yearMonth, type, newStatus });
     setLocalDarfUpdates(prev => ({
       ...prev,
       [yearMonth]: {
@@ -322,391 +323,400 @@ export function TaxResults({ resultados, operacoesFechadas = [], onUpdate }: Tax
     )
   }
 
+  // Calcular próximo vencimento DARF
+  const getProximoVencimento = () => {
+    const darfsPendentesComVencimento = resultadosComAtualizacoes.filter(r => 
+      ((r.status_darf_swing_trade?.toLowerCase() === "pendente" && r.darf_valor_swing && r.darf_valor_swing > 0) ||
+       (r.status_darf_day_trade?.toLowerCase() === "pendente" && r.darf_valor_day && r.darf_valor_day > 0))
+    ).map(r => {
+      // Calcular vencimento (último dia útil do mês seguinte)
+      const [ano, mes] = r.mes.split('-').map(Number);
+      let proxMes = mes + 1;
+      let proxAno = ano;
+      if (proxMes > 12) {
+        proxMes = 1;
+        proxAno += 1;
+      }
+      const ultimoDia = new Date(proxAno, proxMes, 0).getDate();
+      const vencimento = new Date(proxAno, proxMes - 1, ultimoDia);
+      while (vencimento.getDay() === 0 || vencimento.getDay() === 6) {
+        vencimento.setDate(vencimento.getDate() - 1);
+      }
+      return { ...r, vencimento };
+    });
+
+    return darfsPendentesComVencimento.length > 0 
+      ? darfsPendentesComVencimento.sort((a, b) => a.vencimento.getTime() - b.vencimento.getTime())[0]
+      : null;
+  };
+
+  const proximoVencimento = getProximoVencimento();
+  const totalPendente = resultadosComAtualizacoes.reduce((sum, r) => {
+    let valor = 0;
+    if (r.status_darf_swing_trade?.toLowerCase() === "pendente" && r.darf_valor_swing > 0) valor += r.darf_valor_swing;
+    if (r.status_darf_day_trade?.toLowerCase() === "pendente" && r.darf_valor_day > 0) valor += r.darf_valor_day;
+    return sum + valor;
+  }, 0);
+
+  const totalPagos = resultadosComAtualizacoes.filter(r => 
+    (r.status_darf_swing_trade?.toLowerCase() === "pago" && r.darf_valor_swing > 0) ||
+    (r.status_darf_day_trade?.toLowerCase() === "pago" && r.darf_valor_day > 0)
+  ).length;
+
   return (
     <>
-      <div className="space-y-8">
-        {/* Resumo Principal */}
-        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-red-50 to-orange-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-red-800">Para Pagar</CardTitle>
-              <div className="p-2 bg-red-200 rounded-lg">
-                <CreditCard className="h-5 w-5 text-red-700" />
+      <div className="space-y-6">
+        {/* 💰 Situação Fiscal - Cards Objetivos */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card className="border-l-4 border-l-red-500 bg-red-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-red-800">{darfsPendentes} Pendentes</p>
+                  <p className="text-xl font-bold text-red-900">{formatCurrency(totalPendente)}</p>
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-900">{formatCurrency(totalIRDevido)}</div>
-              <p className="text-xs text-red-600 mt-1">IR sobre day trade</p>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-blue-50 to-blue-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-blue-800">Vendas Este Mês</CardTitle>
-              <div className="p-2 bg-blue-200 rounded-lg">
-                <BarChart3 className="h-5 w-5 text-blue-700" />
+          <Card className="border-l-4 border-l-orange-500 bg-orange-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-orange-100 rounded-lg">
+                  <Calendar className="h-5 w-5 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-orange-800">Próximo Vence</p>
+                  <p className="text-lg font-bold text-orange-900">
+                    {proximoVencimento 
+                      ? proximoVencimento.vencimento.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+                      : "Nenhum"
+                    }
+                  </p>
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-900">{formatCurrency(totalVendasMesAtual)}</div>
-              <p className="text-xs text-blue-600 mt-1">
-                {totalVendasMesAtual > 20000 ? "⚠️ Acima da isenção" : "✅ Dentro da isenção"}
-              </p>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-green-50 to-green-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-green-800">Meses Isentos</CardTitle>
-              <div className="p-2 bg-green-200 rounded-lg">
-                <Shield className="h-5 w-5 text-green-700" />
+          <Card className="border-l-4 border-l-green-500 bg-green-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-100 rounded-lg">
+                  <Shield className="h-5 w-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-green-800">{mesesIsentos} Isentos</p>
+                  <p className="text-lg font-bold text-green-900">R$ 0,00</p>
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-900">{mesesIsentos}</div>
-              <p className="text-xs text-green-600 mt-1">De {resultados.length} meses</p>
             </CardContent>
           </Card>
 
-          <Card className="border-0 shadow-sm bg-gradient-to-br from-yellow-50 to-orange-100">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-              <CardTitle className="text-sm font-semibold text-orange-800">DARFs Pendentes</CardTitle>
-              <div className="p-2 bg-orange-200 rounded-lg">
-                <Timer className="h-5 w-5 text-orange-700" />
+          <Card className="border-l-4 border-l-blue-500 bg-blue-50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <CheckCircle className="h-5 w-5 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-blue-800">{totalPagos} Pagos</p>
+                  <p className="text-lg font-bold text-blue-900">Em dia</p>
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-orange-900">{darfsPendentes}</div>
-              <p className="text-xs text-orange-600 mt-1">Precisam ser pagos</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Seção Educativa - Accordion */}
-        <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="como-funciona-imposto" className="border border-blue-200 rounded-lg bg-gradient-to-br from-blue-50 to-indigo-50">
-            <AccordionTrigger className="px-6 py-4 hover:no-underline">
-              <div className="flex items-center gap-2">
-                <PieChart className="h-5 w-5 text-blue-600" />
-                <span className="font-semibold text-blue-800 text-lg">
-                  Como Funciona o Imposto sobre Ações
-                </span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="px-6 pb-6">
-              <p className="text-blue-600 mb-4">
-                Regras simples para entender sua tributação
-              </p>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="p-4 bg-white rounded-xl border border-blue-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="p-2 bg-blue-100 rounded-lg">
-                      <Target className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <h4 className="font-semibold text-blue-800">Swing Trade (Normal)</h4>
-                  </div>
-                  <div className="space-y-2 text-sm text-blue-700">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-3 w-3 text-green-600" />
-                      <span><strong>Isenção:</strong> Até R$ 20.000 em vendas/mês</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calculator className="h-3 w-3 text-blue-600" />
-                      <span><strong>Imposto:</strong> 15% sobre lucros acima da isenção</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-3 w-3 text-purple-600" />
-                      <span><strong>Declaração:</strong> Anual no IR</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-white rounded-xl border border-orange-200">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="p-2 bg-orange-100 rounded-lg">
-                      <Zap className="h-4 w-4 text-orange-600" />
-                    </div>
-                    <h4 className="font-semibold text-orange-800">Day Trade</h4>
-                  </div>
-                  <div className="space-y-2 text-sm text-orange-700">
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className="h-3 w-3 text-red-600" />
-                      <span><strong>Imposto:</strong> 20% sobre TODOS os lucros</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-3 w-3 text-orange-600" />
-                      <span><strong>DARF:</strong> Mensal até último dia útil</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Info className="h-3 w-3 text-blue-600" />
-                      <span><strong>IRRF:</strong> 1% retido automaticamente</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-
-        {/* DARFs Pendentes */}
-        {darfsPendentes > 0 && (
-          <Card className="border-0 shadow-sm bg-gradient-to-r from-red-50 to-orange-50">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2 text-red-800">
-                <AlertTriangle className="h-5 w-5" />
-                Ação Necessária: {darfsPendentes} DARF{darfsPendentes > 1 ? 'S' : ''} Pendente{darfsPendentes > 1 ? 's' : ''}
-              </CardTitle>
-              <CardDescription className="text-red-600">
-                Pague até o último dia útil do mês seguinte para evitar multa
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {resultadosComAtualizacoes
-                  .filter((r) => 
-                    (r.status_darf_day_trade?.toLowerCase() === "pendente" && r.darf_valor_day && r.darf_valor_day > 0) ||
-                    (r.status_darf_swing_trade?.toLowerCase() === "pendente" && r.darf_valor_swing && r.darf_valor_swing > 0)
-                  )
-                  .map((resultado) => (
-                    <Alert key={resultado.mes} className="border-red-200">
-                      <AlertTriangle className="h-4 w-4 text-red-600" />
-                      <AlertDescription>
-                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-                          <div>
-                            <div className="font-semibold text-red-800">
-                              {formatMonth(resultado.mes)}
-                            </div>
-                            <div className="text-sm text-red-600">
-                              {resultado.darf_valor_day > 0 && `Day Trade: ${formatCurrency(resultado.darf_valor_day)}`}
-                              {resultado.darf_valor_swing > 0 && ` | Swing: ${formatCurrency(resultado.darf_valor_swing)}`}
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleOpenDarfModal(resultado)}
-                              className="bg-blue-50 hover:bg-blue-100 border-blue-300 text-blue-700"
-                            >
-                              <Eye className="h-3 w-3 mr-1" />
-                              Ver Detalhes
-                            </Button>
-                            {resultado.status_darf_day_trade?.toLowerCase() === 'pendente' && resultado.darf_valor_day > 0 && (
-                              <Button
-                                size="sm"
-                                onClick={() => handleToggleDarfStatus(resultado.mes, 'daytrade', resultado.status_darf_day_trade)}
-                                disabled={darfUpdating === `${resultado.mes}-daytrade`}
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                {darfUpdating === `${resultado.mes}-daytrade` ? "..." : "✓ Pagar DT"}
-                              </Button>
-                            )}
-                            {resultado.status_darf_swing_trade?.toLowerCase() === 'pendente' && resultado.darf_valor_swing > 0 && (
-                              <Button
-                                size="sm"
-                                onClick={() => handleToggleDarfStatus(resultado.mes, 'swing', resultado.status_darf_swing_trade)}
-                                disabled={darfUpdating === `${resultado.mes}-swing`}
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                {darfUpdating === `${resultado.mes}-swing` ? "..." : "✓ Pagar ST"}
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </AlertDescription>
-                    </Alert>
-                  ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Tabela Principal */}
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-          <div className="bg-gradient-to-r from-orange-500 to-red-600 p-6 text-white">
+        {/* 📊 Tabela Objetiva - Histórico Mensal */}
+        <Card className="border-0 shadow-lg">
+          <CardHeader className="bg-gradient-to-r from-orange-500 to-red-600 text-white">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <FileText className="h-8 w-8 text-white" />
+                <FileText className="h-6 w-6" />
                 <div>
-                  <h2 className="text-xl font-bold">
-                    Histórico Mensal de Impostos
-                  </h2>
-                  <p className="text-orange-100 text-sm">
-                    Clique nos badges para alterar status ou ver detalhes completos
-                  </p>
+                  <CardTitle className="text-lg font-semibold">Histórico Mensal de Impostos</CardTitle>
+                  <CardDescription className="text-blue-100 text-sm">
+                    Seus DARFs organizados por mês - clique em "Ver DARF" para detalhes completos
+                  </CardDescription>
                 </div>
               </div>
-              <div className="bg-white/20 backdrop-blur-sm rounded-lg px-4 py-2">
-                <span className="text-white font-semibold">{filteredData.length} meses</span>
+              <div className="bg-white/20 backdrop-blur-sm rounded-lg px-3 py-1">
+                <span className="text-white font-semibold text-sm">{filteredData.length} meses</span>
               </div>
             </div>
-          </div>
-          
-          {/* Filtros */}
-          <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-orange-50">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex items-center gap-3 flex-1">
-                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-orange-100">
-                  <Search className="text-orange-600 h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <label className="text-gray-700 font-medium mb-1 block">
-                    Pesquisar por mês
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Digite o mês (ex: Jan/2024)"
+          </CardHeader>
+
+          {/* Filtros Simplificados */}
+          <div className="p-4 border-b bg-gray-50">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Input
+                    placeholder="Buscar mês (ex: Jan/2024)"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full border-2 border-orange-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-200 transition-all rounded-xl px-4 py-3 outline-none"
+                    className="pl-10"
                   />
                 </div>
               </div>
-              <div className="w-full sm:w-48">
-                <label className="text-gray-700 font-medium mb-1 block">Status</label>
+              <div className="w-full sm:w-40">
                 <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
-                  <SelectTrigger className="border-2 border-orange-200 focus:border-orange-500 focus:ring-4 focus:ring-orange-200 transition-all rounded-xl">
-                    <SelectValue />
+                  <SelectTrigger>
+                    <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos</SelectItem>
-                    <SelectItem value="isento">Isentos</SelectItem>
                     <SelectItem value="pendente">Pendentes</SelectItem>
                     <SelectItem value="pago">Pagos</SelectItem>
+                    <SelectItem value="isento">Isentos</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            
-            {searchTerm && (
-              <div className="mt-3 p-3 bg-orange-100 border border-orange-200 rounded-lg">
-                <p className="text-sm text-orange-800">
-                  <span className="font-semibold">{filteredData.length}</span> resultados encontrados para "{searchTerm}"
-                </p>
-              </div>
-            )}
           </div>
 
-          {/* Tabela */}
-          <div className="overflow-x-auto rounded-lg border-0">
+          {/* Nova Tabela Objetiva */}
+          <CardContent className="p-0">
             <Table>
               <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="font-semibold">Mês</TableHead>
-                  <TableHead className="text-right font-semibold">Vendas Swing</TableHead>
-                  <TableHead className="text-center font-semibold">Status</TableHead>
-                  <TableHead className="text-right font-semibold">Day Trade</TableHead>
-                  <TableHead className="text-center font-semibold">DARF Swing</TableHead>
-                  <TableHead className="text-center font-semibold">DARF Day Trade</TableHead>
-                  <TableHead className="text-center font-semibold">Ações</TableHead>
+                <TableRow className="bg-gray-50 border-b">
+                  <TableHead className="font-semibold text-gray-700 px-6 py-4">Mês</TableHead>
+                  <TableHead className="font-semibold text-gray-700 text-right px-4 py-4">Valor Total</TableHead>
+                  <TableHead className="font-semibold text-gray-700 text-center px-4 py-4">Vencimento</TableHead>
+                  <TableHead className="font-semibold text-gray-700 text-center px-4 py-4">Status</TableHead>
+                  <TableHead className="font-semibold text-gray-700 text-center px-4 py-4">Tipo</TableHead>
+                  <TableHead className="font-semibold text-gray-700 text-center px-6 py-4">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredData.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      <Search className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p>Nenhum resultado encontrado</p>
+                    <TableCell colSpan={6} className="text-center py-12 text-gray-500">
+                      <Search className="h-8 w-8 mx-auto mb-3 opacity-40" />
+                      <p className="text-lg">Nenhum resultado encontrado</p>
+                      {searchTerm && <p className="text-sm mt-1">Tente alterar os filtros ou termo de busca</p>}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredData.map((resultado) => (
-                    <TableRow key={resultado.mes} className="hover:bg-gray-50">
-                      <TableCell className="font-medium">{formatMonth(resultado.mes)}</TableCell>
-                      <TableCell className="text-right">
-                        <div>
-                          <div className="font-medium">{formatCurrency(resultado.vendas_swing)}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {resultado.vendas_swing > 20000 ? "Acima R$ 20k" : "Abaixo R$ 20k"}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant={resultado.isento_swing ? "default" : "destructive"}>
-                          {resultado.isento_swing ? "Isento" : "Tributável"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className={`font-medium ${resultado.ganho_liquido_day >= 0 ? "text-green-600" : "text-red-600"}`}>
-                          {formatCurrency(resultado.ganho_liquido_day)}
-                        </div>
-                      </TableCell>
+                  // Ordenação inteligente: Pendentes primeiro, depois por data (mais recente primeiro)
+                  filteredData
+                    .sort((a, b) => {
+                      // Calcular se tem DARF pendente
+                      const aPendente = (a.status_darf_swing_trade?.toLowerCase() === "pendente" && a.darf_valor_swing > 0) ||
+                                       (a.status_darf_day_trade?.toLowerCase() === "pendente" && a.darf_valor_day > 0);
+                      const bPendente = (b.status_darf_swing_trade?.toLowerCase() === "pendente" && b.darf_valor_swing > 0) ||
+                                       (b.status_darf_day_trade?.toLowerCase() === "pendente" && b.darf_valor_day > 0);
                       
-                      {/* DARF Swing Trade com Dropdown */}
-                      <TableCell className="text-center">
-                        {renderDarfBadge(
-                          resultado.darf_valor_swing || 0,
-                          resultado.status_darf_swing_trade || 'isento',
-                          'Swing',
-                          resultado.mes,
-                          'swing'
-                        )}
-                      </TableCell>
+                      // Pendentes primeiro
+                      if (aPendente && !bPendente) return -1;
+                      if (!aPendente && bPendente) return 1;
                       
-                      {/* DARF Day Trade com Dropdown */}
-                      <TableCell className="text-center">
-                        {renderDarfBadge(
-                          resultado.darf_valor_day || 0,
-                          resultado.status_darf_day_trade || 'isento',
-                          'Day',
-                          resultado.mes,
-                          'daytrade'
-                        )}
-                      </TableCell>
+                      // Dentro do mesmo grupo, mais recente primeiro
+                      return b.mes.localeCompare(a.mes);
+                    })
+                    .map((resultado) => {
+                      // Calcular valores para exibição
+                      const valorTotal = (resultado.darf_valor_swing || 0) + (resultado.darf_valor_day || 0);
+                      const temSwing = resultado.darf_valor_swing > 0;
+                      const temDay = resultado.darf_valor_day > 0;
+                      const temPendente = (resultado.status_darf_swing_trade?.toLowerCase() === "pendente" && resultado.darf_valor_swing > 0) ||
+                                         (resultado.status_darf_day_trade?.toLowerCase() === "pendente" && resultado.darf_valor_day > 0);
+                      const temPago = (resultado.status_darf_swing_trade?.toLowerCase() === "pago" && resultado.darf_valor_swing > 0) ||
+                                     (resultado.status_darf_day_trade?.toLowerCase() === "pago" && resultado.darf_valor_day > 0);
+                      
+                      // Calcular vencimento
+                      const [ano, mes] = resultado.mes.split('-').map(Number);
+                      let proxMes = mes + 1;
+                      let proxAno = ano;
+                      if (proxMes > 12) { proxMes = 1; proxAno += 1; }
+                      const ultimoDia = new Date(proxAno, proxMes, 0).getDate();
+                      const vencimento = new Date(proxAno, proxMes - 1, ultimoDia);
+                      while (vencimento.getDay() === 0 || vencimento.getDay() === 6) {
+                        vencimento.setDate(vencimento.getDate() - 1);
+                      }
+                      
+                      // Determinar status geral
+                      let statusGeral = "Isento";
+                      let statusColor = "text-gray-600 bg-gray-100";
+                      let statusIcon = "🛡️";
+                      
+                      if (valorTotal > 0) {
+                        if (temPendente) {
+                          statusGeral = "Pendente";
+                          statusColor = "text-red-700 bg-red-100 border-red-200";
+                          statusIcon = "⏰";
+                          // Verificar urgência
+                          const diasParaVencimento = Math.ceil((vencimento.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                          if (diasParaVencimento <= 7 && diasParaVencimento > 0) {
+                            statusIcon = "⚠️";
+                            statusColor = "text-red-800 bg-red-200 border-red-300";
+                          } else if (diasParaVencimento <= 0) {
+                            statusIcon = "🚨";
+                            statusColor = "text-red-900 bg-red-300 border-red-400";
+                          }
+                        } else if (temPago) {
+                          statusGeral = "Pago";
+                          statusColor = "text-green-700 bg-green-100 border-green-200";
+                          statusIcon = "✅";
+                        }
+                      }
+                      
+                      return (
+                        <TableRow key={resultado.mes} className="hover:bg-gray-50 transition-colors">
+                          {/* Mês */}
+                          <TableCell className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              {temPendente && <span className="text-red-500">🔴</span>}
+                              <span className="font-medium text-gray-900">{formatMonth(resultado.mes)}</span>
+                            </div>
+                          </TableCell>
 
-                      {/* Coluna de Ações - Botão para abrir modal */}
-                      <TableCell className="text-center">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleOpenDarfModal(resultado)}
-                          className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 hover:text-blue-800"
-                        >
-                          <FileText className="h-3 w-3 mr-1" />
-                          Detalhar DARF
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                          {/* Valor Total */}
+                          <TableCell className="px-4 py-4 text-right">
+                            <div className="space-y-1">
+                              <div className={`font-semibold ${valorTotal > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                {formatCurrency(valorTotal)}
+                              </div>
+                              {valorTotal > 0 && (
+                                <div className="text-xs text-gray-500">
+                                  {temSwing && temDay ? "ST + DT" : temSwing ? "Swing Trade" : "Day Trade"}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+
+                          {/* Vencimento */}
+                          <TableCell className="px-4 py-4 text-center">
+                            {valorTotal > 0 && statusGeral === "Pendente" ? (
+                              <div className="text-sm">
+                                <div className="font-medium text-gray-700">
+                                  {vencimento.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {(() => {
+                                    const dias = Math.ceil((vencimento.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                                    if (dias < 0) return `${Math.abs(dias)} dias atrasado`;
+                                    if (dias === 0) return "Vence hoje";
+                                    if (dias === 1) return "Vence amanhã";
+                                    return `${dias} dias`;
+                                  })()}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </TableCell>
+
+                          {/* Status */}
+                          <TableCell className="px-4 py-4 text-center">
+                            <div className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium border ${statusColor}`}>
+                              <span>{statusIcon}</span>
+                              <span>{statusGeral}</span>
+                            </div>
+                          </TableCell>
+
+                          {/* Tipo */}
+                          <TableCell className="px-4 py-4 text-center">
+                            <div className="flex justify-center gap-1">
+                              {temSwing && (
+                                <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                                  ST
+                                </span>
+                              )}
+                              {temDay && (
+                                <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded-full font-medium">
+                                  DT
+                                </span>
+                              )}
+                              {!temSwing && !temDay && (
+                                <span className="text-gray-400 text-sm">-</span>
+                              )}
+                            </div>
+                          </TableCell>
+
+                          {/* Ações */}
+                          <TableCell className="px-6 py-4 text-center">
+                            {valorTotal > 0 ? (
+                              <div className="flex justify-center gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleOpenDarfModal(resultado)}
+                                  className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 text-xs"
+                                >
+                                  <Eye className="h-3 w-3 mr-1" />
+                                  Ver DARF
+                                </Button>
+                                {statusGeral === "Pendente" && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => {
+                                      // Marcar como pago o primeiro tipo encontrado
+                                      if (resultado.status_darf_swing_trade?.toLowerCase() === "pendente" && resultado.darf_valor_swing > 0) {
+                                        handleToggleDarfStatus(resultado.mes, 'swing', resultado.status_darf_swing_trade);
+                                      } else if (resultado.status_darf_day_trade?.toLowerCase() === "pendente" && resultado.darf_valor_day > 0) {
+                                        handleToggleDarfStatus(resultado.mes, 'daytrade', resultado.status_darf_day_trade);
+                                      }
+                                    }}
+                                    disabled={darfUpdating?.startsWith(resultado.mes)}
+                                    className="bg-green-600 hover:bg-green-700 text-xs"
+                                  >
+                                    {darfUpdating?.startsWith(resultado.mes) ? (
+                                      <div className="flex items-center gap-1">
+                                        <div className="animate-spin rounded-full h-3 w-3 border border-white border-t-transparent"></div>
+                                        <span>...</span>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <CheckCircle className="h-3 w-3 mr-1" />
+                                        Pagar
+                                      </>
+                                    )}
+                                  </Button>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 text-sm">-</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                 )}
               </TableBody>
             </Table>
+          </CardContent>
+        </Card>
+
+        {/* 💡 Dicas Rápidas */}
+        <div className="bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200 rounded-lg p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Lightbulb className="h-5 w-5 text-amber-600" />
+            <span className="font-semibold text-amber-800">Dicas Rápidas</span>
+          </div>
+          <div className="grid md:grid-cols-2 gap-3 text-sm text-amber-700">
+            <div className="flex items-start gap-2">
+              <span className="text-blue-500">•</span>
+              <span><strong>"Ver DARF"</strong> mostra como calculamos cada centavo</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-green-500">•</span>
+              <span><strong>Botão "Pagar"</strong> marca como pago (não efetua pagamento)</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-orange-500">•</span>
+              <span><strong>Prejuízos compensam</strong> automaticamente nos cálculos</span>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-purple-500">•</span>
+              <span><strong>Em dúvida?</strong> Consulte um contador especializado</span>
+            </div>
           </div>
         </div>
-
-        {/* Dicas Importantes - Accordion */}
-        <Accordion type="single" collapsible className="w-full">
-          <AccordionItem value="dicas-importantes" className="border border-amber-200 rounded-lg bg-gradient-to-br from-amber-50 to-yellow-50">
-            <AccordionTrigger className="px-6 py-4 hover:no-underline">
-              <div className="flex items-center gap-2">
-                <Lightbulb className="h-5 w-5 text-amber-600" />
-                <span className="font-semibold text-amber-800 text-lg">
-                  Dicas Importantes
-                </span>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="px-6 pb-6">
-              <div className="space-y-3 text-sm">
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <span><strong>Ver Detalhes:</strong> Clique em "Detalhes" ou no menu (⋮) dos badges para análise completa do DARF</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <span><strong>Gerenciar Status:</strong> Use os menus dos badges para alterar status entre Pago e Pendente</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <span><strong>Prejuízos compensam:</strong> Losses em swing trade ou day trade podem ser usados para reduzir impostos futuros do mesmo tipo</span>
-                </div>
-                <div className="flex items-start gap-2">
-                  <div className="w-2 h-2 bg-purple-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <span><strong>Procure ajuda:</strong> Para carteiras grandes ou situações complexas, considere contratar um contador especializado</span>
-                </div>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
       </div>
 
       {/* Modal de Detalhes do DARF */}

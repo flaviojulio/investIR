@@ -279,3 +279,23 @@ export interface TokenResponse {
   access_token: string;
   token_type: string;
 }
+
+// Tipos para Sistema de Mensagens/Notificações (TODO: Implementar backend)
+export interface Mensagem {
+  id: number;
+  titulo: string;
+  conteudo: string;
+  tipo: 'info' | 'warning' | 'error' | 'success';
+  lida: boolean;
+  data_criacao: string;
+  data_leitura?: string;
+  usuario_id: number;
+}
+
+export interface EstatisticasMensagens {
+  total: number;
+  nao_lidas: number;
+  por_tipo: { [key: string]: number };
+  por_prioridade: { [key: string]: number };
+  por_categoria: { [key: string]: number };
+}

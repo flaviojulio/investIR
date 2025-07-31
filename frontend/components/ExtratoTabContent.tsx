@@ -177,8 +177,8 @@ export default function ExtratoTabContent({
       const tipo = p.tipo || pAny.tipo_provento || "";
       const normalizedTipo = normalizeOperation(tipo);
       
-      // Usar quantidade_possuida_na_data_ex que vem do backend, ou quantidade_na_data_ex como fallback
-      const quantity = pAny.quantidade_possuida_na_data_ex || p.quantidade_na_data_ex || 0;
+      // Usar quantidade_na_data_ex (primary field) ou quantidade_possuida_na_data_ex como fallback  
+      const quantity = p.quantidade_na_data_ex || pAny.quantidade_possuida_na_data_ex || 0;
       
       console.log('🔍 [ExtratoTabContent] Mapeando provento:', {
         ticker: p.ticker_acao,

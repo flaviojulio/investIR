@@ -272,7 +272,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
             <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <Upload className="h-4 w-4 text-gray-400 dark:text-gray-300" />
-                <span className="font-semibold text-gray-900 dark:text-gray-100">Upload de Arquivo</span>
+                <span className="font-semibold text-gray-900 dark:text-gray-100">Operação Importada</span>
               </div>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between items-start gap-3">
@@ -676,7 +676,7 @@ export function OperationsHistory({ operacoes, onUpdate }: OperationsHistoryProp
                   <div className="flex justify-between">
                     <span className="text-gray-600">Origem:</span>
                     <span className="font-semibold text-gray-800">
-                      {operationToDelete.nome_arquivo_original ? "Upload de arquivo" : "Inserção manual"}
+                      {operationToDelete.nome_arquivo_original ? "Operação Importada" : "Inserção manual"}
                     </span>
                   </div>
                   {operationToDelete.nome_arquivo_original && (

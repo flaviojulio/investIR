@@ -20,8 +20,10 @@ declare module 'lucide-react' {
   export const ArrowUp: ComponentType<IconProps>;
   export const ArrowUpDown: ComponentType<IconProps>;
   export const ArrowUpRight: ComponentType<IconProps>;
+  export const Award: ComponentType<IconProps>;
   export const BarChart3: ComponentType<IconProps>;
   export const BookOpen: ComponentType<IconProps>;
+  export const Brain: ComponentType<IconProps>;
   export const Briefcase: ComponentType<IconProps>;
   export const Building: ComponentType<IconProps>;
   export const Building2: ComponentType<IconProps>;

@@ -1151,7 +1151,7 @@ function mapProventoRecebidoBackendToFrontend(p: any): ProventoRecebidoUsuario {
     dt_pagamento: p.dt_pagamento || null,
     ticker_acao: p.ticker_acao,
     nome_acao: p.nome_acao,
-    quantidade_na_data_ex: p.quantidade_possuida_na_data_ex || p.quantidade_na_data_ex, // ✅ Backend vs Frontend
+    quantidade_na_data_ex: p.quantidade_na_data_ex || p.quantidade_possuida_na_data_ex, // ✅ Frontend primary, Backend fallback
     valor_total_recebido: p.valor_total_recebido,
   };
 }
@@ -1201,9 +1201,9 @@ export function Dashboard() {
       setLoading(true)
       const [carteiraRes, resultadosRes, operacoesRes, operacoesFechadasRes] = await Promise.all([
         api.get("/carteira"),
-        api.get("/resultados"), // ✅ API para ResultadoMensal
+        api.get("/resultados"),
         api.get("/operacoes"),
-        api.get("/operacoes/fechadas/otimizado"), // ✅ API otimizada para operações fechadas
+        api.get("/operacoes/fechadas"), // Fetch closed operations
       ])
 
       setData({
@@ -1445,11 +1445,11 @@ export function Dashboard() {
               {/* Grupo Secundário */}
               <div className="flex flex-wrap gap-1">
                 {/* Link Externo com estilo diferenciado */}
-                <Link href="/imposto-renda" className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white transition-all duration-200 rounded-lg whitespace-nowrap cursor-pointer border-0 shadow-md hover:shadow-lg">
-                  <FileText className="h-5 w-5 text-white" />
+                <Link href="/imposto-renda" className="inline-flex items-center px-4 py-2.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 transition-all duration-200 rounded-lg whitespace-nowrap border border-gray-300 hover:border-gray-400 cursor-pointer">
+                  <FileText className="h-5 w-5 mr-2 text-gray-500" />
                   <span className="hidden sm:inline">Declaração Anual</span>
                   <span className="sm:hidden">Declaração</span>
-                  <ExternalLink className="h-3 w-3 opacity-80" />
+                  <ExternalLink className="h-3 w-3 ml-1 opacity-60" />
                 </Link>
               </div>
             </div>
