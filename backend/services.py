@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 # Local imports
 import calculos
-from database import *
+from database_postgresql import *
 from utils import extrair_mes_data_seguro
 from models import (
     OperacaoCreate, 
@@ -35,7 +35,7 @@ from models import (
     DetalheTipoProvento,  
     
 )
-from database import obter_proventos_recebidos_por_usuario_db
+from database_postgresql import obter_proventos_recebidos_por_usuario_db
 
 
 def _validar_e_zerar_posicao_se_necessario(posicao_dict):

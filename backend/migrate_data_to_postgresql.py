@@ -50,7 +50,7 @@ POSTGRES_CONFIG = {
     'port': 5432,
     'database': 'investir_prod',  # Nome do banco PostgreSQL
     'user': 'investir_user',  # Usuário PostgreSQL
-    'password': 'sua_senha_aqui'  # Senha PostgreSQL
+    'password': 'senha123'  # Senha PostgreSQL
 }
 
 class MigrationError(Exception):
@@ -503,9 +503,9 @@ def main():
 
 if __name__ == "__main__":
     # Configurar PostgreSQL antes de executar
-    print("🔧 CONFIGURAÇÃO NECESSÁRIA:")
+    print("CONFIGURACAO NECESSARIA:")
     print("1. Editar POSTGRES_CONFIG neste arquivo")
-    print("2. Garantir que o PostgreSQL está rodando")
+    print("2. Garantir que o PostgreSQL esta rodando")
     print("3. Garantir que o schema foi aplicado")
     print("4. Executar: pip install psycopg2-binary")
     print()

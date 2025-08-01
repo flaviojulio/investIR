@@ -45,9 +45,10 @@ class FeedbackUsuarioResponse(BaseModel):
     data_criacao: str
     status: str
 
-from database import (
+from database_postgresql import (
     criar_tabelas, 
-    limpar_banco_dados, 
+    limpar_banco_dados,
+    inicializar_database, 
     # get_db, remover_operacao, obter_todas_operacoes removed
     obter_configuracao_usuario,
     atualizar_configuracao_usuario,
@@ -125,12 +126,21 @@ from routers import usuario_router # Added usuario_router import
 from routers import cotacoes_router # Added cotacoes_router import
 from dependencies import get_current_user, oauth2_scheme # Import from dependencies
 
+# Inicializar PostgreSQL
+try:
+    inicializar_database()
+    print("✅ PostgreSQL inicializado com sucesso!")
+except Exception as e:
+    print(f"⚠️ ERRO: PostgreSQL não disponível - {e}")
+    print("🔄 FALLBACK: Usando SQLite...")
+    # Nota: Para usar SQLite, alterar imports no início do arquivo
+
 # Inicialização do banco de dados
 criar_tabelas() # Creates non-auth tables
 auth.inicializar_autenticacao() # Initializes authentication system (creates auth tables, modifies others, adds admin)
 
 # Executar migrações necessárias
-from database import migrar_resultados_mensais
+from database_postgresql import migrar_resultados_mensais
 migrar_resultados_mensais() # Adiciona coluna irrf_swing se não existir
 
 app = FastAPI(

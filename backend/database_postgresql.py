@@ -509,8 +509,9 @@ def inicializar_database():
         raise
 
 # Inicializar automaticamente quando módulo for importado
-if os.getenv('AUTO_INIT_DB', 'true').lower() == 'true':
-    inicializar_database()
+# Comentado para evitar erro na importação se PostgreSQL não estiver rodando
+# if os.getenv('AUTO_INIT_DB', 'true').lower() == 'true':
+#     inicializar_database()
 
 # ============================================================================
 # FUNÇÕES LEGADAS PARA COMPATIBILIDADE (serão removidas gradualmente)

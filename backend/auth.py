@@ -13,7 +13,7 @@ from typing import Dict, List, Any, Optional # Standard library
 # sqlite3, Tuple, contextmanager were unused directly in this file. get_db handles its own context.
 
 # Importa a função get_db do módulo database
-from database import get_db
+from database_postgresql import get_db
 
 # Custom Exception Classes for Token Handling
 class TokenExpiredError(Exception):
