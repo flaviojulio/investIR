@@ -1,6 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Path, Body, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 import json
+from decimal import Decimal
 from typing import List, Dict, Any
 import uvicorn
 import logging # Added logging import
@@ -9,6 +10,13 @@ from utils import extrair_mes_data_seguro, validar_cpf, formatar_cpf, limpar_cpf
 
 from auth import TokenExpiredError, InvalidTokenError, TokenNotFoundError, TokenRevokedError
 from dependencies import get_current_user
+
+# Custom JSON encoder to handle Decimal types
+class DecimalEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super(DecimalEncoder, self).default(obj)
 
 from models import (
     OperacaoCreate, Operacao, ResultadoMensal, CarteiraAtual, 
@@ -812,72 +820,72 @@ async def upload_operacoes(
     Agora com detecção de duplicatas e rastreamento completo.
     """
     try:
-        print(f"🚀 [BACKEND] Upload iniciado por usuário {usuario.id} ({usuario.email})")
-        print(f"📄 [BACKEND] Arquivo: {file.filename}")
-        print(f"📋 [BACKEND] Content-Type: {file.content_type}")
-        print(f"📊 [BACKEND] Tamanho: {file.size if hasattr(file, 'size') else 'N/A'} bytes")
+        print(f"[BACKEND] Upload iniciado por usuário {usuario.id} ({usuario.email})")
+        print(f"[BACKEND] Arquivo: {file.filename}")
+        print(f"[BACKEND] Content-Type: {file.content_type}")
+        print(f"[BACKEND] Tamanho: {file.size if hasattr(file, 'size') else 'N/A'} bytes")
         
         # Lê o conteúdo do arquivo
-        print("📖 [BACKEND] Lendo conteúdo do arquivo...")
+        print("[EMOJI] [BACKEND] Lendo conteúdo do arquivo...")
         conteudo = await file.read()
-        print(f"📊 [BACKEND] Conteúdo lido: {len(conteudo)} bytes")
+        print(f"[BACKEND] Conteúdo lido: {len(conteudo)} bytes")
         
         # Converte o JSON para uma lista de dicionários
-        print("🔄 [BACKEND] Convertendo JSON...")
+        print("[BACKEND] Convertendo JSON...")
         try:
             operacoes_json = json.loads(conteudo)
-            print(f"📋 [BACKEND] JSON parseado com sucesso. Tipo: {type(operacoes_json)}")
+            print(f"[BACKEND] JSON parseado com sucesso. Tipo: {type(operacoes_json)}")
             if isinstance(operacoes_json, list):
-                print(f"📋 [BACKEND] Lista com {len(operacoes_json)} operações")
+                print(f"[BACKEND] Lista com {len(operacoes_json)} operações")
                 if len(operacoes_json) > 0:
-                    print(f"📋 [BACKEND] Primeira operação: {operacoes_json[0]}")
+                    print(f"[BACKEND] Primeira operação: {operacoes_json[0]}")
             else:
-                print(f"📋 [BACKEND] JSON não é uma lista: {operacoes_json}")
+                print(f"[BACKEND] JSON não é uma lista: {operacoes_json}")
         except json.JSONDecodeError as e:
-            print(f"❌ [BACKEND] Erro ao parsear JSON: {e}")
+            print(f"[BACKEND] Erro ao parsear JSON: {e}")
             raise HTTPException(status_code=400, detail="Formato de arquivo JSON inválido")
         
         # Valida e processa as operações
-        print("🔍 [BACKEND] Validando operações...")
+        print("[BACKEND] Validando operações...")
         try:
             operacoes = []
             operacoes_ignoradas_validacao = 0
             operacoes_processadas = []
             
             for i, op in enumerate(operacoes_json):
-                print(f"🔄 [BACKEND] Processando operação {i+1}/{len(operacoes_json)}: {op}")
+                print(f"[RELOAD] [BACKEND] Processando operação {i+1}/{len(operacoes_json)}: {op}")
                 try:
                     processed_op = preprocess_imported_operation(op)
-                    print(f"✅ [BACKEND] Operação {i+1} processada: {processed_op}")
+                    print(f"[OK] [BACKEND] Operação {i+1} processada: {processed_op}")
                     
                     # Ignora operações com quantidade zero ou negativa
                     if processed_op.get("quantity", 0) <= 0:
-                        print(f"⚠️ [BACKEND] Operação {i+1} ignorada: quantidade inválida ({processed_op.get('quantity', 0)})")
+                        print(f"[WARNING] [BACKEND] Operação {i+1} ignorada: quantidade inválida ({processed_op.get('quantity', 0)})")
                         operacoes_ignoradas_validacao += 1
                         continue
                     
                     operacao_create = OperacaoCreate(**processed_op)
                     operacoes.append(operacao_create)
                     operacoes_processadas.append(processed_op)  # Para validação B3
-                    print(f"✅ [BACKEND] Operação {i+1} validada com sucesso")
+                    print(f"[OK] [BACKEND] Operação {i+1} validada com sucesso")
                 except Exception as e:
-                    print(f"❌ [BACKEND] Erro ao processar operação {i+1}: {e}")
-                    print(f"❌ [BACKEND] Operação problemática: {op}")
-                    print(f"⚠️ [BACKEND] Ignorando operação {i+1} e continuando...")
+                    print(f"[ERROR] [BACKEND] Erro ao processar operação {i+1}: {e}")
+                    print(f"[ERROR] [BACKEND] Operação problemática: {op}")
+                    print(f"[WARNING] [BACKEND] Ignorando operação {i+1} e continuando...")
                     operacoes_ignoradas_validacao += 1
                     continue
             
-            print(f"✅ [BACKEND] {len(operacoes)} operações processadas com sucesso")
+            print(f"[OK] [BACKEND] {len(operacoes)} operações processadas com sucesso")
             if operacoes_ignoradas_validacao > 0:
-                print(f"⚠️ [BACKEND] {operacoes_ignoradas_validacao} operações ignoradas por problemas de validação")
+                print(f"[WARNING] [BACKEND] {operacoes_ignoradas_validacao} operações ignoradas por problemas de validação")
             
             # Se não há operações válidas, retorna erro
             if len(operacoes) == 0:
-                print("❌ [BACKEND] Nenhuma operação válida encontrada")
+                print("[ERROR] [BACKEND] Nenhuma operação válida encontrada")
                 raise HTTPException(status_code=400, detail="Nenhuma operação válida encontrada no arquivo")
             
             # NOVA VALIDAÇÃO B3 - Verificar saldos negativos
-            print("🏛️ [BACKEND] Executando validação B3 para saldos negativos...")
+            print("[EMOJI] [BACKEND] Executando validação B3 para saldos negativos...")
             operacoes_b3_validas, relatorio_b3 = validar_operacoes_b3(operacoes_processadas)
             
             # Log do relatório B3
@@ -886,7 +894,7 @@ async def upload_operacoes(
             
             # Atualizar lista de operações com as validadas pela B3
             if len(operacoes_b3_validas) < len(operacoes):
-                print(f"⚠️ [BACKEND] Validação B3: {len(operacoes_b3_validas)}/{len(operacoes)} operações validadas")
+                print(f"[WARNING] [BACKEND] Validação B3: {len(operacoes_b3_validas)}/{len(operacoes)} operações validadas")
                 
                 # Recriar lista de OperacaoCreate com operações válidas B3
                 operacoes_finais = []
@@ -895,20 +903,20 @@ async def upload_operacoes(
                         operacao_create = OperacaoCreate(**op_valida)
                         operacoes_finais.append(operacao_create)
                     except Exception as e:
-                        print(f"❌ [BACKEND] Erro ao recriar operação B3: {e}")
+                        print(f"[ERROR] [BACKEND] Erro ao recriar operação B3: {e}")
                         continue
                 
                 operacoes = operacoes_finais
-                print(f"✅ [BACKEND] {len(operacoes)} operações finais após validação B3")
+                print(f"[OK] [BACKEND] {len(operacoes)} operações finais após validação B3")
                 
         except HTTPException as e:
             raise e
         except Exception as e:
-            print(f"❌ [BACKEND] Erro na validação das operações: {e}")
+            print(f"[ERROR] [BACKEND] Erro na validação das operações: {e}")
             raise HTTPException(status_code=400, detail=f"Erro ao validar operações: {str(e)}")
         
         # Processa com detecção de duplicatas
-        print("🔍 [BACKEND] Iniciando processamento com detecção de duplicatas...")
+        print("[SEARCH] [BACKEND] Iniciando processamento com detecção de duplicatas...")
         try:
             resultado = processar_importacao_com_deteccao_duplicatas(
                 operacoes=operacoes,
@@ -935,35 +943,35 @@ async def upload_operacoes(
                 # Adicionar relatório B3 para debug
                 resultado["relatorio_b3"] = relatorio_b3
             
-            print(f"✅ [BACKEND] Processamento concluído: {resultado}")
+            print(f"[OK] [BACKEND] Processamento concluído: {resultado}")
         except Exception as e:
-            print(f"❌ [BACKEND] Erro no processamento: {e}")
+            print(f"[ERROR] [BACKEND] Erro no processamento: {e}")
             raise HTTPException(status_code=500, detail=f"Erro ao processar importação: {str(e)}")
         
         # Recalcula proventos apenas se houver operações importadas
         if resultado.get('importacao', {}).get('total_operacoes_importadas', 0) > 0:
-            print(f"🔄 [BACKEND] Recalculando proventos para {resultado.get('importacao', {}).get('total_operacoes_importadas', 0)} operações...")
+            print(f"[RELOAD] [BACKEND] Recalculando proventos para {resultado.get('importacao', {}).get('total_operacoes_importadas', 0)} operações...")
             from services import recalcular_proventos_recebidos_rapido
             logging.info(f"[PROVENTO-TRACE] Iniciando recálculo rápido de proventos para usuário {usuario.id} após upload. ORIGEM: upload_operacoes. Operações inseridas: {resultado.get('importacao', {}).get('total_operacoes_importadas', 0)}")
             try:
                 recalcular_proventos_recebidos_rapido(usuario_id=usuario.id)
-                print("✅ [BACKEND] Recálculo de proventos concluído")
+                print("[OK] [BACKEND] Recálculo de proventos concluído")
                 logging.info(f"[PROVENTO-TRACE] Recálculo rápido de proventos para usuário {usuario.id} após upload concluído.")
             except Exception as e:
-                print(f"❌ [BACKEND] Erro no recálculo de proventos: {e}")
+                print(f"[ERROR] [BACKEND] Erro no recálculo de proventos: {e}")
                 # Não falha o upload por causa do recálculo de proventos
         
-        print(f"🎉 [BACKEND] Upload concluído com sucesso para usuário {usuario.id}")
+        print(f"[EMOJI] [BACKEND] Upload concluído com sucesso para usuário {usuario.id}")
         return resultado
         
     except json.JSONDecodeError:
-        print("❌ [BACKEND] Erro: Formato de arquivo JSON inválido")
+        print("[ERROR] [BACKEND] Erro: Formato de arquivo JSON inválido")
         raise HTTPException(status_code=400, detail="Formato de arquivo JSON inválido")
     except HTTPException as e:
-        print(f"❌ [BACKEND] HTTPException: {e.detail}")
+        print(f"[ERROR] [BACKEND] HTTPException: {e.detail}")
         raise e
     except Exception as e:
-        print(f"❌ [BACKEND] Erro inesperado: {e}")
+        print(f"[ERROR] [BACKEND] Erro inesperado: {e}")
         logging.error(f"Error in upload for user {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro ao processar arquivo: {str(e)}")
 
@@ -1275,78 +1283,78 @@ async def deletar_item_carteira(
         # Log the exception e for detailed debugging
         raise HTTPException(status_code=500, detail=f"Erro ao remover ação da carteira: {str(e)}")
 
-# 🔍 DEBUG: Identificar diferença entre API e Script
+# [SEARCH] DEBUG: Identificar diferença entre API e Script
 
-# 1️⃣ ADICIONAR DEBUG no main.py no endpoint /api/operacoes/fechadas
+# 1[EMOJI]⃣ ADICIONAR DEBUG no main.py no endpoint /api/operacoes/fechadas
 @app.get("/api/operacoes/fechadas", response_model=List[Dict[str, Any]])
 async def obter_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_current_user)):
     """
     DEBUG: Adicionar logs para identificar o problema
     """
     try:
-        logging.info(f"🔍 [API DEBUG] /api/operacoes/fechadas chamado por usuario_id={usuario.id}")
+        logging.info(f"[SEARCH] [API DEBUG] /api/operacoes/fechadas chamado por usuario_id={usuario.id}")
         
-        # 🔍 VERIFICAR: Dados existentes no banco ANTES do recálculo
+        # [SEARCH] VERIFICAR: Dados existentes no banco ANTES do recálculo
         from database import get_db
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT ticker, data_fechamento, data_abertura, resultado
                 FROM operacoes_fechadas 
-                WHERE usuario_id = ? 
+                WHERE usuario_id = %s 
                 ORDER BY data_fechamento DESC 
                 LIMIT 5
             ''', (usuario.id,))
             
             dados_existentes = cursor.fetchall()
-            logging.info(f"🔍 [API DEBUG] Dados existentes no banco ANTES do recálculo:")
+            logging.info(f"[SEARCH] [API DEBUG] Dados existentes no banco ANTES do recálculo:")
             for row in dados_existentes:
                 logging.info(f"   - {dict(row)}")
         
-        # ✅ 1. GARANTIR RECÁLCULO COMPLETO SE NECESSÁRIO
+        # [OK] 1. GARANTIR RECÁLCULO COMPLETO SE NECESSÁRIO
         # Verificar se há operações fechadas no banco
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) as count FROM operacoes_fechadas WHERE usuario_id = ?", (usuario.id,))
+            cursor.execute("SELECT COUNT(*) as count FROM operacoes_fechadas WHERE usuario_id = %s", (usuario.id,))
             count_result = cursor.fetchone()
             
         if not count_result or count_result['count'] == 0:
-            logging.info(f"🔍 [API DEBUG] Nenhuma operação fechada encontrada, recalculando...")
+            logging.info(f"[SEARCH] [API DEBUG] Nenhuma operação fechada encontrada, recalculando...")
             services.recalcular_carteira(usuario_id=usuario.id)
-            services.calcular_operacoes_fechadas(usuario_id=usuario.id)  # ← AQUI ESTÁ O PROBLEMA
+            services.calcular_operacoes_fechadas(usuario_id=usuario.id)  # <- AQUI ESTÁ O PROBLEMA
             services.recalcular_resultados_corrigido(usuario_id=usuario.id)
         
-        # 🔍 VERIFICAR: Dados DEPOIS do recálculo
+        # [SEARCH] VERIFICAR: Dados DEPOIS do recálculo
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 SELECT ticker, data_fechamento, data_abertura, resultado
                 FROM operacoes_fechadas 
-                WHERE usuario_id = ? 
+                WHERE usuario_id = %s 
                 ORDER BY data_fechamento DESC 
                 LIMIT 5
             ''', (usuario.id,))
             
             dados_depois = cursor.fetchall()
-            logging.info(f"🔍 [API DEBUG] Dados DEPOIS do recálculo:")
+            logging.info(f"[SEARCH] [API DEBUG] Dados DEPOIS do recálculo:")
             for row in dados_depois:
                 logging.info(f"   - {dict(row)}")
         
-        # ✅ 2. BUSCAR OPERAÇÕES FECHADAS DO BANCO
+        # [OK] 2. BUSCAR OPERAÇÕES FECHADAS DO BANCO
         operacoes_fechadas_db = services.obter_operacoes_para_calculo_fechadas(usuario_id=usuario.id)
         
-        # 🔍 VERIFICAR: O que services.obter_operacoes_para_calculo_fechadas está retornando
-        logging.info(f"🔍 [API DEBUG] services.obter_operacoes_para_calculo_fechadas retornou {len(operacoes_fechadas_db)} operações:")
+        # [SEARCH] VERIFICAR: O que services.obter_operacoes_para_calculo_fechadas está retornando
+        logging.info(f"[SEARCH] [API DEBUG] services.obter_operacoes_para_calculo_fechadas retornou {len(operacoes_fechadas_db)} operações:")
         for i, op in enumerate(operacoes_fechadas_db[:3]):  # Primeiras 3
             logging.info(f"   - Op {i+1}: {op.get('ticker', 'N/A')} | data_fechamento: {op.get('data_fechamento', 'N/A')}")
             
-        # ✅ 3. BUSCAR RESULTADOS MENSAIS
+        # [OK] 3. BUSCAR RESULTADOS MENSAIS
         resultados_mensais = services.obter_resultados_mensais(usuario_id=usuario.id)
         resultados_map = {rm["mes"]: rm for rm in resultados_mensais}
         
         logging.info(f"[API] Encontrados {len(operacoes_fechadas_db)} operações fechadas e {len(resultados_mensais)} resultados mensais")
         
-        # ✅ 4. ENRIQUECER DADOS PARA FRONTEND
+        # [OK] 4. ENRIQUECER DADOS PARA FRONTEND
         operacoes_enriquecidas = []
         
         for op in operacoes_fechadas_db:
@@ -1364,14 +1372,32 @@ async def obter_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_curren
                 # Buscar resultado mensal correspondente
                 resultado_mensal = resultados_map.get(mes_operacao)
                 
-                # ✅ CALCULAR STATUS_IR CORRIGIDO
+                # [OK] CALCULAR STATUS_IR CORRIGIDO
                 status_ir = _calcular_status_ir_para_frontend(op, resultado_mensal)
                 
-                # ✅ VERIFICAR SE DEVE GERAR DARF
+                # [OK] VERIFICAR SE DEVE GERAR DARF
                 deve_gerar_darf = _deve_gerar_darf_para_frontend(op, resultado_mensal)
                 status_darf = _obter_status_darf_para_frontend(op, resultado_mensal) if deve_gerar_darf else None
                 
-                # ✅ CONSTRUIR OPERAÇÃO ENRIQUECIDA
+                # [OK] CONSTRUIR OPERAÇÃO ENRIQUECIDA
+                # CORREÇÃO: Converter Decimal para float para evitar erro NaN no frontend
+                preco_medio_compra = op.get("preco_medio_compra", 0)
+                preco_medio_venda = op.get("preco_medio_venda", 0)
+                valor_compra = op.get("valor_compra", 0)
+                valor_venda = op.get("valor_venda", 0)
+                resultado = op.get("resultado", 0)
+                
+                if isinstance(preco_medio_compra, Decimal):
+                    preco_medio_compra = float(preco_medio_compra)
+                if isinstance(preco_medio_venda, Decimal):
+                    preco_medio_venda = float(preco_medio_venda)
+                if isinstance(valor_compra, Decimal):
+                    valor_compra = float(valor_compra)
+                if isinstance(valor_venda, Decimal):
+                    valor_venda = float(valor_venda)
+                if isinstance(resultado, Decimal):
+                    resultado = float(resultado)
+                
                 op_enriquecida = {
                     # Dados básicos da operação
                     "id": op.get("id"),
@@ -1379,29 +1405,29 @@ async def obter_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_curren
                     "quantidade": op.get("quantidade", 0),
                     "data_abertura": op.get("data_abertura", data_fechamento),
                     "data_fechamento": data_fechamento,
-                    "preco_medio_compra": op.get("preco_medio_compra", 0),
-                    "preco_medio_venda": op.get("preco_medio_venda", 0),
-                    "valor_compra": op.get("valor_compra", 0),
-                    "valor_venda": op.get("valor_venda", 0),
-                    "resultado": op.get("resultado", 0),
+                    "preco_medio_compra": preco_medio_compra,
+                    "preco_medio_venda": preco_medio_venda,
+                    "valor_compra": valor_compra,
+                    "valor_venda": valor_venda,
+                    "resultado": resultado,
                     "day_trade": op.get("day_trade", False),
                     "tipo": op.get("tipo", "compra-venda"),
                     
-                    # ✅ STATUS FISCAL CORRIGIDO
+                    # [OK] STATUS FISCAL CORRIGIDO
                     "status_ir": status_ir,
                     
-                    # ✅ DADOS PARA MODAL DARF
+                    # [OK] DADOS PARA MODAL DARF
                     "mes_operacao": mes_operacao,
                     "resultado_mensal_encontrado": resultado_mensal is not None,
                     "deve_gerar_darf": deve_gerar_darf,
                     "status_darf": status_darf,
                     
-                    # ✅ DADOS PARA COMPENSAÇÃO
+                    # [OK] DADOS PARA COMPENSAÇÃO
                     "prejuizo_anterior_disponivel": _obter_prejuizo_anterior(resultado_mensal, op),
                     "valor_ir_devido": _calcular_valor_ir_devido(op, resultado_mensal),
                     "valor_ir_pagar": _calcular_valor_ir_pagar(op, resultado_mensal),
                     
-                    # ✅ METADADOS ÚTEIS
+                    # [OK] METADADOS ÚTEIS
                     "percentual_lucro": op.get("percentual_lucro", 0),
                     "taxas_total": op.get("taxas_total", 0),
                     "operacoes_relacionadas": op.get("operacoes_relacionadas", []),
@@ -1417,7 +1443,7 @@ async def obter_operacoes_fechadas(usuario: UsuarioResponse = Depends(get_curren
         return operacoes_enriquecidas
         
     except Exception as e:
-        logging.error(f"🔍 [API DEBUG] Erro em /api/operacoes/fechadas para usuário {usuario.id}: {e}", exc_info=True)
+        logging.error(f"[SEARCH] [API DEBUG] Erro em /api/operacoes/fechadas para usuário {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @app.get("/api/operacoes/fechadas/resumo", response_model=Dict[str, Any])
@@ -1442,7 +1468,7 @@ async def obter_resumo_operacoes_fechadas(usuario: UsuarioResponse = Depends(get
 @app.get("/api/operacoes/fechadas/otimizado", response_model=List[Dict[str, Any]])
 async def obter_operacoes_fechadas_otimizado(usuario: UsuarioResponse = Depends(get_current_user)):
     """
-    🚀 API OTIMIZADA: Retorna operações fechadas com todos os cálculos já feitos no backend
+    [START] API OTIMIZADA: Retorna operações fechadas com todos os cálculos já feitos no backend
     - Performance: O(n) vs O(n²) do frontend atual
     - Prejuízo acumulado pré-calculado
     - Detalhes de compensação pré-calculados
@@ -1450,22 +1476,22 @@ async def obter_operacoes_fechadas_otimizado(usuario: UsuarioResponse = Depends(
     - Estatísticas por mês cached
     """
     try:
-        logging.info(f"🚀 [API OTIMIZADA] Buscando operações otimizadas para usuário {usuario.id}")
+        logging.info(f"[START] [API OTIMIZADA] Buscando operações otimizadas para usuário {usuario.id}")
         
         operacoes_otimizadas = obter_operacoes_fechadas_otimizado_service(usuario.id)
         
-        logging.info(f"🚀 [API OTIMIZADA] Retornando {len(operacoes_otimizadas)} operações com cálculos pré-feitos")
+        logging.info(f"[START] [API OTIMIZADA] Retornando {len(operacoes_otimizadas)} operações com cálculos pré-feitos")
         
         return operacoes_otimizadas
         
     except Exception as e:
-        logging.error(f"🚀 [API OTIMIZADA] Erro para usuário {usuario.id}: {e}", exc_info=True)
+        logging.error(f"[START] [API OTIMIZADA] Erro para usuário {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @app.get("/api/extrato/otimizado", response_model=Dict[str, Any])
 async def obter_extrato_otimizado(usuario: UsuarioResponse = Depends(get_current_user)):
     """
-    🚀 API OTIMIZADA EXTRATO: Retorna todos os dados do extrato pré-processados
+    [START] API OTIMIZADA EXTRATO: Retorna todos os dados do extrato pré-processados
     - Operações abertas filtradas e mapeadas
     - Operações fechadas com cálculos
     - Proventos do usuário
@@ -1473,23 +1499,23 @@ async def obter_extrato_otimizado(usuario: UsuarioResponse = Depends(get_current
     - Performance: O(n) vs O(n²) do frontend
     """
     try:
-        logging.info(f"🚀 [EXTRATO OTIMIZADO] Buscando dados para usuário {usuario.id}")
+        logging.info(f"[START] [EXTRATO OTIMIZADO] Buscando dados para usuário {usuario.id}")
         
         extrato_otimizado = obter_extrato_otimizado_service(usuario.id)
         
         total_items = sum(len(v) if isinstance(v, list) else 0 for v in extrato_otimizado.values())
-        logging.info(f"🚀 [EXTRATO OTIMIZADO] Retornando {total_items} itens pré-processados")
+        logging.info(f"[START] [EXTRATO OTIMIZADO] Retornando {total_items} itens pré-processados")
         
         return extrato_otimizado
         
     except Exception as e:
-        logging.error(f"🚀 [EXTRATO OTIMIZADO] Erro para usuário {usuario.id}: {e}", exc_info=True)
+        logging.error(f"[START] [EXTRATO OTIMIZADO] Erro para usuário {usuario.id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Erro interno: {str(e)}")
 
 @app.get("/api/test/auth")
 async def test_auth(usuario: UsuarioResponse = Depends(get_current_user)):
     """
-    🧪 Endpoint de teste para verificar autenticação
+    [EMOJI] Endpoint de teste para verificar autenticação
     """
     try:
         return {
@@ -1499,7 +1525,7 @@ async def test_auth(usuario: UsuarioResponse = Depends(get_current_user)):
             "message": "Autenticação funcionando"
         }
     except Exception as e:
-        logging.error(f"🧪 [TEST AUTH] Erro: {e}")
+        logging.error(f"[EMOJI] [TEST AUTH] Erro: {e}")
         raise HTTPException(status_code=500, detail=f"Erro: {str(e)}")
     
 @app.delete("/api/admin/reset-financial-data", response_model=Dict[str, str])
@@ -1693,7 +1719,7 @@ async def analisar_duplicatas_potenciais(
                     o1.quantity, o1.price as price1, o1.importacao_id as imp1,
                     o2.id as id2, o2.date as date2, o2.price as price2, 
                     o2.importacao_id as imp2,
-                    ABS(julianday(o1.date) - julianday(o2.date)) as diff_dias,
+                    ABS(EXTRACT(days FROM (o1.date - o2.date))) as diff_dias,
                     ABS(o1.price - o2.price) as diff_preco
                 FROM operacoes o1
                 JOIN operacoes o2 ON 
@@ -1702,9 +1728,9 @@ async def analisar_duplicatas_potenciais(
                     o1.operation = o2.operation AND
                     o1.quantity = o2.quantity AND
                     o1.id < o2.id
-                WHERE o1.usuario_id = ?
-                    AND ABS(julianday(o1.date) - julianday(o2.date)) <= ?
-                    AND ABS(o1.price - o2.price) <= ?
+                WHERE o1.usuario_id = %s
+                    AND ABS(EXTRACT(days FROM (o1.date - o2.date))) <= %s
+                    AND ABS(o1.price - o2.price) <= %s
                 ORDER BY diff_dias, diff_preco
             ''', (usuario.id, tolerancia_dias, tolerancia_preco))
             
@@ -1749,7 +1775,7 @@ async def listar_duplicatas_exatas(
 # ==================== UTILITY FUNCTIONS ====================
 
 def preprocess_imported_operation(op: dict) -> dict:
-    print(f"🔄 [PREPROCESS] Processando operação: {op}")
+    print(f"[RELOAD] [PREPROCESS] Processando operação: {op}")
     
     # Mapeamento de campos
     field_map = {
@@ -1766,9 +1792,9 @@ def preprocess_imported_operation(op: dict) -> dict:
     for k, v in op.items():
         key = field_map.get(k, k)
         new_op[key] = v
-        print(f"🔄 [PREPROCESS] Mapeando campo '{k}' -> '{key}' = '{v}'")
+        print(f"[RELOAD] [PREPROCESS] Mapeando campo '{k}' -> '{key}' = '{v}'")
     
-    print(f"🔄 [PREPROCESS] Operação após mapeamento: {new_op}")
+    print(f"[RELOAD] [PREPROCESS] Operação após mapeamento: {new_op}")
     
     # Conversão de valores
     if "price" in new_op and isinstance(new_op["price"], str):
@@ -1777,13 +1803,13 @@ def preprocess_imported_operation(op: dict) -> dict:
             # Remove R$, espaços e converte vírgula para ponto
             price_str = new_op["price"].replace("R$", "").replace(",", ".").strip()
             if price_str == "":
-                print(f"❌ [PREPROCESS] Preço vazio, definindo como 0.0")
+                print(f"[ERROR] [PREPROCESS] Preço vazio, definindo como 0.0")
                 new_op["price"] = 0.0
             else:
                 new_op["price"] = float(price_str)
-            print(f"💰 [PREPROCESS] Preço convertido: '{original_price}' -> {new_op['price']}")
+            print(f"[MONEY] [PREPROCESS] Preço convertido: '{original_price}' -> {new_op['price']}")
         except (ValueError, TypeError) as e:
-            print(f"❌ [PREPROCESS] Erro ao converter preço '{original_price}': {e}")
+            print(f"[ERROR] [PREPROCESS] Erro ao converter preço '{original_price}': {e}")
             new_op["price"] = 0.0
         
     if "quantity" in new_op:
@@ -1794,15 +1820,15 @@ def preprocess_imported_operation(op: dict) -> dict:
                 # Remove espaços e converte
                 quantity_str = original_quantity.strip()
                 if quantity_str == "":
-                    print(f"❌ [PREPROCESS] Quantidade vazia")
+                    print(f"[ERROR] [PREPROCESS] Quantidade vazia")
                     new_op["quantity"] = 0  # Será filtrado depois
                 else:
                     new_op["quantity"] = int(quantity_str)
             else:
                 new_op["quantity"] = int(original_quantity)
-            print(f"📊 [PREPROCESS] Quantidade convertida: '{original_quantity}' -> {new_op['quantity']}")
+            print(f"[CHART] [PREPROCESS] Quantidade convertida: '{original_quantity}' -> {new_op['quantity']}")
         except (ValueError, TypeError) as e:
-            print(f"❌ [PREPROCESS] Erro ao converter quantidade '{original_quantity}': {e}")
+            print(f"[ERROR] [PREPROCESS] Erro ao converter quantidade '{original_quantity}': {e}")
             new_op["quantity"] = 0  # Será filtrado depois
         
     if "operation" in new_op:
@@ -1811,7 +1837,7 @@ def preprocess_imported_operation(op: dict) -> dict:
             new_op["operation"] = "buy"
         elif new_op["operation"].lower().startswith("venda"):
             new_op["operation"] = "sell"
-        print(f"📈 [PREPROCESS] Operação convertida: '{original_operation}' -> '{new_op['operation']}'")
+        print(f"[CHART] [PREPROCESS] Operação convertida: '{original_operation}' -> '{new_op['operation']}'")
         
     if "ticker" in new_op:
         original_ticker = new_op["ticker"]
@@ -1820,24 +1846,24 @@ def preprocess_imported_operation(op: dict) -> dict:
         if ticker_str.endswith('F') and len(ticker_str) > 1:
             ticker_str = ticker_str[:-1]
         new_op["ticker"] = ticker_str
-        print(f"🏷️ [PREPROCESS] Ticker convertido: '{original_ticker}' -> '{new_op['ticker']}'")
+        print(f"[EMOJI] [PREPROCESS] Ticker convertido: '{original_ticker}' -> '{new_op['ticker']}'")
         
     if "date" in new_op:
         original_date = new_op["date"]
         # Converte para ISO
         try:
             new_op["date"] = datetime.strptime(new_op["date"], "%d/%m/%Y").date().isoformat()
-            print(f"📅 [PREPROCESS] Data convertida: '{original_date}' -> '{new_op['date']}'")
+            print(f"[CALENDAR] [PREPROCESS] Data convertida: '{original_date}' -> '{new_op['date']}'")
         except Exception as e:
-            print(f"❌ [PREPROCESS] Erro ao converter data '{original_date}': {e}")
+            print(f"[ERROR] [PREPROCESS] Erro ao converter data '{original_date}': {e}")
             pass
     
     # Taxas e fees default
     if "fees" not in new_op:
         new_op["fees"] = 0.0
-        print(f"💸 [PREPROCESS] Taxa padrão adicionada: {new_op['fees']}")
+        print(f"[MONEY_OUT] [PREPROCESS] Taxa padrão adicionada: {new_op['fees']}")
     
-    print(f"✅ [PREPROCESS] Operação final: {new_op}")
+    print(f"[OK] [PREPROCESS] Operação final: {new_op}")
     return new_op
 
 def _calcular_status_ir_para_frontend(op, resultado_mensal):
@@ -1855,7 +1881,7 @@ def _calcular_status_ir_para_frontend(op, resultado_mensal):
     if resultado < 0:
         return "Prejuízo Acumulado"
     
-    # ✅ CORREÇÃO: Verificar day_trade mais robustamente
+    # [OK] CORREÇÃO: Verificar day_trade mais robustamente
     day_trade_field = op.get("day_trade", False)
     
     # Converter valores do banco (0/1) para boolean
@@ -1864,7 +1890,7 @@ def _calcular_status_ir_para_frontend(op, resultado_mensal):
     else:
         is_day_trade = bool(day_trade_field)
     
-    # ✅ CORREÇÃO: Não forçar day_trade baseado no resultado mensal
+    # [OK] CORREÇÃO: Não forçar day_trade baseado no resultado mensal
     # O resultado mensal agrega TODAS as operações, não uma específica
     # Cada operação individual deve manter seu próprio tipo (day_trade ou swing)
     if resultado_mensal:
@@ -1901,7 +1927,7 @@ def _deve_gerar_darf_para_frontend(op, resultado_mensal):
     if not resultado_mensal:
         return False
     
-    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    # [OK] CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
     day_trade_field = op.get("day_trade", False)
     
     # Converter valores do banco (0/1) para boolean
@@ -1910,7 +1936,7 @@ def _deve_gerar_darf_para_frontend(op, resultado_mensal):
     else:
         is_day_trade = bool(day_trade_field)
     
-    # ✅ CORREÇÃO: Não forçar day_trade baseado no resultado mensal
+    # [OK] CORREÇÃO: Não forçar day_trade baseado no resultado mensal
     # Usar o valor original da operação
     ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
     ir_pagar_swing = resultado_mensal.get("ir_pagar_swing", 0)
@@ -1932,7 +1958,7 @@ def _obter_status_darf_para_frontend(op, resultado_mensal):
     if not resultado_mensal:
         return "Pendente"
     
-    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    # [OK] CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
     day_trade_field = op.get("day_trade", False)
     
     # Converter valores do banco (0/1) para boolean
@@ -1941,7 +1967,7 @@ def _obter_status_darf_para_frontend(op, resultado_mensal):
     else:
         is_day_trade = bool(day_trade_field)
     
-    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    # [OK] CORREÇÃO: Verificar consistência com dados mensais
     ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
     
     # Se há IR Day mas operação não está marcada como Day Trade, corrigir
@@ -1962,7 +1988,7 @@ def _obter_prejuizo_anterior(resultado_mensal, op):
     if not resultado_mensal:
         return 0
     
-    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    # [OK] CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
     if isinstance(op, dict):
         day_trade_field = op.get("day_trade", False)
     else:
@@ -1974,7 +2000,7 @@ def _obter_prejuizo_anterior(resultado_mensal, op):
     else:
         is_day_trade = bool(day_trade_field)
     
-    # ✅ CORREÇÃO: Verificar consistência com dados mensais se op for dict
+    # [OK] CORREÇÃO: Verificar consistência com dados mensais se op for dict
     if isinstance(op, dict):
         ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
         
@@ -1999,7 +2025,7 @@ def _calcular_valor_ir_devido(op, resultado_mensal):
     if not resultado_mensal:
         return 0
     
-    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    # [OK] CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
     day_trade_field = op.get("day_trade", False)
     
     # Converter valores do banco (0/1) para boolean
@@ -2008,7 +2034,7 @@ def _calcular_valor_ir_devido(op, resultado_mensal):
     else:
         is_day_trade = bool(day_trade_field)
     
-    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    # [OK] CORREÇÃO: Verificar consistência com dados mensais
     ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
     
     # Se há IR Day mas operação não está marcada como Day Trade, corrigir
@@ -2030,7 +2056,7 @@ def _calcular_valor_ir_pagar(op, resultado_mensal):
     if not resultado_mensal:
         return 0
     
-    # ✅ CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
+    # [OK] CORREÇÃO: Usar mesma lógica robusta de detecção Day Trade
     day_trade_field = op.get("day_trade", False)
     
     # Converter valores do banco (0/1) para boolean
@@ -2039,7 +2065,7 @@ def _calcular_valor_ir_pagar(op, resultado_mensal):
     else:
         is_day_trade = bool(day_trade_field)
     
-    # ✅ CORREÇÃO: Verificar consistência com dados mensais
+    # [OK] CORREÇÃO: Verificar consistência com dados mensais
     ir_pagar_day = resultado_mensal.get("ir_pagar_day", 0)
     
     # Se há IR Day mas operação não está marcada como Day Trade, corrigir
@@ -2063,18 +2089,18 @@ async def debug_operacoes_fechadas(usuario_id: int, admin: UsuarioResponse = Dep
             cursor = conn.cursor()
             
             # Contar operações fechadas
-            cursor.execute("SELECT COUNT(*) as count FROM operacoes_fechadas WHERE usuario_id = ?", (usuario_id,))
+            cursor.execute("SELECT COUNT(*) as count FROM operacoes_fechadas WHERE usuario_id = %s", (usuario_id,))
             count_op_fechadas = cursor.fetchone()['count']
             
             # Contar resultados mensais
-            cursor.execute("SELECT COUNT(*) as count FROM resultados_mensais WHERE usuario_id = ?", (usuario_id,))
+            cursor.execute("SELECT COUNT(*) as count FROM resultados_mensais WHERE usuario_id = %s", (usuario_id,))
             count_resultados = cursor.fetchone()['count']
             
             # Buscar últimas operações fechadas
             cursor.execute("""
                 SELECT ticker, data_fechamento, resultado, day_trade, status_ir 
                 FROM operacoes_fechadas 
-                WHERE usuario_id = ? 
+                WHERE usuario_id = %s 
                 ORDER BY data_fechamento DESC 
                 LIMIT 10
             """, (usuario_id,))
@@ -2084,7 +2110,7 @@ async def debug_operacoes_fechadas(usuario_id: int, admin: UsuarioResponse = Dep
             cursor.execute("""
                 SELECT mes, ir_pagar_swing, ir_pagar_day, status_darf_swing_trade, status_darf_day_trade
                 FROM resultados_mensais 
-                WHERE usuario_id = ? 
+                WHERE usuario_id = %s 
                 ORDER BY mes DESC
             """, (usuario_id,))
             resultados_mensais = cursor.fetchall()
@@ -2102,7 +2128,7 @@ async def debug_operacoes_fechadas(usuario_id: int, admin: UsuarioResponse = Dep
         raise HTTPException(status_code=500, detail=f"Erro no debug: {str(e)}")
 
 
-# ✅ ENDPOINT PARA FORÇAR RECÁLCULO COMPLETO
+# [OK] ENDPOINT PARA FORÇAR RECÁLCULO COMPLETO
 @app.post("/api/admin/recalcular-completo/{usuario_id}")
 async def forcar_recalculo_completo(usuario_id: int, admin: UsuarioResponse = Depends(get_admin_user)):
     """
@@ -2140,7 +2166,7 @@ async def forcar_recalculo_completo(usuario_id: int, admin: UsuarioResponse = De
 @app.post("/api/recalcular-irrf", tags=["Admin"])
 async def recalcular_irrf_teste(usuario: UsuarioResponse = Depends(get_current_user)):
     """
-    🔧 Endpoint de TESTE para recalcular IRRF corretamente
+    [WRENCH] Endpoint de TESTE para recalcular IRRF corretamente
     
     Usa a nova função que calcula Day Trade IRRF (1% sobre ganhos) 
     e Swing Trade IRRF (0.005% sobre vendas)
@@ -2157,7 +2183,7 @@ async def recalcular_irrf_teste(usuario: UsuarioResponse = Depends(get_current_u
         irrf_swing_total = sum(r.get('irrf_swing', 0) for r in resultados)
         
         return {
-            "message": "✅ IRRF recalculado com sucesso",
+            "message": "[OK] IRRF recalculado com sucesso",
             "usuario_id": usuario.id,
             "meses_processados": len(resultados),
             "irrf_day_total": round(irrf_day_total, 2),
@@ -2184,10 +2210,10 @@ async def recalcular_status_ir_endpoint(
     usuario: UsuarioResponse = Depends(get_current_user)
 ):
     """
-    🔧 ENDPOINT: Recalcula status IR das operações para o usuário logado
+    [WRENCH] ENDPOINT: Recalcula status IR das operações para o usuário logado
     """
     try:
-        logging.info(f"🔧 [STATUS IR] Recalculando para usuário {usuario.id}")
+        logging.info(f"[WRENCH] [STATUS IR] Recalculando para usuário {usuario.id}")
         
         # Recalcular resultados mensais primeiro
         recalcular_resultados_corrigido(usuario_id=usuario.id)
@@ -2202,7 +2228,7 @@ async def recalcular_status_ir_endpoint(
                 SELECT COUNT(*) as total, 
                        COUNT(CASE WHEN status_ir IS NOT NULL THEN 1 END) as com_status
                 FROM operacoes_fechadas 
-                WHERE usuario_id = ?
+                WHERE usuario_id = %s
             """, (usuario.id,))
             stats = cursor.fetchone()
         
@@ -2215,8 +2241,77 @@ async def recalcular_status_ir_endpoint(
         }
         
     except Exception as e:
-        logging.error(f"❌ [STATUS IR] Erro usuário {usuario.id}: {e}")
+        logging.error(f"[ERROR] [STATUS IR] Erro usuário {usuario.id}: {e}")
         raise HTTPException(status_code=500, detail=f"Erro ao recalcular status IR: {str(e)}")
+
+@app.post("/api/recalcular-sistema-completo", tags=["Debug"])
+async def recalcular_sistema_completo_endpoint(
+    dry_run: bool = False,
+    force: bool = False,
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    [RELOAD] ENDPOINT: Recálculo completo e atômico do sistema
+    
+    Executa recálculo unificado de:
+    - Carteira atual (com eventos corporativos)
+    - Proventos recebidos (baseado em posições reais)
+    - Resultados mensais (com IRRF correto)
+    - Status IR das operações fechadas
+    - Validações de integridade
+    
+    Args:
+        dry_run: Se True, executa validações sem salvar
+        force: Se True, pula validações de segurança
+    
+    Returns:
+        Dict com métricas detalhadas do recálculo
+    """
+    try:
+        logging.info(f"[RELOAD] [RECÁLCULO COMPLETO] Iniciando para usuário {usuario.id} (dry_run={dry_run}, force={force})")
+        
+        resultado = services.recalcular_usuario_endpoint_service(
+            usuario_id=usuario.id,
+            force=force
+        )
+        
+        if dry_run:
+            # Se for dry_run, forçar modo de validação
+            resultado = services.validar_integridade_usuario(usuario.id)
+        
+        logging.info(f"[OK] [RECÁLCULO COMPLETO] Concluído para usuário {usuario.id}")
+        return resultado
+        
+    except Exception as e:
+        logging.error(f"[ERROR] [RECÁLCULO COMPLETO] Erro usuário {usuario.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro no recálculo completo: {str(e)}")
+
+@app.post("/api/validar-integridade", tags=["Debug"])
+async def validar_integridade_endpoint(
+    usuario: UsuarioResponse = Depends(get_current_user)
+):
+    """
+    [SEARCH] ENDPOINT: Validação rápida de integridade dos dados
+    
+    Executa validações sem alterar dados para verificar:
+    - Consistência entre operações e carteira
+    - Integridade dos proventos calculados
+    - Coherência dos resultados mensais
+    
+    Returns:
+        Dict com resultados da validação
+    """
+    try:
+        logging.info(f"[SEARCH] [VALIDAÇÃO] Iniciando para usuário {usuario.id}")
+        
+        resultado = services.validar_integridade_usuario(usuario.id)
+        
+        logging.info(f"[OK] [VALIDAÇÃO] Concluída para usuário {usuario.id}")
+        return resultado
+        
+    except Exception as e:
+        logging.error(f"[ERROR] [VALIDAÇÃO] Erro usuário {usuario.id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro na validação: {str(e)}")
 
 # ============================================
 # ROTAS PARA CONFIGURAÇÕES DE USUÁRIO

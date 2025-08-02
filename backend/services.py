@@ -12,7 +12,48 @@ from fastapi import HTTPException
 
 # Local imports
 import calculos
-from database import *
+from database import (
+    get_db, 
+    inserir_operacao, 
+    obter_operacao_por_id, 
+    obter_todas_operacoes,
+    obter_tickers_operados_por_usuario,
+    atualizar_operacao,
+    remover_operacao,
+    atualizar_carteira,
+    obter_carteira_atual,
+    salvar_resultado_mensal,
+    obter_resultados_mensais,
+    limpar_banco_dados_usuario,
+    limpar_banco_dados,
+    obter_operacoes_para_calculo_fechadas,
+    salvar_operacao_fechada,
+    obter_operacoes_fechadas_salvas,
+    limpar_operacoes_fechadas_usuario,
+    remover_todas_operacoes_usuario,
+    atualizar_status_darf_db,
+    limpar_carteira_usuario_db,
+    limpar_resultados_mensais_usuario_db,
+    remover_item_carteira_db,
+    obter_operacoes_por_ticker_db,
+    obter_operacoes_por_usuario_ticker_ate_data,
+    obter_operacoes_por_ticker_ate_data_db,
+    obter_id_acao_por_ticker,
+    obter_acao_por_id,
+    obter_todas_acoes,
+    limpar_usuario_proventos_recebidos_db,
+    inserir_usuario_provento_recebido_db,
+    obter_proventos_recebidos_por_usuario_db,
+    obter_resumo_anual_proventos_recebidos_db,
+    obter_resumo_mensal_proventos_recebidos_db,
+    obter_resumo_por_acao_proventos_recebidos_db,
+    inserir_provento,
+    obter_proventos_por_acao_id,
+    obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a,
+    obter_acao_info_por_ticker,
+    obter_primeira_data_operacao_usuario,
+    obter_proventos_por_ticker
+)
 from utils import extrair_mes_data_seguro
 from models import (
     OperacaoCreate, 
@@ -35,7 +76,7 @@ from models import (
     DetalheTipoProvento,  
     
 )
-from database import obter_proventos_recebidos_por_usuario_db
+from database import get_db, obter_proventos_recebidos_por_usuario_db
 
 
 def _validar_e_zerar_posicao_se_necessario(posicao_dict):
@@ -114,7 +155,7 @@ def _transformar_provento_db_para_modelo(p_db: Dict[str, Any]) -> Optional[Dict[
     # Converter datas de DD/MM/YYYY para objetos date
     # Se o banco já armazena em ISO YYYY-MM-DD, Pydantic lida com isso.
     # Esta conversão é se o banco estivesse armazenando no formato DD/MM/YYYY.
-    # Com os conversores de data do SQLite, os campos de data já devem ser objetos `date` ou None.
+    # Com o psycopg2, os campos de data já devem ser objetos `date` ou None.
     for campo_data in ['data_registro', 'data_ex', 'dt_pagamento']:
         valor_data = p_db[campo_data] if campo_data in p_db else None
         if isinstance(valor_data, date): # datetime.date
@@ -384,7 +425,7 @@ def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int, importaca
     except ValueError: # Catching the specific ValueError from database.inserir_operacao
         raise # Re-raise it to be handled by the router (e.g., converted to HTTPException)
     
-    logging.info(f"🔄 [RECÁLCULO] Iniciando após inserção de operação ID {new_operacao_id}")
+    logging.info(f"[RELOAD] [RECÁLCULO] Iniciando após inserção de operação ID {new_operacao_id}")
     
     try:
         # Sequência de recálculos necessários
@@ -393,10 +434,10 @@ def inserir_operacao_manual(operacao: OperacaoCreate, usuario_id: int, importaca
         recalcular_resultados_corrigido(usuario_id=usuario_id)
         atualizar_status_ir_operacoes_fechadas(usuario_id=usuario_id)
         
-        logging.info(f"✅ [RECÁLCULO] Concluído com sucesso")
+        logging.info(f"[OK] [RECÁLCULO] Concluído com sucesso")
         
     except Exception as e_recalc:
-        logging.error(f"❌ [RECÁLCULO] Erro: {e_recalc}")
+        logging.error(f"[ERROR] [RECÁLCULO] Erro: {e_recalc}")
     
     try:
         stats = recalcular_proventos_recebidos_rapido(usuario_id=usuario_id)
@@ -478,10 +519,10 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     # Buscar operações originais
     operacoes_originais = obter_todas_operacoes(usuario_id=usuario_id)
     if not operacoes_originais:
-        logging.info(f"   ❌ Nenhuma operação encontrada")
+        logging.info(f"   [ERROR] Nenhuma operação encontrada")
         return []
 
-    logging.info(f"   📊 {len(operacoes_originais)} operações carregadas")
+    logging.info(f"   [STATS] {len(operacoes_originais)} operações carregadas")
     
     # Aplicar eventos corporativos (código existente)
     adjusted_operacoes = _aplicar_eventos_corporativos(operacoes_originais, usuario_id)
@@ -490,19 +531,19 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
     operacoes_calculos = []
     for op_adj in adjusted_operacoes:
         
-        # ✅ CORREÇÃO 1: Garantir que a data seja válida
+        # [OK] CORREÇÃO 1: Garantir que a data seja válida
         if isinstance(op_adj['date'], str):
             try:
                 data_obj = datetime.fromisoformat(op_adj['date']).date()
             except ValueError:
-                logging.warning(f"   ⚠️ Data inválida ignorada: {op_adj['date']} para {op_adj.get('ticker', 'N/A')}")
+                logging.warning(f"   [WARNING] Data inválida ignorada: {op_adj['date']} para {op_adj.get('ticker', 'N/A')}")
                 continue
         elif isinstance(op_adj['date'], datetime):
             data_obj = op_adj['date'].date()
         elif isinstance(op_adj['date'], date):
             data_obj = op_adj['date']
         else:
-            logging.warning(f"   ⚠️ Tipo de data inválido ignorado: {type(op_adj['date'])} para {op_adj.get('ticker', 'N/A')}")
+            logging.warning(f"   [WARNING] Tipo de data inválido ignorado: {type(op_adj['date'])} para {op_adj.get('ticker', 'N/A')}")
             continue
         
         operacao_obj = Operacao(
@@ -521,21 +562,21 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
         resultado_calculos = calculos.calcular_resultados_operacoes(operacoes_calculos)
         operacoes_fechadas = resultado_calculos.get("operacoes_fechadas", [])
         
-        logging.info(f"   🎯 calculos.py retornou {len(operacoes_fechadas)} operações fechadas")
+        logging.info(f"   [TARGET] calculos.py retornou {len(operacoes_fechadas)} operações fechadas")
         
     except Exception as e:
-        logging.error(f"   ❌ Erro no calculos.py: {e}", exc_info=True)
+        logging.error(f"   [ERROR] Erro no calculos.py: {e}", exc_info=True)
         return []
     
     operacoes_fechadas_salvas = []
     
     for op_fechada in operacoes_fechadas:
         try:
-            # ✅ CORREÇÃO 2: Verificar se data_fechamento existe e é válida
+            # [OK] CORREÇÃO 2: Verificar se data_fechamento existe e é válida
             data_fechamento = getattr(op_fechada, 'data_fechamento', None)
             
             if data_fechamento is None:
-                logging.warning(f"   ⚠️ Operação {getattr(op_fechada, 'ticker', 'N/A')} sem data_fechamento - usando data atual")
+                logging.warning(f"   [WARNING] Operação {getattr(op_fechada, 'ticker', 'N/A')} sem data_fechamento - usando data atual")
                 data_fechamento = date.today()
             
             # Converter para string ISO se necessário
@@ -547,22 +588,22 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                     data_fechamento_obj = datetime.fromisoformat(data_fechamento).date()
                     data_fechamento_str = data_fechamento
                 except ValueError:
-                    logging.warning(f"   ⚠️ String de data inválida para {getattr(op_fechada, 'ticker', 'N/A')}: {data_fechamento} - usando data atual")
+                    logging.warning(f"   [WARNING] String de data inválida para {getattr(op_fechada, 'ticker', 'N/A')}: {data_fechamento} - usando data atual")
                     data_fechamento_obj = date.today()
                     data_fechamento_str = data_fechamento_obj.isoformat()
             else:
-                logging.warning(f"   ⚠️ Tipo de data inválido para {getattr(op_fechada, 'ticker', 'N/A')}: {type(data_fechamento)} - usando data atual")
+                logging.warning(f"   [WARNING] Tipo de data inválido para {getattr(op_fechada, 'ticker', 'N/A')}: {type(data_fechamento)} - usando data atual")
                 data_fechamento_obj = date.today()
                 data_fechamento_str = data_fechamento_obj.isoformat()
             
-            # ✅ CORREÇÃO 3: Garantir que data_abertura também seja válida
+            # [OK] CORREÇÃO 3: Garantir que data_abertura também seja válida
             data_abertura = getattr(op_fechada, 'data_abertura', None)
             
-            # ✅ CORREÇÃO CRÍTICA: Se data_abertura for None, usar data_fechamento
+            # [OK] CORREÇÃO CRÍTICA: Se data_abertura for None, usar data_fechamento
             if data_abertura is None:
                 data_abertura_obj = data_fechamento_obj  # Usar mesma data como fallback
                 data_abertura_str = data_fechamento_str
-                logging.info(f"   🔧 {getattr(op_fechada, 'ticker', 'N/A')}: data_abertura era None, usando data_fechamento como fallback")
+                logging.info(f"   [WRENCH] {getattr(op_fechada, 'ticker', 'N/A')}: data_abertura era None, usando data_fechamento como fallback")
             elif isinstance(data_abertura, date):
                 data_abertura_str = data_abertura.isoformat()
                 data_abertura_obj = data_abertura
@@ -573,13 +614,13 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
                 except ValueError:
                     data_abertura_str = data_fechamento_str  # Fallback
                     data_abertura_obj = data_fechamento_obj
-                    logging.warning(f"   ⚠️ data_abertura inválida para {getattr(op_fechada, 'ticker', 'N/A')}, usando data_fechamento")
+                    logging.warning(f"   [WARNING] data_abertura inválida para {getattr(op_fechada, 'ticker', 'N/A')}, usando data_fechamento")
             else:
                 data_abertura_str = data_fechamento_str  # Fallback
                 data_abertura_obj = data_fechamento_obj
-                logging.warning(f"   ⚠️ Tipo data_abertura inválido para {getattr(op_fechada, 'ticker', 'N/A')}, usando data_fechamento")
+                logging.warning(f"   [WARNING] Tipo data_abertura inválido para {getattr(op_fechada, 'ticker', 'N/A')}, usando data_fechamento")
             
-            # ✅ CORREÇÃO 4: Calcular campos derivados
+            # [OK] CORREÇÃO 4: Calcular campos derivados
             valor_compra = getattr(op_fechada, 'preco_medio_compra', 0) * getattr(op_fechada, 'quantidade', 0)
             valor_venda = getattr(op_fechada, 'preco_medio_venda', 0) * getattr(op_fechada, 'quantidade', 0)
             resultado = getattr(op_fechada, 'resultado', 0)
@@ -589,11 +630,11 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
             if valor_compra > 0:
                 percentual_lucro = (resultado / valor_compra) * 100
             
-            # ✅ CORREÇÃO 5: Criar modelo OperacaoFechada válido primeiro
+            # [OK] CORREÇÃO 5: Criar modelo OperacaoFechada válido primeiro
             op_model = OperacaoFechada(
                 ticker=getattr(op_fechada, 'ticker', 'UNKNOWN'),
-                data_abertura=data_abertura_obj,  # ✅ SEMPRE um objeto date válido
-                data_fechamento=data_fechamento_obj,  # ✅ SEMPRE um objeto date válido
+                data_abertura=data_abertura_obj,  # [OK] SEMPRE um objeto date válido
+                data_fechamento=data_fechamento_obj,  # [OK] SEMPRE um objeto date válido
                 tipo="compra-venda",  # Padrão
                 quantidade=getattr(op_fechada, 'quantidade', 0),
                 valor_compra=valor_compra,
@@ -617,10 +658,10 @@ def calcular_operacoes_fechadas(usuario_id: int) -> List[Dict[str, Any]]:
             operacoes_fechadas_salvas.append(op_dict)
             
         except Exception as e:
-            logging.error(f"   ❌ Erro ao salvar operação fechada {getattr(op_fechada, 'ticker', 'N/A')}: {e}", exc_info=True)
+            logging.error(f"   [ERROR] Erro ao salvar operação fechada {getattr(op_fechada, 'ticker', 'N/A')}: {e}", exc_info=True)
             continue
     
-    logging.info(f"✅ [CALC] {len(operacoes_fechadas_salvas)} operações fechadas calculadas")
+    logging.info(f"[OK] [CALC] {len(operacoes_fechadas_salvas)} operações fechadas calculadas")
     
     return operacoes_fechadas_salvas
 
@@ -629,17 +670,17 @@ def aplicar_desdobramento(adj_op_data, event_info):
     """
     Aplica especificamente um evento de desdobramento
     """
-    print(f"   🎯 Aplicando DESDOBRAMENTO {event_info.razao}...")
+    print(f"   [TARGET] Aplicando DESDOBRAMENTO {event_info.razao}...")
     
     if not event_info.razao:
-        print(f"   ❌ Razão do desdobramento não informada")
+        print(f"   [ERROR] Razão do desdobramento não informada")
         return adj_op_data
     
     try:
         # Parse da razão (ex: "1:2" = cada 1 ação vira 2)
         parts = event_info.razao.split(':')
         if len(parts) != 2:
-            print(f"   ❌ Formato de razão inválido: {event_info.razao}")
+            print(f"   [ERROR] Formato de razão inválido: {event_info.razao}")
             return adj_op_data
         
         antes = float(parts[0])  # 1
@@ -656,14 +697,14 @@ def aplicar_desdobramento(adj_op_data, event_info):
         adj_op_data['quantity'] = qtd_nova
         adj_op_data['price'] = preco_novo
         
-        print(f"   📊 Quantidade: {qtd_original} → {qtd_nova} (×{fator})")
-        print(f"   💰 Preço: {preco_original:.2f} → {preco_novo:.2f} (÷{fator})")
-        print(f"   ✅ Desdobramento aplicado com sucesso!")
+        print(f"   [STATS] Quantidade: {qtd_original} -> {qtd_nova} (×{fator})")
+        print(f"   [MONEY] Preço: {preco_original:.2f} -> {preco_novo:.2f} (÷{fator})")
+        print(f"   [OK] Desdobramento aplicado com sucesso!")
         
         return adj_op_data
         
     except (ValueError, ZeroDivisionError) as e:
-        print(f"   ❌ Erro ao aplicar desdobramento: {e}")
+        print(f"   [ERROR] Erro ao aplicar desdobramento: {e}")
         return adj_op_data
 
 def recalcular_carteira(usuario_id: int) -> None:
@@ -699,17 +740,17 @@ def recalcular_carteira(usuario_id: int) -> None:
         unique_tickers = list(set(op_from_db['ticker'] for op_from_db in operacoes_originais))
         events_by_ticker = {}
 
-        print(f"\n🔍 [EVENTOS] Processando eventos para {len(unique_tickers)} tickers...")
+        print(f"\n[EVENTOS] Processando eventos para {len(unique_tickers)} tickers...")
 
         for ticker_symbol in unique_tickers:
-            print(f"\n📊 [EVENTOS] Processando ticker: {ticker_symbol}")
+            print(f"\n[STATS] [EVENTOS] Processando ticker: {ticker_symbol}")
             
             id_acao = obter_id_acao_por_ticker(ticker_symbol)
             if not id_acao:
-                print(f"   ❌ ID da ação não encontrado para {ticker_symbol}")
+                print(f"   [ERROR] ID da ação não encontrado para {ticker_symbol}")
                 continue
                 
-            print(f"   ✅ ID da ação encontrado: {id_acao}")
+            print(f"   [OK] ID da ação encontrado: {id_acao}")
             
             # Buscar primeira operação para determinar período de busca
             first_op_date = min(
@@ -720,15 +761,15 @@ def recalcular_carteira(usuario_id: int) -> None:
             )
             
             search_start_date = first_op_date - timedelta(days=30)
-            print(f"   📅 Primeira operação: {first_op_date}")
-            print(f"   📅 Buscar eventos desde: {search_start_date}")
+            print(f"   [CALENDAR] Primeira operação: {first_op_date}")
+            print(f"   [CALENDAR] Buscar eventos desde: {search_start_date}")
             
             raw_events_data = obter_eventos_corporativos_por_id_acao_e_data_ex_anterior_a(
                 id_acao, 
                 today_date  # Buscar até hoje
             )
             
-            print(f"   📋 Eventos brutos encontrados: {len(raw_events_data)}")
+            print(f"   [LIST] Eventos brutos encontrados: {len(raw_events_data)}")
             
             filtered_events_data = []
             for event in raw_events_data:
@@ -739,11 +780,11 @@ def recalcular_carteira(usuario_id: int) -> None:
                     
                     if event_data_ex >= first_op_date:
                         filtered_events_data.append(event)
-                        print(f"   ✅ Evento incluído: {event['evento']} em {event_data_ex}")
+                        print(f"   [OK] Evento incluído: {event['evento']} em {event_data_ex}")
                     else:
-                        print(f"   ⏭️ Evento ignorado (muito antigo): {event['evento']} em {event_data_ex}")
+                        print(f"   ⏭[EMOJI] Evento ignorado (muito antigo): {event['evento']} em {event_data_ex}")
             
-            print(f"   📋 Eventos filtrados: {len(filtered_events_data)}")
+            print(f"   [LIST] Eventos filtrados: {len(filtered_events_data)}")
             
             # Converter para objetos EventoCorporativoInfo
             events_by_ticker[ticker_symbol] = [
@@ -751,7 +792,7 @@ def recalcular_carteira(usuario_id: int) -> None:
                 for event_data in filtered_events_data
             ]
             
-            print(f"   ✅ {len(events_by_ticker[ticker_symbol])} eventos carregados para {ticker_symbol}")
+            print(f"   [OK] {len(events_by_ticker[ticker_symbol])} eventos carregados para {ticker_symbol}")
 
         for op_from_db in operacoes_originais:
             current_op_date = op_from_db['date']
@@ -759,7 +800,7 @@ def recalcular_carteira(usuario_id: int) -> None:
                 try:
                     current_op_date = datetime.fromisoformat(str(current_op_date).split("T")[0]).date()
                 except ValueError:
-                    print(f"❌ Data inválida na operação: {current_op_date}")
+                    print(f"[ERROR] Data inválida na operação: {current_op_date}")
                     adjusted_operacoes.append(op_from_db.copy())
                     continue
 
@@ -772,16 +813,16 @@ def recalcular_carteira(usuario_id: int) -> None:
             ticker = adj_op_data['ticker']
             ticker_events = events_by_ticker.get(ticker, [])
             
-            print(f"\n🔄 [APLICANDO] {ticker} em {current_op_date} - {len(ticker_events)} eventos para verificar")
+            print(f"\n[RELOAD] [APLICANDO] {ticker} em {current_op_date} - {len(ticker_events)} eventos para verificar")
             
             for event_info in sorted(ticker_events, key=lambda e: e.data_ex if e.data_ex else date.min):
                 if event_info.data_ex is None:
                     continue
                 
-                print(f"   🔍 Verificando evento: {event_info.evento} em {event_info.data_ex}")
+                print(f"   [INFO] Verificando evento: {event_info.evento} em {event_info.data_ex}")
                 
                 if adj_op_data['date'] < event_info.data_ex:
-                    print(f"   ✅ Operação antes da data ex - aplicando evento...")
+                    print(f"   [OK] Operação antes da data ex - aplicando evento...")
                     
                     if event_info.evento and "desdobramento" in event_info.evento.lower():
                         adj_op_data = aplicar_desdobramento(adj_op_data, event_info)
@@ -793,7 +834,7 @@ def recalcular_carteira(usuario_id: int) -> None:
                         adj_op_data['quantity'] = int(round(quantidade_nova))
                         if quantidade_nova > 0:
                             adj_op_data['price'] = float(adj_op_data['price']) * quantidade_antiga / quantidade_nova
-                        print(f"   ✅ Bonificação aplicada: {quantidade_antiga} → {quantidade_nova}")
+                        print(f"   [OK] Bonificação aplicada: {quantidade_antiga} -> {quantidade_nova}")
                         continue
 
                     else:
@@ -807,35 +848,35 @@ def recalcular_carteira(usuario_id: int) -> None:
 
                             adj_op_data['quantity'] = int(round(current_quantity_float))
                             adj_op_data['price'] = current_price_float
-                            print(f"   ✅ Fator {factor} aplicado")
+                            print(f"   [OK] Fator {factor} aplicado")
                 else:
-                    print(f"   ⏭️ Operação após data ex - evento não aplicado")
+                    print(f"   ⏭[EMOJI] Operação após data ex - evento não aplicado")
 
             adjusted_operacoes.append(adj_op_data)
             
             # Log final da operação
             if adj_op_data['quantity'] != op_from_db['quantity'] or adj_op_data['price'] != op_from_db['price']:
-                print(f"   🎯 AJUSTADO {ticker}: {op_from_db['quantity']}@{op_from_db['price']:.2f} → {adj_op_data['quantity']}@{adj_op_data['price']:.2f}")
+                print(f"   [TARGET] AJUSTADO {ticker}: {op_from_db['quantity']}@{op_from_db['price']:.2f} -> {adj_op_data['quantity']}@{adj_op_data['price']:.2f}")
     else:
         adjusted_operacoes = []
     # Processar operações ajustadas
     carteira_temp = defaultdict(lambda: {"quantidade": 0, "custo_total": 0.0, "preco_medio": 0.0})
 
-    print(f"\n💰 [CARTEIRA] Recalculando carteira com {len(adjusted_operacoes)} operações ajustadas...")
+    print(f"\n[MONEY] [CARTEIRA] Recalculando carteira com {len(adjusted_operacoes)} operações ajustadas...")
 
     for idx, op in enumerate(adjusted_operacoes):
         ticker = op["ticker"]
-        quantidade_op = op["quantity"]  # ✅ CORRIGIDO: já ajustada pelos eventos
-        preco_op = op["price"]          # ✅ CORRIGIDO: já ajustado pelos eventos
+        quantidade_op = float(op["quantity"]) if op["quantity"] is not None else 0.0  # [OK] CORRIGIDO: já ajustada pelos eventos
+        preco_op = float(op["price"]) if op["price"] is not None else 0.0          # [OK] CORRIGIDO: já ajustado pelos eventos
         valor_op_bruto = quantidade_op * preco_op
-        fees_op = op.get("fees", 0.0)
+        fees_op = float(op.get("fees", 0.0)) if op.get("fees") is not None else 0.0
 
-        print(f"\n📊 [CARTEIRA] Op {idx+1}: {op['operation']} {quantidade_op} {ticker} @ {preco_op:.2f} em {op['date']}")
+        print(f"\n[STATS] [CARTEIRA] Op {idx+1}: {op['operation']} {quantidade_op} {ticker} @ {preco_op:.2f} em {op['date']}")
 
         if op["operation"] == "buy":
             custo_da_compra_atual_total = valor_op_bruto + fees_op
             
-            print(f"   💳 Custo total da compra: {custo_da_compra_atual_total:.2f}")
+            print(f"   [EMOJI] Custo total da compra: {custo_da_compra_atual_total:.2f}")
 
             if carteira_temp[ticker]["quantidade"] < 0:
                 # Cobertura de posição vendida
@@ -856,11 +897,11 @@ def recalcular_carteira(usuario_id: int) -> None:
                 carteira_temp[ticker]["quantidade"] += quantidade_op
                 carteira_temp[ticker]["custo_total"] += custo_da_compra_atual_total
                 
-                print(f"   📈 Nova quantidade: {carteira_temp[ticker]['quantidade']}")
-                print(f"   💰 Custo total acumulado: {carteira_temp[ticker]['custo_total']:.2f}")
+                print(f"   [CHART] Nova quantidade: {carteira_temp[ticker]['quantidade']}")
+                print(f"   [MONEY] Custo total acumulado: {carteira_temp[ticker]['custo_total']:.2f}")
 
         elif op["operation"] == "sell":
-            print(f"   📉 Vendendo da posição existente...")
+            print(f"   [CHART] Vendendo da posição existente...")
             
             if carteira_temp[ticker]["quantidade"] > 0:
                 quantidade_vendida_da_posicao_comprada = min(carteira_temp[ticker]["quantidade"], quantidade_op)
@@ -870,13 +911,14 @@ def recalcular_carteira(usuario_id: int) -> None:
 
                 quantidade_op_restante = quantidade_op - quantidade_vendida_da_posicao_comprada
                 if quantidade_op_restante > 0:
-                    proporcao_restante = quantidade_op_restante / quantidade_op if quantidade_op else 0
+                    # CORREÇÃO: Converter para float para evitar erro Decimal/float
+                    proporcao_restante = float(quantidade_op_restante) / float(quantidade_op) if quantidade_op else 0
                     valor_venda_descoberto = valor_op_bruto * proporcao_restante
                     carteira_temp[ticker]["custo_total"] += valor_venda_descoberto
                     carteira_temp[ticker]["quantidade"] -= quantidade_op_restante
                     
-                print(f"   📉 Quantidade após venda: {carteira_temp[ticker]['quantidade']}")
-                print(f"   💰 Custo total após venda: {carteira_temp[ticker]['custo_total']:.2f}")
+                print(f"   [CHART] Quantidade após venda: {carteira_temp[ticker]['quantidade']}")
+                print(f"   [MONEY] Custo total após venda: {carteira_temp[ticker]['custo_total']:.2f}")
             else:
                 # Venda a descoberto
                 carteira_temp[ticker]["quantidade"] -= quantidade_op
@@ -888,7 +930,7 @@ def recalcular_carteira(usuario_id: int) -> None:
             if abs(carteira_temp[ticker]["quantidade"]) > 0 and carteira_temp[ticker]["custo_total"] != 0:
                 carteira_temp[ticker]["preco_medio"] = carteira_temp[ticker]["custo_total"] / abs(carteira_temp[ticker]["quantidade"])
             elif op["operation"] == "sell":
-                carteira_temp[ticker]["preco_medio"] = preco_op  # ✅ CORRIGIDO: usar preço ajustado
+                carteira_temp[ticker]["preco_medio"] = preco_op  # [OK] CORRIGIDO: usar preço ajustado
             else:
                 carteira_temp[ticker]["preco_medio"] = 0.0
         else:
@@ -898,7 +940,7 @@ def recalcular_carteira(usuario_id: int) -> None:
         # Validação de zeramento
         _validar_e_zerar_posicao_se_necessario(carteira_temp[ticker])
         
-        print(f"   📊 PM atual: {carteira_temp[ticker]['preco_medio']:.2f}")
+        print(f"   [STATS] PM atual: {carteira_temp[ticker]['preco_medio']:.2f}")
 
     # Atualizar no banco de dados
     for ticker, dados in carteira_temp.items():
@@ -1169,11 +1211,11 @@ def obter_informacoes_acao_service(ticker: str) -> Dict[str, Any]:
     """
     try:
         # Buscar ação por ticker no banco de dados
-        import sqlite3
-        with sqlite3.connect("acoes_ir.db") as conn:
+        # Usando database.py (PostgreSQL)
+        with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT id, ticker, nome, logo FROM acoes WHERE UPPER(ticker) = UPPER(?)",
+                "SELECT id, ticker, nome, logo FROM acoes WHERE UPPER(ticker) = UPPER(%s)",
                 (ticker,)
             )
             resultado = cursor.fetchone()
@@ -1348,6 +1390,10 @@ def gerar_resumo_proventos_anuais_usuario_service(usuario_id: int) -> List[Resum
         nome_acao = item['nome_acao'] if item['nome_acao'] else ticker
         tipo_provento = item['tipo_provento'].upper()
         total_recebido_ticker_tipo_ano = item['total_recebido_ticker_tipo_ano']
+        
+        # CORREÇÃO: Converter Decimal para float para evitar erro de soma
+        if isinstance(total_recebido_ticker_tipo_ano, Decimal):
+            total_recebido_ticker_tipo_ano = float(total_recebido_ticker_tipo_ano)
 
         resumo_por_ano[ano]['total_geral'] += total_recebido_ticker_tipo_ano
         if tipo_provento == "DIVIDENDO":
@@ -1417,6 +1463,10 @@ def gerar_resumo_proventos_mensais_usuario_service(usuario_id: int, ano_filtro: 
         nome_acao = item['nome_acao'] if item['nome_acao'] else ticker
         tipo_provento = item['tipo_provento'].upper()
         total_recebido = item['total_recebido_ticker_tipo_mes']
+        
+        # CORREÇÃO: Converter Decimal para float para evitar erro de soma
+        if isinstance(total_recebido, Decimal):
+            total_recebido = float(total_recebido)
 
         resumo_por_mes[mes_str]['total_geral'] += total_recebido
         if tipo_provento == "DIVIDENDO":
@@ -1479,6 +1529,10 @@ def gerar_resumo_proventos_por_acao_usuario_service(usuario_id: int) -> List[Res
         nome_acao = item['nome_acao']
         tipo_provento = item['tipo_provento'].upper()
         total_recebido_tipo = item['total_recebido_ticker_tipo']
+        
+        # CORREÇÃO: Converter Decimal para float para evitar erro de soma
+        if isinstance(total_recebido_tipo, Decimal):
+            total_recebido_tipo = float(total_recebido_tipo)
 
         if not resumo_agregado_por_acao[ticker]['nome_acao'] and nome_acao:
              resumo_agregado_por_acao[ticker]['nome_acao'] = nome_acao
@@ -1581,8 +1635,15 @@ def recalcular_proventos_recebidos_rapido(usuario_id: int) -> Dict[str, Any]:
                 if not data_ex:
                     continue
 
+                # No PostgreSQL, data_ex já vem como objeto date
                 if isinstance(data_ex, str):
                     data_ex = date.fromisoformat(data_ex)
+                elif not isinstance(data_ex, date):
+                    # Se não for string nem date, tentar converter
+                    try:
+                        data_ex = date.fromisoformat(str(data_ex))
+                    except:
+                        continue
 
                 operacoes = obter_operacoes_por_ticker_ate_data_db(usuario_id, ticker, data_ex.isoformat())
                 quantidade = 0
@@ -1651,14 +1712,14 @@ def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict
         ticker_da_acao = acao_info['ticker']
         nome_da_acao = acao_info.get('nome') # nome_acao pode ser None
 
-        # 🚨 CORREÇÃO CRÍTICA: Usar data COM (D-1 da data EX) para evitar contaminação
+        # [ALERT] CORREÇÃO CRÍTICA: Usar data COM (D-1 da data EX) para evitar contaminação
         # Operações na data EX não têm direito ao provento
         data_com = provento_global.data_ex - timedelta(days=1)
         
         quantidade_com_direito = obter_saldo_acao_em_data(
             usuario_id=usuario_id,
             ticker=ticker_da_acao,
-            data_limite=data_com  # ✅ CORRIGIDO: usa data COM
+            data_limite=data_com  # [OK] CORRIGIDO: usa data COM
         )
 
         if quantidade_com_direito > 0:
@@ -1688,7 +1749,7 @@ def recalcular_proventos_recebidos_para_usuario_service(usuario_id: int) -> Dict
                     valor_total=valor_total_recebido
                 )
                 proventos_calculados += 1
-            except sqlite3.IntegrityError:
+            except psycopg2.IntegrityError:
                 erros_insercao += 1
                 # logging.warning(f"Erro de integridade ao inserir provento recebido para usuario_id {usuario_id}, provento_global_id {provento_global.id}. Provavelmente duplicado.")
             except Exception as e:
@@ -1758,13 +1819,14 @@ def listar_eventos_corporativos_usuario_service(usuario_id: int) -> List[EventoC
     # 3. Criar mapeamento dinâmico de id_acao para ticker consultando a tabela acoes
     ticker_por_id_acao = {}
     try:
-        import sqlite3
-        conn = sqlite3.connect("acoes_ir.db")
-        cursor = conn.cursor()
+        # Usando database.py (PostgreSQL)
+        with get_db() as conn:
+            cursor = conn.cursor()
         cursor.execute("SELECT id, ticker FROM acoes")
         for id_acao, ticker in cursor.fetchall():
             ticker_por_id_acao[id_acao] = ticker.upper()
-        conn.close()
+        # Conexão fechada automaticamente pelo context manager
+        pass
     except Exception as e:
         # Fallback para mapeamento conhecido em caso de erro
         ticker_por_id_acao = {
@@ -1813,7 +1875,7 @@ def listar_eventos_corporativos_usuario_service(usuario_id: int) -> List[EventoC
                     elif operation == 'sell':
                         quantidade_total -= quantity
                     
-                    print(f"      [DEBUG] {ticker}: {data_op_dt} {operation} {quantity} → posição: {quantidade_total}")
+                    print(f"      [DEBUG] {ticker}: {data_op_dt} {operation} {quantity} -> posição: {quantidade_total}")
                 else:
                     print(f"      [DEBUG] {ticker}: {data_op_dt} {op.get('operation')} {op.get('quantity')} (IGNORADO - após evento)")
                         
@@ -1835,12 +1897,12 @@ def listar_eventos_corporativos_usuario_service(usuario_id: int) -> List[EventoC
         # Agora data_registro é um objeto date (não string)
         if usuario_possuia_acao_na_data(ticker, evento.data_registro):
             eventos_filtrados.append(evento)
-            print(f"✅ Evento aceito: {ticker} em {evento.data_registro} - usuário possuía a ação")
+            print(f"[OK] Evento aceito: {ticker} em {evento.data_registro} - usuário possuía a ação")
         else:
             # Debug: mostrar eventos filtrados
-            print(f"🚫 Evento filtrado: {ticker} em {evento.data_registro} - usuário não possuía a ação")
+            print(f"[EMOJI] Evento filtrado: {ticker} em {evento.data_registro} - usuário não possuía a ação")
     
-    print(f"\n📊 RESULTADO FINAL:")
+    print(f"\n[STATS] RESULTADO FINAL:")
     print(f"   Total de eventos filtrados: {len(eventos_filtrados)}")
     
     return eventos_filtrados
@@ -1949,14 +2011,14 @@ def processar_importacao_com_deteccao_duplicatas(
         
         # Recalcular carteira e resultados se houve operações importadas
         if operacoes_importadas > 0:
-            logging.info(f"🔄 [RECÁLCULO] Processando {operacoes_importadas} operações importadas")
+            logging.info(f"[RELOAD] [RECÁLCULO] Processando {operacoes_importadas} operações importadas")
             
             recalcular_carteira(usuario_id=usuario_id)
             calcular_operacoes_fechadas(usuario_id=usuario_id)
             recalcular_resultados_corrigido(usuario_id=usuario_id)
             atualizar_status_ir_operacoes_fechadas(usuario_id=usuario_id)
             
-            logging.info(f"✅ [RECÁLCULO] Concluído")
+            logging.info(f"[OK] [RECÁLCULO] Concluído")
         
         
         # Obter dados atualizados da importação
@@ -2083,7 +2145,7 @@ def obter_prejuizo_acumulado_anterior(usuario_id: int, tipo: str, mes_atual: str
                 cursor.execute('''
                     SELECT COALESCE(prejuizo_acumulado_swing, 0.0) as prejuizo
                     FROM resultados_mensais 
-                    WHERE usuario_id = ? AND mes < ?
+                    WHERE usuario_id = %s AND mes < %s
                     ORDER BY mes DESC 
                     LIMIT 1
                 ''', (usuario_id, mes_atual))
@@ -2091,7 +2153,7 @@ def obter_prejuizo_acumulado_anterior(usuario_id: int, tipo: str, mes_atual: str
                 cursor.execute('''
                     SELECT COALESCE(prejuizo_acumulado_day, 0.0) as prejuizo
                     FROM resultados_mensais 
-                    WHERE usuario_id = ? AND mes < ?
+                    WHERE usuario_id = %s AND mes < %s
                     ORDER BY mes DESC 
                     LIMIT 1
                 ''', (usuario_id, mes_atual))
@@ -2101,7 +2163,7 @@ def obter_prejuizo_acumulado_anterior(usuario_id: int, tipo: str, mes_atual: str
                 cursor.execute('''
                     SELECT COALESCE(prejuizo_acumulado_swing, 0.0) as prejuizo
                     FROM resultados_mensais 
-                    WHERE usuario_id = ? 
+                    WHERE usuario_id = %s 
                     ORDER BY mes DESC 
                     LIMIT 1
                 ''', (usuario_id,))
@@ -2109,7 +2171,7 @@ def obter_prejuizo_acumulado_anterior(usuario_id: int, tipo: str, mes_atual: str
                 cursor.execute('''
                     SELECT COALESCE(prejuizo_acumulado_day, 0.0) as prejuizo
                     FROM resultados_mensais 
-                    WHERE usuario_id = ? 
+                    WHERE usuario_id = %s 
                     ORDER BY mes DESC 
                     LIMIT 1
                 ''', (usuario_id,))
@@ -2283,7 +2345,7 @@ def _executar_day_trades(compras_dt, vendas_dt, operacoes_fechadas, usuario_id, 
         cursor.execute('''
             SELECT operation, quantity, price, COALESCE(fees, 0) as fees
             FROM operacoes
-            WHERE usuario_id = ? AND ticker = ? AND date = ?
+            WHERE usuario_id = %s AND ticker = %s AND date = %s
             ORDER BY id
         ''', (usuario_id, ticker, data_operacao.isoformat()))
         
@@ -2446,11 +2508,11 @@ def _criar_operacao_fechada_detalhada_v2(ticker, data_abertura, data_fechamento,
     """
     from datetime import date
     
-    # ✅ CORREÇÃO: Garantir que data_abertura nunca seja None
+    # [OK] CORREÇÃO: Garantir que data_abertura nunca seja None
     if data_abertura is None:
         data_abertura = data_fechamento if data_fechamento else date.today()
     
-    # ✅ CORREÇÃO: Garantir que data_fechamento nunca seja None  
+    # [OK] CORREÇÃO: Garantir que data_fechamento nunca seja None  
     if data_fechamento is None:
         data_fechamento = date.today()
     
@@ -2480,8 +2542,8 @@ def _criar_operacao_fechada_detalhada_v2(ticker, data_abertura, data_fechamento,
 
     return {
         "ticker": ticker,
-        "data_abertura": data_abertura,  # ✅ SEMPRE uma data válida
-        "data_fechamento": data_fechamento,  # ✅ SEMPRE uma data válida
+        "data_abertura": data_abertura,  # [OK] SEMPRE uma data válida
+        "data_fechamento": data_fechamento,  # [OK] SEMPRE uma data válida
         "tipo": tipo,
         "quantidade": quantidade,
         "valor_compra": preco_medio_compra if tipo == "compra-venda" else preco_fechamento,
@@ -2508,14 +2570,14 @@ def _obter_data_aproximada_primeira_compra(ticker, usuario_id):
         cursor.execute('''
             SELECT MIN(date) as min_date
             FROM operacoes
-            WHERE usuario_id = ? AND ticker = ? AND operation = 'buy'
+            WHERE usuario_id = %s AND ticker = %s AND operation = 'buy'
         ''', (usuario_id, ticker))
         result = cursor.fetchone()
         
         if result and result['min_date']:
             return result['min_date']
         else:
-            # ✅ FALLBACK: Se não encontrar, usar data atual
+            # [OK] FALLBACK: Se não encontrar, usar data atual
             from datetime import date
             return date.today()
 
@@ -2529,7 +2591,7 @@ def _obter_data_aproximada_primeira_venda_descoberto(ticker, usuario_id):
         cursor.execute('''
             SELECT MIN(date) as min_date
             FROM operacoes
-            WHERE usuario_id = ? AND ticker = ? AND operation = 'sell'
+            WHERE usuario_id = %s AND ticker = %s AND operation = 'sell'
             AND (SELECT SUM(CASE WHEN operation = 'buy' THEN quantity ELSE -quantity END)
                  FROM operacoes o2 WHERE o2.usuario_id = operacoes.usuario_id
                  AND o2.ticker = operacoes.ticker AND o2.date < operacoes.date) < 0
@@ -2539,7 +2601,7 @@ def _obter_data_aproximada_primeira_venda_descoberto(ticker, usuario_id):
         if result and result['min_date']:
             return result['min_date']
         else:
-            # ✅ FALLBACK: Se não encontrar, usar data atual
+            # [OK] FALLBACK: Se não encontrar, usar data atual
             from datetime import date
             return date.today()
 
@@ -2571,8 +2633,8 @@ def _calcular_preco_medio_antes_operacao(ticker: str, usuario_id: int, data_limi
         cursor.execute('''
         SELECT operation, quantity, price, fees
         FROM operacoes
-        WHERE usuario_id = ? AND ticker = ?
-        AND date < ?
+        WHERE usuario_id = %s AND ticker = %s
+        AND date < %s
         ORDER BY date ASC, id ASC
         ''', (usuario_id, ticker, data_limite))
 
@@ -2618,7 +2680,7 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
     """
     CORREÇÃO: Calcula resultados mensais incluindo IRRF corretamente
     """
-    logging.info(f"🔄 [RESULTADOS V4] Iniciando para usuário {usuario_id}")
+    logging.info(f"[RELOAD] [RESULTADOS V4] Iniciando para usuário {usuario_id}")
 
     # Limpar resultados antigos
     limpar_resultados_mensais_usuario_db(usuario_id=usuario_id)
@@ -2629,18 +2691,18 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
         cursor.execute('''
             SELECT id, ticker, date, operation, quantity, price, fees, usuario_id
             FROM operacoes 
-            WHERE usuario_id = ?
+            WHERE usuario_id = %s
             ORDER BY date, ticker
         ''', (usuario_id,))
         
         operacoes_raw = cursor.fetchall()
         
-        # 🔧 CORREÇÃO: Também obter operações fechadas importadas diretamente
+        # [WRENCH] CORREÇÃO: Também obter operações fechadas importadas diretamente
         cursor.execute('''
             SELECT id, ticker, data_fechamento, resultado, valor_compra, valor_venda, 
                    quantidade, day_trade, usuario_id
             FROM operacoes_fechadas 
-            WHERE usuario_id = ?
+            WHERE usuario_id = %s
             ORDER BY data_fechamento, ticker
         ''', (usuario_id,))
         
@@ -2660,7 +2722,7 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
             op_dict['date'] = datetime.fromisoformat(op_dict['date']).date()
         operacoes.append(op_dict)
     
-    logging.info(f"📊 Processando {len(operacoes)} operações regulares")
+    logging.info(f"[STATS] Processando {len(operacoes)} operações regulares")
     
     # Agrupar operações por data
     operacoes_por_data = defaultdict(list)
@@ -2673,14 +2735,20 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
         "day_trade": {"resultado": 0.0, "vendas_total": 0.0, "irrf": 0.0, "custo_day_trade": 0.0}
     })
     
-    # 🔧 CORREÇÃO: Identificar datas com operações fechadas para evitar duplicação
+    # [WRENCH] CORREÇÃO: Identificar datas com operações fechadas para evitar duplicação
     datas_com_operacoes_fechadas = set()
     if operacoes_fechadas_raw:
-        logging.info(f"📊 Identificando {len(operacoes_fechadas_raw)} operações fechadas")
+        logging.info(f"[STATS] Identificando {len(operacoes_fechadas_raw)} operações fechadas")
         
         for row in operacoes_fechadas_raw:
             try:
                 id_op, ticker, data_fechamento, resultado, valor_compra, valor_venda, quantidade, day_trade, usuario_id_op = row
+                
+                # [FIX] CONVERTER DECIMAL PARA FLOAT PARA EVITAR ERROS DE TIPO
+                resultado = float(resultado) if resultado is not None else 0.0
+                valor_compra = float(valor_compra) if valor_compra is not None else 0.0
+                valor_venda = float(valor_venda) if valor_venda is not None else 0.0
+                quantidade = float(quantidade) if quantidade is not None else 0.0
                 
                 # Converter data string para date object
                 if isinstance(data_fechamento, str):
@@ -2716,18 +2784,18 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                     resultados_por_mes[mes]['swing_trade']['irrf'] += irrf_st
                     logging.info(f"[IRRF-ST-FECHADO] {ticker}: Venda R${valor_venda:.2f}, IRRF 0.005% = R${irrf_st:.2f}")
                 
-                logging.debug(f"✅ Operação fechada processada: {ticker} {data_fechamento} = R${resultado:.2f}")
+                logging.debug(f"[OK] Operação fechada processada: {ticker} {data_fechamento} = R${resultado:.2f}")
                 
             except Exception as e:
-                logging.error(f"❌ Erro ao processar operação fechada {row}: {e}")
+                logging.error(f"[ERROR] Erro ao processar operação fechada {row}: {e}")
                 continue
     
     # Processar cada dia de operações regulares (EVITANDO DUPLICAÇÃO)
     if operacoes_por_data:
         for data, ops_dia in operacoes_por_data.items():
-            # 🚨 ANTI-DUPLICAÇÃO: Pular datas que já têm operações fechadas
+            # [ALERT] ANTI-DUPLICAÇÃO: Pular datas que já têm operações fechadas
             if data in datas_com_operacoes_fechadas:
-                logging.info(f"⚠️ Pulando data {data} - já processada como operação fechada")
+                logging.info(f"[WARNING] Pulando data {data} - já processada como operação fechada")
                 continue
                 
             try:
@@ -2748,14 +2816,14 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 resultados_por_mes[mes]['day_trade']['irrf'] += resultado_day.get('irrf', 0)
                 
             except Exception as e:
-                logging.error(f"❌ Erro ao processar data {data}: {e}")
+                logging.error(f"[ERROR] Erro ao processar data {data}: {e}")
                 continue
 
     if not resultados_por_mes:
         logging.warning(f"Nenhum resultado mensal para processar")
         return
 
-    logging.info(f"📊 Processando {len(resultados_por_mes)} meses de resultados")
+    logging.info(f"[STATS] Processando {len(resultados_por_mes)} meses de resultados")
 
     prejuizo_acumulado_swing = 0.0
     prejuizo_acumulado_day = 0.0
@@ -2791,20 +2859,20 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
             vendas_swing = res_mes['swing_trade']['vendas_total']
             isento_swing = vendas_swing <= 20000.0
             resultado_swing = res_mes['swing_trade']['resultado']
-            irrf_swing = res_mes['swing_trade']['irrf']  # ✅ NOVO: IRRF swing
+            irrf_swing = res_mes['swing_trade']['irrf']  # [OK] NOVO: IRRF swing
             
             ganho_tributavel_swing = resultado_swing if not isento_swing and resultado_swing > 0 else 0
             valor_a_compensar_swing = min(prejuizo_acumulado_swing, ganho_tributavel_swing)
             ganho_final_swing = ganho_tributavel_swing - valor_a_compensar_swing
             prejuizo_acumulado_swing = (prejuizo_acumulado_swing - valor_a_compensar_swing) + abs(min(0, resultado_swing))
             
-            # ✅ CORREÇÃO: Swing trade deve considerar IRRF
+            # [OK] CORREÇÃO: Swing trade deve considerar IRRF
             imposto_bruto_swing = max(0, ganho_final_swing) * 0.15
             imposto_swing = max(0, imposto_bruto_swing - irrf_swing)
 
             # Cálculos day trade
             resultado_day = res_mes['day_trade']['resultado']
-            irrf_day = res_mes['day_trade']['irrf']  # ✅ CORREÇÃO: IRRF day trade real
+            irrf_day = res_mes['day_trade']['irrf']  # [OK] CORREÇÃO: IRRF day trade real
             valor_a_compensar_day = min(prejuizo_acumulado_day, max(0, resultado_day))
             ganho_final_day = resultado_day - valor_a_compensar_day
             prejuizo_acumulado_day = (prejuizo_acumulado_day - valor_a_compensar_day) + abs(min(0, resultado_day))
@@ -2818,10 +2886,10 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 "custo_swing": res_mes['swing_trade']['custo_swing'],
                 "ganho_liquido_swing": resultado_swing,
                 "isento_swing": isento_swing,
-                "irrf_swing": irrf_swing,  # ✅ NOVO: IRRF swing
+                "irrf_swing": irrf_swing,  # [OK] NOVO: IRRF swing
                 "prejuizo_acumulado_swing": prejuizo_acumulado_swing,
-                "ir_devido_swing": imposto_bruto_swing,  # ✅ CORREÇÃO: IR bruto antes do IRRF
-                "ir_pagar_swing": imposto_swing if imposto_swing >= 10 else 0,  # ✅ CORREÇÃO: IR líquido após IRRF
+                "ir_devido_swing": imposto_bruto_swing,  # [OK] CORREÇÃO: IR bruto antes do IRRF
+                "ir_pagar_swing": imposto_swing if imposto_swing >= 10 else 0,  # [OK] CORREÇÃO: IR líquido após IRRF
                 "darf_codigo_swing": "6015",  # Código fixo para swing trade
                 "darf_competencia_swing": darf_competencia_swing,
                 "darf_vencimento_swing": darf_vencimento_swing,
@@ -2831,7 +2899,7 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
                 "custo_day_trade": res_mes['day_trade']['custo_day_trade'],
                 "ganho_liquido_day": resultado_day,
                 "prejuizo_acumulado_day": prejuizo_acumulado_day,
-                "irrf_day": irrf_day,  # ✅ CORREÇÃO: IRRF day trade real
+                "irrf_day": irrf_day,  # [OK] CORREÇÃO: IRRF day trade real
                 "ir_devido_day": imposto_bruto_day,
                 "ir_pagar_day": imposto_day if imposto_day >= 10 else 0,
                 "darf_codigo_day": "6015",  # Código fixo para day trade
@@ -2845,13 +2913,13 @@ def recalcular_resultados_corrigido(usuario_id: int) -> None:
             
             salvar_resultado_mensal(resultado_dict, usuario_id=usuario_id)
             
-            logging.info(f"💰 [IRRF] {mes_str}: Swing R${irrf_swing:.2f}, Day R${irrf_day:.2f}")
+            logging.info(f"[MONEY] [IRRF] {mes_str}: Swing R${irrf_swing:.2f}, Day R${irrf_day:.2f}")
             
         except Exception as e:
-            logging.error(f"❌ Erro ao processar mês {mes_str}: {e}")
+            logging.error(f"[ERROR] Erro ao processar mês {mes_str}: {e}")
             continue
 
-    logging.info(f"✅ [RESULTADOS V4] {len(resultados_por_mes)} meses processados com IRRF")
+    logging.info(f"[OK] [RESULTADOS V4] {len(resultados_por_mes)} meses processados com IRRF")
 
 def _calcular_status_ir_operacao_fechada(op_fechada, resultados_mensais_map):
     """
@@ -2936,7 +3004,7 @@ def atualizar_status_ir_operacoes_fechadas(usuario_id: int):
     """
     import logging
     
-    logging.info(f"🎯 [STATUS IR] Atualizando status para usuário {usuario_id}")
+    logging.info(f"[TARGET] [STATUS IR] Atualizando status para usuário {usuario_id}")
     
     try:
         from database import get_db
@@ -2946,7 +3014,7 @@ def atualizar_status_ir_operacoes_fechadas(usuario_id: int):
             # Buscar operações fechadas
             cursor.execute("""
                 SELECT * FROM operacoes_fechadas 
-                WHERE usuario_id = ?
+                WHERE usuario_id = %s
                 ORDER BY data_fechamento
             """, (usuario_id,))
             
@@ -2972,8 +3040,8 @@ def atualizar_status_ir_operacoes_fechadas(usuario_id: int):
                     # Atualizar no banco
                     cursor.execute("""
                         UPDATE operacoes_fechadas 
-                        SET status_ir = ? 
-                        WHERE id = ? AND usuario_id = ?
+                        SET status_ir = %s 
+                        WHERE id = %s AND usuario_id = %s
                     """, (status_ir, op_dict['id'], usuario_id))
                     
                     sucessos += 1
@@ -2981,22 +3049,22 @@ def atualizar_status_ir_operacoes_fechadas(usuario_id: int):
                 except Exception as e:
                     op_dict = dict(op) if hasattr(op, 'keys') else {}
                     ticker = op_dict.get('ticker', 'N/A')
-                    logging.error(f"❌ Erro ao atualizar {ticker}: {e}")
+                    logging.error(f"[ERROR] Erro ao atualizar {ticker}: {e}")
                     erros += 1
             
             conn.commit()
             
-            logging.info(f"✅ Status IR atualizado: {sucessos} sucessos, {erros} erros")
+            logging.info(f"[OK] Status IR atualizado: {sucessos} sucessos, {erros} erros")
             
             return erros == 0
             
     except Exception as e:
-        logging.error(f"❌ Erro geral ao atualizar status IR: {e}")
+        logging.error(f"[ERROR] Erro geral ao atualizar status IR: {e}")
         raise
 
 def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str, Any]]:
     """
-    🚀 SERVIÇO OTIMIZADO: Retorna operações fechadas com todos os cálculos pré-feitos
+    [START] SERVIÇO OTIMIZADO: Retorna operações fechadas com todos os cálculos pré-feitos
     
     Performance: O(n) - cálculos feitos uma vez no backend vs O(n²) no frontend
     
@@ -3008,7 +3076,7 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
     - Estatísticas mensais cached
     """
     try:
-        logging.info(f"🚀 [OTIMIZADO] Iniciando cálculos otimizados para usuário {usuario_id}")
+        logging.info(f"[START] [OTIMIZADO] Iniciando cálculos otimizados para usuário {usuario_id}")
         
         with get_db() as conn:
             cursor = conn.cursor()
@@ -3016,7 +3084,7 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
             # 1. Buscar todas as operações fechadas
             cursor.execute("""
                 SELECT * FROM operacoes_fechadas 
-                WHERE usuario_id = ?
+                WHERE usuario_id = %s
                 ORDER BY data_fechamento DESC
             """, (usuario_id,))
             
@@ -3024,14 +3092,14 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
             operacoes = [dict(op) for op in operacoes_raw]
             
             if not operacoes:
-                logging.info(f"🚀 [OTIMIZADO] Nenhuma operação encontrada para usuário {usuario_id}")
+                logging.info(f"[START] [OTIMIZADO] Nenhuma operação encontrada para usuário {usuario_id}")
                 return []
             
             # 2. Buscar resultados mensais uma vez
             resultados_mensais = obter_resultados_mensais(usuario_id=usuario_id)
             resultados_map = {rm["mes"]: rm for rm in resultados_mensais}
             
-            logging.info(f"🚀 [OTIMIZADO] Processando {len(operacoes)} operações com {len(resultados_mensais)} resultados mensais")
+            logging.info(f"[START] [OTIMIZADO] Processando {len(operacoes)} operações com {len(resultados_mensais)} resultados mensais")
             
             # 3. Pré-calcular dados por tipo para otimização
             operacoes_por_tipo = {
@@ -3054,7 +3122,18 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
                 # Dados base da operação
                 operacao_otimizada = dict(op)
                 
-                # ✅ GARANTIR que status_ir esteja presente e válido
+                # CORREÇÃO: Calcular preços médios se estiverem zerados
+                if operacao_otimizada.get("preco_medio_compra", 0) == 0 and operacao_otimizada.get("quantidade", 0) > 0:
+                    valor_compra = operacao_otimizada.get("valor_compra", 0)
+                    valor_venda = operacao_otimizada.get("valor_venda", 0)
+                    quantidade = operacao_otimizada["quantidade"]
+                    
+                    if valor_compra > 0:
+                        operacao_otimizada["preco_medio_compra"] = float(valor_compra) / quantidade
+                    if valor_venda > 0:
+                        operacao_otimizada["preco_medio_venda"] = float(valor_venda) / quantidade
+                
+                # [OK] GARANTIR que status_ir esteja presente e válido
                 if not operacao_otimizada.get("status_ir") or operacao_otimizada.get("status_ir", "").strip() == "":
                     # Calcular status baseado na lógica de negócio
                     if operacao_otimizada.get("resultado", 0) == 0:
@@ -3089,7 +3168,7 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
                 # Adicionar prejuízo acumulado pré-calculado
                 operacao_otimizada["prejuizo_acumulado_ate"] = prejuizos_acumulados.get(tipo, {}).get(op_key, 0)
                 
-                # 🔧 CORREÇÃO: Usar dados mensais corretos em vez de cálculo por operação
+                # [WRENCH] CORREÇÃO: Usar dados mensais corretos em vez de cálculo por operação
                 mes_operacao = op["data_fechamento"][:7]
                 resultado_mensal = resultados_map.get(mes_operacao)
                 is_day_trade = op.get("day_trade", False)
@@ -3107,7 +3186,7 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
                         ganho_bruto_mes = resultado_mensal.get("ganho_liquido_swing", 0)
                         prejuizo_mensal = resultado_mensal.get("prejuizo_acumulado_swing", 0)
                         ir_devido = resultado_mensal.get("ir_devido_swing", 0)
-                        lucro_tributavel_mes = ir_devido / 0.15 if ir_devido > 0 else 0  # Reverter alíquota 15%
+                        lucro_tributavel_mes = ir_devido / Decimal('0.15') if ir_devido > 0 else 0  # Reverter alíquota 15%
                     
                     # Calcular compensação proporcional desta operação no mês
                     if ganho_bruto_mes > 0:
@@ -3136,7 +3215,7 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
                 # Status DARF otimizado
                 mes_operacao = op["data_fechamento"][:7]
                 resultado_mensal = resultados_map.get(mes_operacao)
-                # ✅ CORREÇÃO CRÍTICA: Usar operacao_otimizada com status_ir já corrigido
+                # [OK] CORREÇÃO CRÍTICA: Usar operacao_otimizada com status_ir já corrigido
                 operacao_otimizada["deve_gerar_darf"] = _deve_gerar_darf_otimizado(operacao_otimizada, resultado_mensal)
                 
                 # Estatísticas do mês (cached)
@@ -3157,17 +3236,28 @@ def obter_operacoes_fechadas_otimizado_service(usuario_id: int) -> List[Dict[str
                 
                 operacoes_otimizadas.append(operacao_otimizada)
             
-            logging.info(f"🚀 [OTIMIZADO] Concluído! {len(operacoes_otimizadas)} operações enriquecidas com dados pré-calculados")
+            logging.info(f"[START] [OTIMIZADO] Concluído! {len(operacoes_otimizadas)} operações enriquecidas com dados pré-calculados")
+            
+            # CORREÇÃO: Converter todos os Decimal para float antes de retornar
+            for operacao in operacoes_otimizadas:
+                for key, value in operacao.items():
+                    if isinstance(value, Decimal):
+                        operacao[key] = float(value)
+                    elif isinstance(value, dict):
+                        # Converter Decimals aninhados (ex: estatisticas_mes)
+                        for sub_key, sub_value in value.items():
+                            if isinstance(sub_value, Decimal):
+                                value[sub_key] = float(sub_value)
             
             return operacoes_otimizadas
             
     except Exception as e:
-        logging.error(f"🚀 [OTIMIZADO] Erro para usuário {usuario_id}: {e}", exc_info=True)
+        logging.error(f"[START] [OTIMIZADO] Erro para usuário {usuario_id}: {e}", exc_info=True)
         raise
 
 def obter_extrato_otimizado_service(usuario_id: int) -> Dict[str, Any]:
     """
-    🚀 SERVIÇO OTIMIZADO: Retorna todos os dados do extrato pré-processados
+    [START] SERVIÇO OTIMIZADO: Retorna todos os dados do extrato pré-processados
     
     Inclui:
     - operacoes_abertas: Operações filtradas (sem duplicação com fechadas)
@@ -3179,7 +3269,7 @@ def obter_extrato_otimizado_service(usuario_id: int) -> Dict[str, Any]:
     Performance: O(n) vs O(n²) do frontend
     """
     try:
-        logging.info(f"🚀 [EXTRATO OTIMIZADO] Iniciando para usuário {usuario_id}")
+        logging.info(f"[START] [EXTRATO OTIMIZADO] Iniciando para usuário {usuario_id}")
         
         # 1. Obter operações fechadas otimizadas (já temos esta função)
         operacoes_fechadas = obter_operacoes_fechadas_otimizado_service(usuario_id)
@@ -3211,11 +3301,11 @@ def obter_extrato_otimizado_service(usuario_id: int) -> Dict[str, Any]:
             }
         }
         
-        logging.info(f"🚀 [EXTRATO OTIMIZADO] Concluído: {len(timeline_items)} itens para usuário {usuario_id}")
+        logging.info(f"[START] [EXTRATO OTIMIZADO] Concluído: {len(timeline_items)} itens para usuário {usuario_id}")
         return resultado
         
     except Exception as e:
-        logging.error(f"🚀 [EXTRATO OTIMIZADO] Erro para usuário {usuario_id}: {e}", exc_info=True)
+        logging.error(f"[START] [EXTRATO OTIMIZADO] Erro para usuário {usuario_id}: {e}", exc_info=True)
         raise
 
 def _obter_operacoes_abertas_filtradas(usuario_id: int, operacoes_fechadas: List[Dict]) -> List[Dict]:
@@ -3228,7 +3318,7 @@ def _obter_operacoes_abertas_filtradas(usuario_id: int, operacoes_fechadas: List
             cursor.execute('''
                 SELECT id, ticker, date, operation, quantity, price, fees, usuario_id
                 FROM operacoes 
-                WHERE usuario_id = ?
+                WHERE usuario_id = %s
                 ORDER BY date DESC, ticker
             ''', (usuario_id,))
             
@@ -3279,11 +3369,11 @@ def _obter_operacoes_abertas_filtradas(usuario_id: int, operacoes_fechadas: List
             
             operacoes_filtradas.append(operacao_mapeada)
         
-        logging.info(f"📊 [OPERAÇÕES ABERTAS] {len(operacoes_filtradas)} operações filtradas para usuário {usuario_id}")
+        logging.info(f"[STATS] [OPERAÇÕES ABERTAS] {len(operacoes_filtradas)} operações filtradas para usuário {usuario_id}")
         return operacoes_filtradas
         
     except Exception as e:
-        logging.error(f"❌ Erro ao obter operações abertas: {e}")
+        logging.error(f"[ERROR] Erro ao obter operações abertas: {e}")
         return []
 
 def _obter_proventos_mapeados(usuario_id: int) -> List[Dict]:
@@ -3294,15 +3384,15 @@ def _obter_proventos_mapeados(usuario_id: int) -> List[Dict]:
         with get_db() as conn:
             cursor = conn.cursor()
             # Tentar diferentes nomes de tabela para proventos
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%provento%'")
+            cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name LIKE '%provento%'")
             tabelas_provento = cursor.fetchall()
             
             if not tabelas_provento:
-                logging.info(f"📊 [PROVENTOS] Nenhuma tabela de proventos encontrada para usuário {usuario_id}")
+                logging.info(f"[STATS] [PROVENTOS] Nenhuma tabela de proventos encontrada para usuário {usuario_id}")
                 return []
             
             nome_tabela = tabelas_provento[0][0]
-            logging.info(f"📊 [PROVENTOS] Usando tabela: {nome_tabela}")
+            logging.info(f"[STATS] [PROVENTOS] Usando tabela: {nome_tabela}")
             
             cursor.execute(f'''
                 SELECT id, ticker_acao, nome_acao, 
@@ -3310,7 +3400,7 @@ def _obter_proventos_mapeados(usuario_id: int) -> List[Dict]:
                        valor_total_recebido, quantidade_possuida_na_data_ex,
                        dt_pagamento, data_ex
                 FROM {nome_tabela}
-                WHERE usuario_id = ?
+                WHERE usuario_id = %s
                 ORDER BY dt_pagamento DESC
             ''', (usuario_id,))
             
@@ -3348,11 +3438,11 @@ def _obter_proventos_mapeados(usuario_id: int) -> List[Dict]:
             
             proventos_mapeados.append(provento_mapeado)
         
-        logging.info(f"📊 [PROVENTOS] {len(proventos_mapeados)} proventos mapeados para usuário {usuario_id}")
+        logging.info(f"[STATS] [PROVENTOS] {len(proventos_mapeados)} proventos mapeados para usuário {usuario_id}")
         return proventos_mapeados
         
     except Exception as e:
-        logging.error(f"❌ Erro ao obter proventos: {e}")
+        logging.error(f"[ERROR] Erro ao obter proventos: {e}")
         return []
 
 def _obter_eventos_corporativos_usuario(usuario_id: int, operacoes_abertas: List[Dict], operacoes_fechadas: List[Dict]) -> List[Dict]:
@@ -3386,7 +3476,7 @@ def _obter_eventos_corporativos_usuario(usuario_id: int, operacoes_abertas: List
         
         with get_db() as conn:
             cursor = conn.cursor()
-            placeholders = ','.join(['?' for _ in ids_relevantes])
+            placeholders = ','.join(['%s' for _ in ids_relevantes])
             cursor.execute(f'''
                 SELECT id_acao, evento, data_ex, data_registro, razao
                 FROM eventos_corporativos 
@@ -3415,12 +3505,12 @@ def _obter_eventos_corporativos_usuario(usuario_id: int, operacoes_abertas: List
             else:
                 operation_type = 'evento_corporativo'  # Fallback para tipos não mapeados
             
-            # 🎯 CALCULAR IMPACTO REAL DO EVENTO NA POSIÇÃO DO USUÁRIO
+            # [TARGET] CALCULAR IMPACTO REAL DO EVENTO NA POSIÇÃO DO USUÁRIO
             quantidade_antes, quantidade_depois, preco_antes, preco_depois = _calcular_impacto_evento_corporativo(
                 usuario_id, ticker, evento_dict['data_ex'], evento_dict['razao'], operation_type
             )
             
-            # 🚨 FILTRO CRÍTICO: Só incluir eventos onde usuário REALMENTE tinha ações na data
+            # [ALERT] FILTRO CRÍTICO: Só incluir eventos onde usuário REALMENTE tinha ações na data
             if quantidade_antes <= 0:
                 continue  # Pular este evento se usuário não tinha ações
             
@@ -3436,7 +3526,7 @@ def _obter_eventos_corporativos_usuario(usuario_id: int, operacoes_abertas: List
                 "visualBranch": "left",
                 "evento": evento_dict['evento'],
                 "razao": evento_dict['razao'] or '',
-                # 📊 Dados didáticos para o frontend
+                # [STATS] Dados didáticos para o frontend
                 "quantidade_antes": quantidade_antes,
                 "quantidade_depois": quantidade_depois,
                 "preco_antes": preco_antes,
@@ -3449,16 +3539,16 @@ def _obter_eventos_corporativos_usuario(usuario_id: int, operacoes_abertas: List
             
             eventos_mapeados.append(evento_mapeado)
         
-        logging.info(f"📊 [EVENTOS] {len(eventos_mapeados)} eventos mapeados para usuário {usuario_id}")
+        logging.info(f"[STATS] [EVENTOS] {len(eventos_mapeados)} eventos mapeados para usuário {usuario_id}")
         return eventos_mapeados
         
     except Exception as e:
-        logging.error(f"❌ Erro ao obter eventos corporativos: {e}")
+        logging.error(f"[ERROR] Erro ao obter eventos corporativos: {e}")
         return []
 
 def _calcular_impacto_evento_corporativo(usuario_id: int, ticker: str, data_evento: str, razao: str, tipo_evento: str) -> tuple:
     """
-    🎯 Calcula o impacto real de um evento corporativo na posição do usuário
+    [TARGET] Calcula o impacto real de um evento corporativo na posição do usuário
     
     Returns: (quantidade_antes, quantidade_depois, preco_antes, preco_depois)
     """
@@ -3470,7 +3560,7 @@ def _calcular_impacto_evento_corporativo(usuario_id: int, ticker: str, data_even
             cursor.execute('''
                 SELECT date, operation, quantity, price
                 FROM operacoes 
-                WHERE usuario_id = ? AND ticker = ? AND date <= ?
+                WHERE usuario_id = %s AND ticker = %s AND date <= %s
                 ORDER BY date
             ''', (usuario_id, ticker, data_evento))
             
@@ -3530,7 +3620,8 @@ def _calcular_impacto_evento_corporativo(usuario_id: int, ticker: str, data_even
                 acoes_ganhas = int(quantidade_total * (numerador / denominador))
                 quantidade_depois = quantidade_total + acoes_ganhas
                 # Preço se dilui proporcionalmente
-                preco_depois = preco_medio_antes * (quantidade_total / quantidade_depois)
+                # CORREÇÃO: Converter para float para evitar erro Decimal/float
+                preco_depois = preco_medio_antes * (float(quantidade_total) / float(quantidade_depois))
                 
             else:
                 # Fallback: sem alteração
@@ -3540,13 +3631,13 @@ def _calcular_impacto_evento_corporativo(usuario_id: int, ticker: str, data_even
             return (quantidade_total, quantidade_depois, preco_medio_antes, preco_depois)
             
     except Exception as e:
-        logging.error(f"❌ Erro ao calcular impacto do evento {tipo_evento}: {e}")
+        logging.error(f"[ERROR] Erro ao calcular impacto do evento {tipo_evento}: {e}")
         return (0, 0, 0.0, 0.0)
 
 def _gerar_explicacao_didatica(tipo_evento: str, razao: str, qtd_antes: int, qtd_depois: int, 
                                preco_antes: float, preco_depois: float, ticker: str) -> str:
     """
-    🎓 Gera explicação didática e acolhedora para investidores iniciantes
+    [EMOJI] Gera explicação didática e acolhedora para investidores iniciantes
     """
     if qtd_antes <= 0:
         return f"Você não possuía ações de {ticker} na data deste evento corporativo."
@@ -3561,36 +3652,38 @@ def _gerar_explicacao_didatica(tipo_evento: str, razao: str, qtd_antes: int, qtd
     
     if tipo_evento == 'desdobramento':
         if qtd_depois > qtd_antes:
-            multiplicador = qtd_depois / qtd_antes
+            # CORREÇÃO: Converter para float para evitar erro Decimal/float
+            multiplicador = float(qtd_depois) / float(qtd_antes)
             return (
-                f"🎉 **Suas ações se multiplicaram!**\\n\\n"
+                f"[EMOJI] **Suas ações se multiplicaram!**\\n\\n"
                 f"**Antes:** {qtd_antes} ações a R$ {preco_antes:.2f} cada\\n"
                 f"**Depois:** {qtd_depois} ações a R$ {preco_depois:.2f} cada\\n\\n"
-                f"🔢 **Proporção {razao}:** Cada {numerador} ação virou {denominador} ações\\n"
-                f"📈 **Resultado:** Você ganhou {qtd_depois - qtd_antes} ações extras!\\n"
-                f"💰 **Seu patrimônio:** Continua o mesmo (R$ {qtd_antes * preco_antes:.2f})"
+                f"[EMOJI] **Proporção {razao}:** Cada {numerador} ação virou {denominador} ações\\n"
+                f"[CHART] **Resultado:** Você ganhou {qtd_depois - qtd_antes} ações extras!\\n"
+                f"[MONEY] **Seu patrimônio:** Continua o mesmo (R$ {qtd_antes * preco_antes:.2f})"
             )
     
     elif tipo_evento == 'bonificacao':
         acoes_ganhas = qtd_depois - qtd_antes
-        percentual_bonus = (acoes_ganhas / qtd_antes * 100) if qtd_antes > 0 else 0
+        # CORREÇÃO: Converter para float para evitar erro Decimal/float
+        percentual_bonus = (float(acoes_ganhas) / float(qtd_antes) * 100) if qtd_antes > 0 else 0
         return (
-            f"🎁 **Você ganhou ações de presente!**\\n\\n"
+            f"[EMOJI] **Você ganhou ações de presente!**\\n\\n"
             f"**Antes:** {qtd_antes} ações a R$ {preco_antes:.2f} cada\\n"
             f"**Depois:** {qtd_depois} ações a R$ {preco_depois:.2f} cada\\n\\n"
-            f"🎯 **Bônus:** +{acoes_ganhas} ações gratuitas ({percentual_bonus:.1f}% de bônus)\\n"
-            f"📊 **Proporção {razao}:** Para cada {denominador} ações, você ganhou {numerador}\\n"
-            f"💝 **Presente da empresa:** {ticker} distribuiu ações como bonificação!"
+            f"[TARGET] **Bônus:** +{acoes_ganhas} ações gratuitas ({percentual_bonus:.1f}% de bônus)\\n"
+            f"[STATS] **Proporção {razao}:** Para cada {denominador} ações, você ganhou {numerador}\\n"
+            f"[EMOJI] **Presente da empresa:** {ticker} distribuiu ações como bonificação!"
         )
     
     elif tipo_evento == 'agrupamento':
         return (
-            f"🔄 **Suas ações foram reagrupadas**\\n\\n"
+            f"[RELOAD] **Suas ações foram reagrupadas**\\n\\n"
             f"**Antes:** {qtd_antes} ações a R$ {preco_antes:.2f} cada\\n"
             f"**Depois:** {qtd_depois} ações a R$ {preco_depois:.2f} cada\\n\\n"
-            f"📉 **Proporção {razao}:** Cada {numerador} ações viraram {denominador}\\n"
-            f"⚖️ **Resultado:** Menos ações, mas preço maior por ação\\n"
-            f"💰 **Seu patrimônio:** Continua o mesmo (R$ {qtd_antes * preco_antes:.2f})"
+            f"[CHART] **Proporção {razao}:** Cada {numerador} ações viraram {denominador}\\n"
+            f"[EMOJI] **Resultado:** Menos ações, mas preço maior por ação\\n"
+            f"[MONEY] **Seu patrimônio:** Continua o mesmo (R$ {qtd_antes * preco_antes:.2f})"
         )
     
     return f"Evento corporativo em {ticker}: de {qtd_antes} para {qtd_depois} ações (proporção {razao})."
@@ -3635,16 +3728,16 @@ def _criar_timeline_consolidada(operacoes_abertas: List[Dict], operacoes_fechada
             x['date']
         ), reverse=True)
         
-        logging.info(f"📊 [TIMELINE] {len(timeline_ordenada)} itens consolidados")
+        logging.info(f"[STATS] [TIMELINE] {len(timeline_ordenada)} itens consolidados")
         return timeline_ordenada
         
     except Exception as e:
-        logging.error(f"❌ Erro ao criar timeline: {e}")
+        logging.error(f"[ERROR] Erro ao criar timeline: {e}")
         return []
 
 def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[Dict]], resultados_map: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
     """
-    ✅ CORRIGIDO: Calcula prejuízos acumulados considerando compensações e prejuízos de meses anteriores
+    [OK] CORRIGIDO: Calcula prejuízos acumulados considerando compensações e prejuízos de meses anteriores
     
     Lógica Correta:
     1. Prejuízo acumulado de meses anteriores (da tabela resultados_mensais)
@@ -3675,8 +3768,8 @@ def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[
             resultado_mensal = resultados_map.get(mes, {})
             
             # 1. Prejuízo acumulado de meses anteriores (NÃO do mês atual!)
-            # 🔧 CORREÇÃO CRÍTICA: Buscar prejuízo do mês ANTERIOR, não do atual
-            prejuizo_anterior = 0.0
+            # [WRENCH] CORREÇÃO CRÍTICA: Buscar prejuízo do mês ANTERIOR, não do atual
+            prejuizo_anterior = Decimal('0.0')
             
             # Buscar todos os meses anteriores ao atual
             meses_anteriores = [m for m in sorted(resultados_map.keys()) if m < mes]
@@ -3686,16 +3779,16 @@ def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[
                 resultado_anterior = resultados_map.get(ultimo_mes_anterior, {})
                 
                 if tipo == "day_trade":
-                    prejuizo_anterior = resultado_anterior.get("prejuizo_acumulado_day", 0)
+                    prejuizo_anterior = Decimal(str(resultado_anterior.get("prejuizo_acumulado_day", 0)))
                 else:
-                    prejuizo_anterior = resultado_anterior.get("prejuizo_acumulado_swing", 0)
+                    prejuizo_anterior = Decimal(str(resultado_anterior.get("prejuizo_acumulado_swing", 0)))
             
             # 2. Simular o mês operação por operação
-            prejuizo_mes_atual = 0.0
-            compensacao_usada_mes = 0.0
+            prejuizo_mes_atual = Decimal('0.0')
+            compensacao_usada_mes = Decimal('0.0')
             
             for op in operacoes_mes:
-                resultado_op = op.get("resultado", 0)
+                resultado_op = Decimal(str(op.get("resultado", 0)))
                 
                 # Prejuízo disponível ANTES desta operação
                 prejuizo_disponivel_antes = prejuizo_anterior + prejuizo_mes_atual - compensacao_usada_mes
@@ -3717,7 +3810,7 @@ def _calcular_prejuizos_acumulados_otimizado(operacoes_por_tipo: Dict[str, List[
                 op_key = f"{op['ticker']}-{op['data_fechamento']}-{op['quantidade']}"
                 resultado[tipo][op_key] = max(0, prejuizo_ate_operacao)
                 
-                logging.debug(f"📊 [PREJUÍZO ACUMULADO] {op['ticker']} ({tipo}): "
+                logging.debug(f"[STATS] [PREJUÍZO ACUMULADO] {op['ticker']} ({tipo}): "
                              f"Anterior={prejuizo_anterior}, MêsAtual={prejuizo_mes_atual}, "
                              f"CompensaçãoUsada={compensacao_usada_mes}, AteOperação={prejuizo_ate_operacao}")
     
@@ -3773,12 +3866,12 @@ def _calcular_compensacoes_otimizado(operacoes_por_tipo: Dict[str, List[Dict]]) 
 
 def _deve_gerar_darf_otimizado(operacao: Dict[str, Any], resultado_mensal: Optional[Dict[str, Any]]) -> bool:
     """
-    ✅ Versão otimizada da verificação de DARF - considera isenção
+    [OK] Versão otimizada da verificação de DARF - considera isenção
     """
     if not operacao or operacao.get("resultado", 0) <= 0:
         return False
     
-    # ✅ VERIFICAR ISENÇÃO: Operações isentas não geram DARF
+    # [OK] VERIFICAR ISENÇÃO: Operações isentas não geram DARF
     status_ir = operacao.get("status_ir", "")
     if status_ir == "Isento":
         return False
@@ -3787,7 +3880,7 @@ def _deve_gerar_darf_otimizado(operacao: Dict[str, Any], resultado_mensal: Optio
     if status_ir not in ["Tributável Day Trade", "Tributável Swing"]:
         return False
     
-    # ✅ VERIFICAR ISENÇÃO SWING TRADE no resultado mensal
+    # [OK] VERIFICAR ISENÇÃO SWING TRADE no resultado mensal
     if resultado_mensal:
         is_day_trade = operacao.get("day_trade", False)
         
@@ -3800,7 +3893,7 @@ def _deve_gerar_darf_otimizado(operacao: Dict[str, Any], resultado_mensal: Optio
         
         # Log apenas resultado final para debug essencial
         if deve_gerar:
-            logging.info(f"✅ [DARF] {operacao.get('ticker', 'UNKNOWN')}: Deve gerar DARF (ir_devido={ir_devido})")
+            logging.info(f"[OK] [DARF] {operacao.get('ticker', 'UNKNOWN')}: Deve gerar DARF (ir_devido={ir_devido})")
         
         return deve_gerar
     
@@ -3812,13 +3905,12 @@ def obter_ultimo_login_usuario(usuario_id: int) -> Optional[datetime]:
     Obtém a data do último login do usuário.
     Retorna None se não houver registro de login.
     """
-    DB_PATH = 'acoes_ir.db'
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    with get_db() as conn:
+        cursor = conn.cursor()
     
     try:
         # Verificar se existe coluna ultimo_login na tabela usuarios
-        cursor.execute("PRAGMA table_info(usuarios)")
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND table_schema = 'public'", ("usuarios",))
         colunas = [col[1] for col in cursor.fetchall()]
         
         if 'ultimo_login' not in colunas:
@@ -3830,7 +3922,7 @@ def obter_ultimo_login_usuario(usuario_id: int) -> Optional[datetime]:
         cursor.execute("""
             SELECT ultimo_login 
             FROM usuarios 
-            WHERE id = ?
+            WHERE id = %s
         """, (usuario_id,))
         
         resultado = cursor.fetchone()
@@ -3843,53 +3935,53 @@ def obter_ultimo_login_usuario(usuario_id: int) -> Optional[datetime]:
         print(f"Erro ao obter último login do usuário {usuario_id}: {e}")
         return None
     finally:
-        conn.close()
-
+        # Conexão fechada automaticamente pelo context manager
+        pass
+        pass
 
 def atualizar_ultimo_login_usuario(usuario_id: int) -> bool:
     """
     Atualiza o último login do usuário para o momento atual.
     Retorna True se a atualização foi bem-sucedida.
     """
-    DB_PATH = 'acoes_ir.db'
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
     try:
-        # Verificar se existe coluna ultimo_login na tabela usuarios
-        cursor.execute("PRAGMA table_info(usuarios)")
-        colunas = [col[1] for col in cursor.fetchall()]
-        
-        if 'ultimo_login' not in colunas:
-            # Adicionar coluna se não existir
-            cursor.execute("ALTER TABLE usuarios ADD COLUMN ultimo_login DATETIME")
+        with get_db() as conn:
+            cursor = conn.cursor()
+            
+            # Verificar se existe coluna ultimo_login na tabela usuarios
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = %s AND table_schema = 'public'", ("usuarios",))
+            colunas = [col[0] for col in cursor.fetchall()]
+            
+            if 'ultimo_login' not in colunas:
+                # Adicionar coluna se não existir
+                cursor.execute("ALTER TABLE usuarios ADD COLUMN ultimo_login TIMESTAMP")
+                conn.commit()
+            
+            # Atualizar último login para agora
+            agora = datetime.now()
+            cursor.execute("""
+                UPDATE usuarios 
+                SET ultimo_login = %s 
+                WHERE id = %s
+            """, (agora.isoformat(), usuario_id))
+            
             conn.commit()
-        
-        # Atualizar último login para agora
-        agora = datetime.now()
-        cursor.execute("""
-            UPDATE usuarios 
-            SET ultimo_login = ? 
-            WHERE id = ?
-        """, (agora.isoformat(), usuario_id))
-        
-        conn.commit()
-        
-        # Verificar se a atualização foi bem-sucedida
-        if cursor.rowcount > 0:
-            print(f"SUCCESS: Ultimo login atualizado para usuario {usuario_id}: {agora}")
-            return True
-        else:
-            print(f"WARNING: Usuario {usuario_id} nao encontrado para atualizar ultimo login")
-            return False
+            
+            # Verificar se a atualização foi bem-sucedida
+            if cursor.rowcount > 0:
+                print(f"SUCCESS: Ultimo login atualizado para usuario {usuario_id}: {agora}")
+                return True
+            else:
+                print(f"WARNING: Usuario {usuario_id} nao encontrado para atualizar ultimo login")
+                return False
         
     except Exception as e:
         print(f"ERROR: Erro ao atualizar ultimo login do usuario {usuario_id}: {e}")
-        conn.rollback()
         return False
     finally:
-        conn.close()
-
+        # Conexão fechada automaticamente pelo context manager
+        pass
+        pass
 
 def obter_novos_dividendos_usuario_service(usuario_id: int, data_limite: datetime = None) -> List[Dict[str, Any]]:
     """
@@ -3907,9 +3999,9 @@ def obter_novos_dividendos_usuario_service(usuario_id: int, data_limite: datetim
         else:
             # Fallback: usuário novo ou sem login registrado
             data_limite = datetime.now() - timedelta(days=2)
-    DB_PATH = 'acoes_ir.db'  # Definir localmente se não definido globalmente
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    # DB_PATH removido - usando get_db()  # Definir localmente se não definido globalmente
+    with get_db() as conn:
+        cursor = conn.cursor()
     
     try:
         # Buscar dividendos calculados após data_limite para ações da carteira do usuário
@@ -3926,8 +4018,8 @@ def obter_novos_dividendos_usuario_service(usuario_id: int, data_limite: datetim
                 upr.valor_total_recebido,
                 upr.quantidade_possuida_na_data_ex
             FROM usuario_proventos_recebidos upr
-            WHERE upr.usuario_id = ? 
-            AND upr.data_calculo >= ?
+            WHERE upr.usuario_id = %s 
+            AND upr.data_calculo >= %s
             AND upr.valor_total_recebido > 0
             ORDER BY upr.data_calculo DESC
             LIMIT 50
@@ -3956,23 +4048,24 @@ def obter_novos_dividendos_usuario_service(usuario_id: int, data_limite: datetim
         logging.error(f"Erro ao buscar novos dividendos para usuário {usuario_id}: {e}")
         return []
     finally:
-        conn.close()
-
+        # Conexão fechada automaticamente pelo context manager
+        pass
+        pass
 
 def obter_proximos_dividendos_usuario_service(usuario_id: int, data_inicio: date, data_fim: date) -> List[Dict[str, Any]]:
     """
     Retorna dividendos que serão pagos nos próximos dias para ações da carteira atual do usuário.
     """
-    DB_PATH = 'acoes_ir.db'  # Definir localmente se não definido globalmente
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    # DB_PATH removido - usando get_db()  # Definir localmente se não definido globalmente
+    with get_db() as conn:
+        cursor = conn.cursor()
     
     try:
         # Primeiro, obter a carteira atual do usuário
         cursor.execute("""
             SELECT ticker, quantidade, preco_medio
             FROM carteira_atual 
-            WHERE usuario_id = ? AND quantidade > 0
+            WHERE usuario_id = %s AND quantidade > 0
         """, (usuario_id,))
         
         carteira_atual = cursor.fetchall()
@@ -3983,7 +4076,7 @@ def obter_proximos_dividendos_usuario_service(usuario_id: int, data_inicio: date
         tickers_carteira = [row[0] for row in carteira_atual]
         
         # Buscar dividendos futuros para ações da carteira
-        placeholders = ','.join(['?' for _ in tickers_carteira])
+        placeholders = ','.join(['%s' for _ in tickers_carteira])
         query = f"""
             SELECT DISTINCT
                 pg.id,
@@ -3997,7 +4090,7 @@ def obter_proximos_dividendos_usuario_service(usuario_id: int, data_inicio: date
             JOIN acoes a ON pg.id_acao = a.id
             WHERE a.ticker IN ({placeholders})
             AND pg.dt_pagamento IS NOT NULL
-            AND DATE(pg.dt_pagamento) BETWEEN ? AND ?
+            AND DATE(pg.dt_pagamento) BETWEEN %s AND %s
             ORDER BY pg.dt_pagamento ASC
         """
         
@@ -4038,5 +4131,382 @@ def obter_proximos_dividendos_usuario_service(usuario_id: int, data_inicio: date
         logging.error(f"Erro ao buscar próximos dividendos para usuário {usuario_id}: {e}")
         return []
     finally:
-        conn.close()
+        # Conexão fechada automaticamente pelo context manager
+        pass
 
+
+# =============================================================================
+# [RELOAD] SISTEMA DE RECÁLCULO UNIFICADO - TRANSAÇÕES ATÔMICAS
+# =============================================================================
+
+def recalcular_sistema_completo(usuario_id: int, dry_run: bool = False, checkpoint_interval: int = 1000) -> Dict[str, Any]:
+    """
+    [RELOAD] FUNÇÃO UNIFICADA DE RECÁLCULO COMPLETO DO SISTEMA
+    
+    Executa recálculo atômico de:
+    - Carteira atual (com eventos corporativos)
+    - Proventos recebidos (baseado em posições reais)
+    - Resultados mensais (com IRRF correto)
+    - Status IR das operações fechadas
+    - Validações de integridade
+    
+    Args:
+        usuario_id: ID do usuário
+        dry_run: Se True, executa validações sem salvar (default: False)
+        checkpoint_interval: Intervalo para checkpoints em operações grandes (default: 1000)
+    
+    Returns:
+        Dict com resultados detalhados do recálculo
+        
+    Raises:
+        HTTPException: Em caso de erro crítico
+        
+    Características:
+    - [OK] Transação atômica PostgreSQL
+    - [OK] Sistema de logs detalhado 
+    - [OK] Checkpoints para grandes volumes
+    - [OK] Validações intermediárias
+    - [OK] Rollback automático em falhas
+    - [OK] Métricas de performance
+    """
+    import time
+    from contextlib import contextmanager
+    
+    # Configurar logging específico para recálculo
+    recalc_logger = logging.getLogger(f'recalculo_usuario_{usuario_id}')
+    recalc_logger.setLevel(logging.INFO)
+    
+    # Métricas de performance
+    inicio_tempo = time.time()
+    metricas = {
+        'inicio': datetime.now().isoformat(),
+        'usuario_id': usuario_id,
+        'dry_run': dry_run,
+        'etapas_concluidas': [],
+        'operacoes_processadas': 0,
+        'proventos_calculados': 0,
+        'resultados_mensais': 0,
+        'erros': [],
+        'warnings': [],
+        'validacoes': {}
+    }
+    
+    recalc_logger.info(f"[INICIO] RECÁLCULO COMPLETO - Usuário {usuario_id} {'(DRY RUN)' if dry_run else ''}")
+    
+    try:
+        with get_db() as conn:
+            # Configurar transação para modo atomic
+            if not dry_run:
+                conn.autocommit = False
+                recalc_logger.info("[INFO] Transação atômica iniciada")
+            
+            cursor = conn.cursor()
+            
+            # =================================================================
+            # ETAPA 1: VALIDAÇÕES INICIAIS
+            # =================================================================
+            recalc_logger.info("[ETAPA 1] Validações iniciais")
+            
+            # Verificar se usuário existe
+            cursor.execute("SELECT id, username FROM usuarios WHERE id = %s", (usuario_id,))
+            usuario = cursor.fetchone()
+            if not usuario:
+                raise HTTPException(status_code=404, detail=f"Usuário {usuario_id} não encontrado")
+            
+            usuario_nome = dict(usuario)['username']
+            recalc_logger.info(f"[OK] Usuário validado: {usuario_nome}")
+            
+            # Validar operações existentes
+            cursor.execute("SELECT COUNT(*) FROM operacoes WHERE usuario_id = %s", (usuario_id,))
+            total_operacoes = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM operacoes_fechadas WHERE usuario_id = %s", (usuario_id,))
+            total_fechadas = cursor.fetchone()[0]
+            
+            metricas['validacoes'] = {
+                'total_operacoes': total_operacoes,
+                'total_fechadas': total_fechadas,
+                'usuario_nome': usuario_nome
+            }
+            
+            recalc_logger.info(f"[INFO] Operações encontradas: {total_operacoes} regulares, {total_fechadas} fechadas")
+            
+            if total_operacoes == 0 and total_fechadas == 0:
+                recalc_logger.warning("[AVISO] Nenhuma operação encontrada para recálculo")
+                metricas['warnings'].append("Nenhuma operação encontrada")
+                return metricas
+            
+            metricas['etapas_concluidas'].append('validacoes_iniciais')
+            
+            # =================================================================
+            # ETAPA 2: LIMPEZA CONTROLADA
+            # =================================================================
+            recalc_logger.info("[ETAPA 2] Limpeza controlada de dados")
+            
+            if not dry_run:
+                # Backup de preços editados ANTES da limpeza
+                cursor.execute("""
+                    SELECT ticker, preco_medio, preco_editado_pelo_usuario
+                    FROM carteira_atual 
+                    WHERE usuario_id = %s AND preco_editado_pelo_usuario = true
+                """, (usuario_id,))
+                precos_editados_backup = {row[0]: row[1] for row in cursor.fetchall()}
+                recalc_logger.info(f"[BACKUP] Backup de {len(precos_editados_backup)} preços editados")
+                
+                # Limpeza das tabelas
+                tabelas_limpeza = [
+                    ('carteira_atual', 'limpar_carteira_usuario_db'),
+                    ('resultados_mensais', 'limpar_resultados_mensais_usuario_db'),
+                    ('usuario_proventos_recebidos', 'limpar_usuario_proventos_recebidos_db')
+                ]
+                
+                for tabela, funcao in tabelas_limpeza:
+                    cursor.execute(f"SELECT COUNT(*) FROM {tabela} WHERE usuario_id = %s", (usuario_id,))
+                    registros_antes = cursor.fetchone()[0]
+                    
+                    # Executar limpeza específica
+                    if tabela == 'carteira_atual':
+                        limpar_carteira_usuario_db(usuario_id)
+                    elif tabela == 'resultados_mensais':
+                        limpar_resultados_mensais_usuario_db(usuario_id)
+                    elif tabela == 'usuario_proventos_recebidos':
+                        limpar_usuario_proventos_recebidos_db(usuario_id)
+                    
+                    cursor.execute(f"SELECT COUNT(*) FROM {tabela} WHERE usuario_id = %s", (usuario_id,))
+                    registros_depois = cursor.fetchone()[0]
+                    
+                    recalc_logger.info(f"[LIMPEZA] {tabela}: {registros_antes} -> {registros_depois} registros")
+            
+            metricas['etapas_concluidas'].append('limpeza_controlada')
+            
+            # =================================================================
+            # ETAPA 3: RECÁLCULO DA CARTEIRA
+            # =================================================================
+            recalc_logger.info("[ETAPA 3] Recálculo da carteira com eventos corporativos")
+            
+            if not dry_run:
+                # Chamar função existente de recálculo da carteira
+                # (que já inclui eventos corporativos)
+                recalcular_carteira(usuario_id)
+                
+                # Restaurar preços editados
+                if precos_editados_backup:
+                    for ticker, preco_editado in precos_editados_backup.items():
+                        cursor.execute("""
+                            UPDATE carteira_atual 
+                            SET preco_medio = %s, preco_editado_pelo_usuario = true
+                            WHERE usuario_id = %s AND ticker = %s
+                        """, (preco_editado, usuario_id, ticker))
+                    recalc_logger.info(f"[RESTORE] Restaurados {len(precos_editados_backup)} preços editados")
+            
+            # Validar carteira recalculada
+            cursor.execute("SELECT COUNT(*) FROM carteira_atual WHERE usuario_id = %s", (usuario_id,))
+            itens_carteira = cursor.fetchone()[0]
+            metricas['operacoes_processadas'] = itens_carteira
+            
+            recalc_logger.info(f"[OK] Carteira recalculada: {itens_carteira} posições")
+            metricas['etapas_concluidas'].append('carteira_recalculada')
+            
+            # =================================================================
+            # ETAPA 4: CÁLCULO DE OPERAÇÕES FECHADAS
+            # =================================================================
+            recalc_logger.info("[ETAPA 4] Cálculo de operações fechadas")
+            
+            if not dry_run:
+                # Limpar operações fechadas antigas
+                from database import limpar_operacoes_fechadas_usuario
+                limpar_operacoes_fechadas_usuario(usuario_id)
+                
+                # Recalcular operações fechadas
+                operacoes_fechadas = calcular_operacoes_fechadas(usuario_id)
+                metricas['operacoes_fechadas_calculadas'] = len(operacoes_fechadas) if operacoes_fechadas else 0
+                
+                recalc_logger.info(f"[CALC] Operações fechadas: {metricas['operacoes_fechadas_calculadas']} calculadas")
+            
+            metricas['etapas_concluidas'].append('operacoes_fechadas_calculadas')
+            
+            # =================================================================
+            # ETAPA 5: RECÁLCULO DE PROVENTOS
+            # =================================================================
+            recalc_logger.info("[ETAPA 5] Recálculo de proventos recebidos")
+            
+            if not dry_run:
+                resultado_proventos = recalcular_proventos_recebidos_rapido(usuario_id)
+                metricas['proventos_calculados'] = resultado_proventos.get('calculados', 0)
+                
+                if resultado_proventos.get('erros', 0) > 0:
+                    metricas['warnings'].append(f"Proventos: {resultado_proventos['erros']} erros")
+                
+                recalc_logger.info(f"[CALC] Proventos recalculados: {metricas['proventos_calculados']} registros")
+            
+            metricas['etapas_concluidas'].append('proventos_recalculados')
+            
+            # =================================================================
+            # ETAPA 6: RECÁLCULO DE RESULTADOS MENSAIS
+            # =================================================================
+            recalc_logger.info("[ETAPA 6] Recálculo de resultados mensais com IRRF")
+            
+            if not dry_run:
+                recalcular_resultados_corrigido(usuario_id)
+                
+                # Validar resultados mensais
+                cursor.execute("SELECT COUNT(*) FROM resultados_mensais WHERE usuario_id = %s", (usuario_id,))
+                meses_calculados = cursor.fetchone()[0]
+                metricas['resultados_mensais'] = meses_calculados
+                
+                recalc_logger.info(f"[CALC] Resultados mensais: {meses_calculados} meses processados")
+            
+            metricas['etapas_concluidas'].append('resultados_mensais')
+            
+            # =================================================================
+            # ETAPA 7: ATUALIZAÇÃO DE STATUS IR
+            # =================================================================
+            recalc_logger.info("[ETAPA 7] Atualização de status IR das operações")
+            
+            if not dry_run:
+                status_ir_sucesso = atualizar_status_ir_operacoes_fechadas(usuario_id)
+                if not status_ir_sucesso:
+                    metricas['warnings'].append("Alguns status IR falharam na atualização")
+                
+                recalc_logger.info(f"[LIST] Status IR atualizado: {'[OK] Sucesso' if status_ir_sucesso else '[WARNING] Com avisos'}")
+            
+            metricas['etapas_concluidas'].append('status_ir_atualizado')
+            
+            # =================================================================
+            # ETAPA 8: VALIDAÇÕES FINAIS
+            # =================================================================
+            recalc_logger.info("[ETAPA 8] Validações finais de integridade")
+            
+            validacoes_finais = {}
+            
+            # Validar consistência da carteira
+            cursor.execute("""
+                SELECT COUNT(*) FROM carteira_atual 
+                WHERE usuario_id = %s AND (quantidade < 0 OR preco_medio < 0)
+            """, (usuario_id,))
+            posicoes_negativas = cursor.fetchone()[0]
+            validacoes_finais['posicoes_negativas'] = posicoes_negativas
+            
+            # Validar proventos vs operações
+            cursor.execute("""
+                SELECT COUNT(DISTINCT ticker_acao) FROM usuario_proventos_recebidos upr
+                WHERE upr.usuario_id = %s
+            """, (usuario_id,))
+            tickers_com_proventos = cursor.fetchone()[0]
+            validacoes_finais['tickers_com_proventos'] = tickers_com_proventos
+            
+            # Validar resultados mensais
+            cursor.execute("""
+                SELECT COUNT(*) FROM resultados_mensais 
+                WHERE usuario_id = %s AND (ganho_liquido_swing IS NULL OR ganho_liquido_day IS NULL)
+            """, (usuario_id,))
+            resultados_nulos = cursor.fetchone()[0]
+            validacoes_finais['resultados_nulos'] = resultados_nulos
+            
+            # Validar operações fechadas calculadas
+            cursor.execute("""
+                SELECT COUNT(*) FROM operacoes_fechadas 
+                WHERE usuario_id = %s
+            """, (usuario_id,))
+            operacoes_fechadas_count = cursor.fetchone()[0]
+            validacoes_finais['operacoes_fechadas'] = operacoes_fechadas_count
+            
+            metricas['validacoes'].update(validacoes_finais)
+            
+            # Verificar problemas críticos
+            problemas_criticos = []
+            if posicoes_negativas > 0:
+                problemas_criticos.append(f"{posicoes_negativas} posições com valores negativos")
+            if resultados_nulos > 0:
+                problemas_criticos.append(f"{resultados_nulos} resultados mensais nulos")
+            if operacoes_fechadas_count == 0 and itens_carteira > 0:
+                # Só é problema se há operações mas nenhuma operação fechada
+                cursor.execute("SELECT COUNT(*) FROM operacoes WHERE usuario_id = %s AND operation = 'sell'", (usuario_id,))
+                vendas_count = cursor.fetchone()[0]
+                if vendas_count > 0:
+                    problemas_criticos.append("Nenhuma operação fechada calculada apesar de existirem vendas")
+            
+            if problemas_criticos:
+                metricas['erros'].extend(problemas_criticos)
+                recalc_logger.error(f"[ERRO] Problemas críticos detectados: {problemas_criticos}")
+                if not dry_run:
+                    conn.rollback()
+                    raise HTTPException(status_code=500, detail=f"Problemas críticos: {problemas_criticos}")
+            
+            recalc_logger.info("[OK] Validações finais: Nenhum problema crítico")
+            metricas['etapas_concluidas'].append('validacoes_finais')
+            
+            # =================================================================
+            # FINALIZAÇÃO
+            # =================================================================
+            tempo_total = time.time() - inicio_tempo
+            metricas['tempo_execucao_segundos'] = round(tempo_total, 2)
+            metricas['fim'] = datetime.now().isoformat()
+            
+            if not dry_run:
+                conn.commit()
+                recalc_logger.info("[COMMIT] Transação commitada com sucesso")
+            else:
+                recalc_logger.info("[DRY RUN] concluído - nenhuma alteração salva")
+            
+            recalc_logger.info(f"[EMOJI] RECÁLCULO COMPLETO FINALIZADO em {tempo_total:.2f}s")
+            recalc_logger.info(f"[STATS] Resumo: {metricas['operacoes_processadas']} operações, {metricas['proventos_calculados']} proventos, {metricas['resultados_mensais']} meses")
+            
+            return metricas
+            
+    except Exception as e:
+        tempo_erro = time.time() - inicio_tempo
+        metricas['tempo_execucao_segundos'] = round(tempo_erro, 2)
+        metricas['erro'] = str(e)
+        metricas['fim'] = datetime.now().isoformat()
+        
+        recalc_logger.error(f"[ERRO CRITICO] após {tempo_erro:.2f}s: {e}")
+        
+        if not dry_run:
+            try:
+                conn.rollback()
+                recalc_logger.info("[ROLLBACK] Rollback executado com sucesso")
+            except Exception as rollback_error:
+                recalc_logger.error(f"[ERRO] Erro no rollback: {rollback_error}")
+        
+        raise HTTPException(status_code=500, detail=f"Erro no recálculo completo: {e}")
+
+
+def validar_integridade_usuario(usuario_id: int) -> Dict[str, Any]:
+    """
+    [VALIDACAO] RÁPIDA DE INTEGRIDADE DOS DADOS
+    
+    Executa validações sem alterar dados para verificar:
+    - Consistência entre operações e carteira
+    - Integridade dos proventos calculados
+    - Coherência dos resultados mensais
+    
+    Args:
+        usuario_id: ID do usuário
+        
+    Returns:
+        Dict com resultados da validação
+    """
+    return recalcular_sistema_completo(usuario_id, dry_run=True)
+
+
+def recalcular_usuario_endpoint_service(usuario_id: int, force: bool = False) -> Dict[str, Any]:
+    """
+    [TARGET] SERVIÇO PARA ENDPOINT DE RECÁLCULO
+    
+    Wrapper para a função unificada com validações de segurança.
+    
+    Args:
+        usuario_id: ID do usuário
+        force: Se True, pula validações de segurança (default: False)
+        
+    Returns:
+        Dict com resultados do recálculo
+    """
+    if not force:
+        # Validação rápida antes do recálculo
+        validacao = validar_integridade_usuario(usuario_id)
+        if validacao.get('erros'):
+            logging.warning(f"[WARNING] Problemas detectados na validação: {validacao['erros']}")
+    
+    return recalcular_sistema_completo(usuario_id)

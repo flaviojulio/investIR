@@ -22,7 +22,13 @@ export function PortfolioOverview({ carteira, resultados, operacoes, operacoesFe
 
     // Resultado total das operações ENCERRADAS apenas
     const resultadoTotal = operacoesFechadas.reduce((total, operacao) => {
-      return total + operacao.resultado
+      // CORREÇÃO: Validação defensiva para evitar NaN
+      const resultado = operacao.resultado
+      if (resultado === null || resultado === undefined || isNaN(Number(resultado))) {
+        console.warn(`Operação ${operacao.ticker} tem resultado inválido:`, resultado)
+        return total
+      }
+      return total + Number(resultado)
     }, 0)
 
     return {
@@ -35,6 +41,13 @@ export function PortfolioOverview({ carteira, resultados, operacoes, operacoesFe
     if (!showValues) {
       return "R$ •••,••"
     }
+    
+    // CORREÇÃO: Validação defensiva para evitar exibir NaN
+    if (value === null || value === undefined || isNaN(value)) {
+      console.warn(`Tentativa de formatar valor inválido:`, value)
+      return "R$ 0,00"
+    }
+    
     return new Intl.NumberFormat("pt-BR", {
       style: "currency",
       currency: "BRL",
